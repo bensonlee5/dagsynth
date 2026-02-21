@@ -31,3 +31,5 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
 ./scripts/benchmark-smoke.sh cpu
 ./scripts/benchmark-suite.sh standard all benchmarks/results/latest
 ```
+
+`benchmark-suite.sh` with profile `all` includes CUDA profiles and will hard-fail if CUDA is unavailable.

@@ -2,7 +2,7 @@ import numpy as np
 
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.hardware import HardwareInfo, apply_hardware_profile
-from cauchy_generator.hardware import get_peak_flops
+from cauchy_generator.hardware import detect_hardware, get_peak_flops
 
 
 def test_peak_flops_lookup() -> None:
@@ -16,20 +16,19 @@ def test_peak_flops_fallback() -> None:
     assert np.isinf(val)
 
 
-def test_hardware_profile_not_applied_when_torch_not_intended() -> None:
+def test_hardware_profile_not_applied_on_cpu_backend() -> None:
     cfg = GeneratorConfig()
-    cfg.runtime.prefer_torch = False
     cfg.runtime.device = "auto"
     original_train = cfg.dataset.n_train
     original_profile = cfg.benchmark.profile_name
 
     hw = HardwareInfo(
-        backend="cuda",
+        backend="cpu",
         requested_device="auto",
-        device_name="NVIDIA H100 SXM",
-        total_memory_gb=80.0,
-        peak_flops=989e12,
-        profile="cuda_h100",
+        device_name="cpu",
+        total_memory_gb=None,
+        peak_flops=float("inf"),
+        profile="cpu",
     )
     apply_hardware_profile(cfg, hw)
 
@@ -39,7 +38,6 @@ def test_hardware_profile_not_applied_when_torch_not_intended() -> None:
 
 def test_hardware_profile_applied_when_cuda_explicit() -> None:
     cfg = GeneratorConfig()
-    cfg.runtime.prefer_torch = False
     cfg.runtime.device = "cuda"
 
     hw = HardwareInfo(
@@ -54,3 +52,8 @@ def test_hardware_profile_applied_when_cuda_explicit() -> None:
 
     assert cfg.dataset.n_train >= 4096
     assert cfg.benchmark.profile_name == "cuda_h100_auto"
+
+
+def test_detect_hardware_cpu_backend_label() -> None:
+    hw = detect_hardware("cpu")
+    assert hw.backend == "cpu"

@@ -6,7 +6,6 @@ def test_load_default_config() -> None:
     assert cfg.dataset.n_train > 0
     assert cfg.dataset.n_features_min <= cfg.dataset.n_features_max
     assert cfg.output.shard_size > 0
-    assert cfg.runtime.prefer_torch is True
 
 
 def test_load_cuda_presets() -> None:
@@ -21,7 +20,19 @@ def test_load_benchmark_profiles() -> None:
     cfg_h100 = GeneratorConfig.from_yaml("configs/benchmark_cuda_h100.yaml")
 
     assert cfg_cpu.runtime.device == "cpu"
-    assert cfg_cpu.runtime.prefer_torch is True
     assert cfg_desktop.runtime.device == "cuda"
     assert cfg_h100.runtime.device == "cuda"
     assert "cpu" in cfg_h100.benchmark.profiles
+
+
+def test_runtime_config_from_dict() -> None:
+    cfg = GeneratorConfig.from_dict(
+        {
+            "runtime": {
+                "device": "cpu",
+                "torch_dtype": "float64",
+            }
+        }
+    )
+    assert cfg.runtime.device == "cpu"
+    assert cfg.runtime.torch_dtype == "float64"

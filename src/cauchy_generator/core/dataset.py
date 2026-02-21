@@ -1,4 +1,4 @@
-"""Seeded synthetic dataset generation with Torch default and NumPy fallback."""
+"""Seeded synthetic dataset generation with Torch execution on all devices."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import torch
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.node_pipeline import (
     ConverterSpec,
-    apply_node_pipeline,
     apply_node_pipeline_torch,
 )
 from cauchy_generator.filtering import apply_extratrees_filter
@@ -23,40 +22,33 @@ from cauchy_generator.sampling import CorrelatedSampler
 from cauchy_generator.types import DatasetBundle
 
 
-def _resolve_backend(config: GeneratorConfig, device_override: str | None) -> tuple[str, str]:
-    """Resolve runtime backend/device with explicit accelerator fail-fast behavior."""
+def _resolve_device(config: GeneratorConfig, device_override: str | None) -> str:
+    """Resolve runtime device and hard-fail on unavailable explicit accelerators."""
 
     requested = (device_override or config.runtime.device or "auto").lower()
     mps_ok = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
-
-    # Explicit accelerator requests fail fast if unavailable.
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if mps_ok:
+            return "mps"
+        return "cpu"
+    if requested == "cpu":
+        return "cpu"
     if requested == "cuda":
         if torch.cuda.is_available():
-            return "torch", "cuda"
+            return "cuda"
         raise RuntimeError("Requested device 'cuda' but CUDA is not available.")
     if requested == "mps":
         if mps_ok:
-            return "torch", "mps"
+            return "mps"
         raise RuntimeError("Requested device 'mps' but MPS is not available.")
-
-    if requested == "auto":
-        if config.runtime.prefer_torch:
-            if torch.cuda.is_available():
-                return "torch", "cuda"
-            if mps_ok:
-                return "torch", "mps"
-            return "torch", "cpu"
-        return "numpy", "cpu"
-
-    if requested == "cpu":
-        return ("torch", "cpu") if config.runtime.prefer_torch else ("numpy", "cpu")
-    return "numpy", "cpu"
+    raise ValueError(f"Unsupported device '{requested}'. Expected one of: auto, cpu, cuda, mps.")
 
 
 def _torch_dtype(config: GeneratorConfig) -> torch.dtype:
     """Map string runtime dtype configuration to a torch dtype."""
 
-    assert torch is not None
     return torch.float64 if config.runtime.torch_dtype == "float64" else torch.float32
 
 
@@ -262,7 +254,7 @@ def _generate_torch(
     seed: int,
     device: str,
 ) -> DatasetBundle:
-    """Generate one dataset in Torch while enforcing NumPy-path output contracts."""
+    """Generate one dataset in Torch while preserving Appendix E postprocess/filter contracts."""
 
     attempts = max(1, int(config.filter.max_attempts))
     last_reason = "unknown"
@@ -399,193 +391,6 @@ def _apply_filter_torch(
     return _apply_filter_numpy(config, x_np, y_np, seed=seed)
 
 
-def _generate_graph_dataset_numpy(
-    config: GeneratorConfig,
-    layout: dict[str, Any],
-    seed: int,
-) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """Generate raw X/y arrays via the NumPy graph pipeline."""
-
-    rng = np.random.default_rng(seed)
-    n_rows = config.dataset.n_train + config.dataset.n_test
-    n_features = int(layout["n_features"])
-    task = config.dataset.task
-    n_classes = int(layout["n_classes"])
-    adjacency = np.asarray(layout["adjacency"], dtype=bool)
-    n_nodes = int(layout["graph_nodes"])
-
-    node_outputs: dict[int, np.ndarray] = {}
-    feature_values: list[np.ndarray | None] = [None] * n_features
-    target_values: np.ndarray | None = None
-
-    for node_idx in range(n_nodes):
-        parents = np.where(adjacency[:, node_idx])[0]
-        parent_data = [node_outputs[int(p)] for p in parents if int(p) in node_outputs]
-        specs = _build_node_specs(node_idx, layout, task, rng)
-        x_node, extracted = apply_node_pipeline(parent_data, n_rows, specs, rng)
-        node_outputs[node_idx] = x_node
-
-        for key, values in extracted.items():
-            if key.startswith("feature_"):
-                col = int(key.split("_", maxsplit=1)[1])
-                feature_values[col] = values
-            elif key == "target":
-                target_values = values
-
-    x = np.zeros((n_rows, n_features), dtype=np.float32)
-    feature_types = list(layout["feature_types"])
-    card_by_feature: dict[int, int] = layout["card_by_feature"]
-    for i in range(n_features):
-        v = feature_values[i]
-        if v is None:
-            if feature_types[i] == "cat":
-                card = int(card_by_feature[i])
-                v = rng.integers(0, card, size=n_rows, dtype=np.int64)
-            else:
-                v = rng.normal(size=n_rows).astype(np.float32)
-        x[:, i] = np.asarray(v, dtype=np.float32)
-
-    if target_values is None:
-        if task == "classification":
-            y = rng.integers(0, n_classes, size=n_rows, dtype=np.int64)
-        else:
-            y = rng.normal(size=n_rows).astype(np.float32)
-    else:
-        if task == "classification":
-            y = np.asarray(target_values, dtype=np.int64) % n_classes
-            if np.unique(y).size < 2:
-                y = rng.integers(0, n_classes, size=n_rows, dtype=np.int64)
-        else:
-            y = np.asarray(target_values, dtype=np.float32)
-
-    accepted, filter_details = _apply_filter_numpy(config, x, y, seed=seed)
-    return x, y, {"filter": filter_details, "accepted": accepted}
-
-
-def _generate_numpy(
-    config: GeneratorConfig,
-    layout: dict[str, Any],
-    seed: int,
-) -> DatasetBundle:
-    """Generate one dataset in NumPy and enforce split validity constraints."""
-
-    attempts = max(1, int(config.filter.max_attempts))
-    last_reason = "unknown"
-
-    for attempt in range(attempts):
-        try:
-            x, y, aux_meta = _generate_graph_dataset_numpy(config, layout, seed + attempt)
-        except Exception as exc:
-            last_reason = f"generation_exception:{exc.__class__.__name__}"
-            continue
-        if not bool(aux_meta.get("accepted", True)):
-            last_reason = "filtered_out"
-            continue
-
-        rng = np.random.default_rng(seed + 10_007 + attempt)
-        order = rng.permutation(x.shape[0])
-        x = x[order]
-        y = y[order]
-
-        n_train = config.dataset.n_train
-        x_train, x_test = x[:n_train], x[n_train:]
-        y_train, y_test = y[:n_train], y[n_train:]
-
-        x_train, y_train, x_test, y_test, feature_types = postprocess_dataset(
-            x_train,
-            y_train,
-            x_test,
-            y_test,
-            list(layout["feature_types"]),
-            config.dataset.task,
-            rng,
-        )
-
-        if config.dataset.task == "classification" and not _classification_split_valid(
-            y_train, y_test
-        ):
-            last_reason = "invalid_class_split"
-            continue
-
-        metadata = {
-            "backend": "numpy",
-            "device": "cpu",
-            "compute_backend": "numpy_appendix_light",
-            "n_features": int(x_train.shape[1]),
-            "n_categorical_features": int(sum(1 for t in feature_types if t == "cat")),
-            "n_classes": (
-                int(layout["n_classes"]) if config.dataset.task == "classification" else None
-            ),
-            "graph_nodes": int(layout["graph_nodes"]),
-            "graph_edges": int(layout["graph_edges"]),
-            "seed": seed,
-            "attempt_used": attempt,
-            "filter": aux_meta.get("filter", {}),
-            "config": asdict(config),
-        }
-        return DatasetBundle(
-            X_train=x_train.astype(np.float32),
-            y_train=y_train,
-            X_test=x_test.astype(np.float32),
-            y_test=y_test,
-            feature_types=feature_types,
-            metadata=metadata,
-        )
-
-    raise ValueError(
-        f"Failed to generate a valid dataset after {attempts} attempts. Last reason: {last_reason}."
-    )
-
-
-def _bundle_to_torch(
-    bundle: DatasetBundle,
-    config: GeneratorConfig,
-    device: str,
-) -> DatasetBundle:
-    """Convert NumPy bundle arrays to torch tensors on the requested device."""
-
-    assert torch is not None
-    dtype = _torch_dtype(config)
-    x_train = torch.as_tensor(np.asarray(bundle.X_train), device=device, dtype=dtype)
-    x_test = torch.as_tensor(np.asarray(bundle.X_test), device=device, dtype=dtype)
-    if config.dataset.task == "classification":
-        y_train = torch.as_tensor(np.asarray(bundle.y_train), device=device, dtype=torch.int64)
-        y_test = torch.as_tensor(np.asarray(bundle.y_test), device=device, dtype=torch.int64)
-    else:
-        y_train = torch.as_tensor(np.asarray(bundle.y_train), device=device, dtype=dtype)
-        y_test = torch.as_tensor(np.asarray(bundle.y_test), device=device, dtype=dtype)
-
-    metadata = dict(bundle.metadata)
-    metadata["backend"] = "torch"
-    metadata["device"] = device
-    return DatasetBundle(
-        X_train=x_train,
-        y_train=y_train,
-        X_test=x_test,
-        y_test=y_test,
-        feature_types=list(bundle.feature_types),
-        metadata=metadata,
-    )
-
-
-def _bundle_to_numpy(bundle: DatasetBundle) -> DatasetBundle:
-    """Convert a torch bundle to NumPy arrays for compatibility workflows."""
-
-    if torch is None:
-        return bundle
-    if not isinstance(bundle.X_train, torch.Tensor):
-        return bundle
-
-    return DatasetBundle(
-        X_train=bundle.X_train.detach().cpu().numpy(),
-        y_train=bundle.y_train.detach().cpu().numpy(),
-        X_test=bundle.X_test.detach().cpu().numpy(),
-        y_test=bundle.y_test.detach().cpu().numpy(),
-        feature_types=list(bundle.feature_types),
-        metadata=dict(bundle.metadata),
-    )
-
-
 def generate_one(
     config: GeneratorConfig,
     *,
@@ -598,22 +403,15 @@ def generate_one(
     layout_rng = manager.numpy_rng("layout")
     layout = _sample_layout(config, layout_rng)
     data_seed = manager.child("data")
-
-    backend, resolved_device = _resolve_backend(config, device)
-
-    if backend == "torch":
-        requested = (device or config.runtime.device or "auto").lower()
+    requested_device = (device or config.runtime.device or "auto").lower()
+    resolved_device = _resolve_device(config, device)
+    if requested_device == "auto" and resolved_device == "mps":
         try:
-            bundle = _generate_torch(config, layout, data_seed, resolved_device)
+            return _generate_torch(config, layout, data_seed, resolved_device)
         except Exception:
-            # Preserve Torch-first semantics while retaining a practical fallback
-            # for heterogeneous local environments (e.g. partially supported MPS).
-            if requested == "auto":
-                return _generate_numpy(config, layout, data_seed)
-            raise
-        return bundle if config.runtime.torch_output else _bundle_to_numpy(bundle)
-
-    return _generate_numpy(config, layout, data_seed)
+            # Keep auto mode robust on partially supported MPS runtimes by retrying on CPU.
+            return _generate_torch(config, layout, data_seed, "cpu")
+    return _generate_torch(config, layout, data_seed, resolved_device)
 
 
 def generate_batch(
@@ -643,6 +441,9 @@ def generate_batch_iter(
     device: str | None = None,
 ) -> Iterator[DatasetBundle]:
     """Yield datasets lazily using deterministic per-dataset child seeds."""
+
+    if num_datasets < 0:
+        raise ValueError(f"num_datasets must be >= 0, got {num_datasets}")
 
     run_seed = seed if seed is not None else config.seed
     manager = SeedManager(run_seed)

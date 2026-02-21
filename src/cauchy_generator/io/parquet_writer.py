@@ -5,19 +5,12 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import numpy as np
+import torch
 
 from cauchy_generator.types import DatasetBundle
-
-if TYPE_CHECKING:
-    import torch
-else:
-    try:
-        import torch
-    except Exception:  # pragma: no cover - optional dependency
-        torch = None
 
 try:
     import pyarrow as pa
@@ -30,7 +23,7 @@ except Exception:  # pragma: no cover - optional dependency
 def _to_numpy(value: Any) -> np.ndarray:
     """Convert torch tensors or array-like inputs to NumPy arrays."""
 
-    if torch is not None and isinstance(value, torch.Tensor):
+    if isinstance(value, torch.Tensor):
         return value.detach().cpu().numpy()
     return np.asarray(value)
 
@@ -64,6 +57,21 @@ def _write_split(path: Path, x: np.ndarray, y: np.ndarray, compression: str) -> 
     data["y"] = y
     table = pa.table(data)
     pq.write_table(table, path, compression=compression)
+
+
+def _ensure_output_dir_safe(out_dir: Path) -> None:
+    """Fail fast when output directory already contains prior shard outputs."""
+
+    if not out_dir.exists():
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return
+    stale = next(out_dir.glob("shard_*"), None)
+    if stale is not None:
+        raise RuntimeError(
+            f"Output directory already contains shard data: {out_dir}. "
+            "Choose a new --out directory or remove existing shard_* folders first."
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _write_bundle_dataset(
@@ -112,7 +120,7 @@ def write_parquet_shards_stream(
     """Write bundles from an iterable stream, returning number of datasets written."""
 
     out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    _ensure_output_dir_safe(out)
 
     written = 0
     for idx, bundle in enumerate(bundles):
@@ -137,7 +145,7 @@ def write_parquet_shards(
     """Write dataset bundles as partitioned Parquet shards with metadata."""
 
     out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    _ensure_output_dir_safe(out)
     shard_paths: list[Path] = []
 
     for idx, bundle in enumerate(bundles):

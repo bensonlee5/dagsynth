@@ -19,7 +19,7 @@ Store tests in `tests/` with the same package layout as `src/`. Keep benchmark p
 - `uv run cauchy-gen benchmark --config configs/benchmark_medium_cuda.yaml --device cuda`: run throughput benchmark.
 
 ## Coding Style & Naming Conventions
-Use Python 3.11+, 4-space indentation, and explicit type hints for all public interfaces.  
+Use Python 3.13+, 4-space indentation, and explicit type hints for all public interfaces.  
 Naming: `snake_case` for modules/functions/variables, `PascalCase` for classes, `UPPER_SNAKE_CASE` for constants.  
 Prefer small, pure functions in sampling/math code; isolate side effects (I/O, logging, timing) in boundary modules.
 
@@ -40,4 +40,4 @@ PRs must include:
 - benchmark deltas for performance-sensitive code
 
 ## Architecture & Performance Notes
-Primary runtime is PyTorch with NumPy fallback paths and benchmarking support. Keep hot paths vectorized and batch-oriented. Preserve Appendix E (`E.2`-`E.14`) behavior as the source of truth; use other papers in `reference/` only to clarify ambiguous details.
+Primary runtime is PyTorch (CPU/CUDA/MPS) with NumPy used only where sklearn-backed postprocessing/filtering requires arrays. Keep hot paths vectorized and batch-oriented. Preserve Appendix E (`E.2`-`E.14`) behavior as the source of truth; use other papers in `reference/` only to clarify ambiguous details.

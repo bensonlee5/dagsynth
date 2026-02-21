@@ -18,10 +18,8 @@ graph:
 
 runtime:
   device: cuda
-  prefer_torch: true
   torch_dtype: float32
   generation_engine: appendix_light
-  torch_output: true
   hardware_aware: true
 
 output:

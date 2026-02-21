@@ -1,16 +1,7 @@
 """Random positive weights sampling (Appendix E.11)."""
 
-from typing import TYPE_CHECKING
-
 import numpy as np
-
-if TYPE_CHECKING:
-    import torch
-else:
-    try:
-        import torch
-    except ImportError:
-        torch = None
+import torch
 
 
 def _log_uniform(rng: np.random.Generator, low: float, high: float) -> float:

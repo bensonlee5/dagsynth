@@ -4,11 +4,13 @@ import numpy as np
 
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_batch, generate_batch_iter, generate_one
+from cauchy_generator.types import DatasetBundle
 
 
 def test_generate_one_shapes() -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     bundle = generate_one(cfg, seed=7, device="cpu")
+    assert isinstance(bundle.X_train, torch.Tensor)
     assert bundle.X_train.shape[0] == cfg.dataset.n_train
     assert bundle.X_test.shape[0] == cfg.dataset.n_test
     assert bundle.X_train.shape[1] == bundle.X_test.shape[1]
@@ -39,23 +41,14 @@ def test_generate_batch_iter_matches_batch_ordering() -> None:
         assert a.metadata["seed"] == b.metadata["seed"]
 
 
-def test_torch_default_matches_numpy_contract_on_cpu() -> None:
-    cfg_np = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg_np.runtime.prefer_torch = False
-    bundle_np = generate_one(cfg_np, seed=1234, device="cpu")
-
-    cfg_t = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg_t.runtime.prefer_torch = True
-    cfg_t.runtime.torch_output = True
-    bundle_t = generate_one(cfg_t, seed=1234, device="cpu")
-    assert isinstance(bundle_t.X_train, torch.Tensor)
-
-    # Check structural consistency instead of bitwise matching.
-    # Appendix E math divergence between backends is expected due to different RNG/kernels.
-    assert bundle_t.X_train.shape == bundle_np.X_train.shape
-    assert bundle_t.X_test.shape == bundle_np.X_test.shape
-    assert bundle_t.metadata["backend"] == "torch"
-    assert bundle_np.metadata["backend"] == "numpy"
+def test_generate_one_returns_torch_tensors_on_cpu() -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    bundle = generate_one(cfg, seed=1234, device="cpu")
+    assert isinstance(bundle.X_train, torch.Tensor)
+    assert isinstance(bundle.y_train, torch.Tensor)
+    assert isinstance(bundle.X_test, torch.Tensor)
+    assert isinstance(bundle.y_test, torch.Tensor)
+    assert bundle.metadata["backend"] == "torch"
 
 
 def test_torch_path_applies_filter_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,8 +60,6 @@ def test_torch_path_applies_filter_when_enabled(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr("cauchy_generator.core.dataset.apply_extratrees_filter", _stub_filter)
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.prefer_torch = True
-    cfg.runtime.torch_output = True
     cfg.filter.enabled = True
 
     bundle = generate_one(cfg, seed=77, device="cpu")
@@ -79,7 +70,32 @@ def test_torch_path_applies_filter_when_enabled(monkeypatch: pytest.MonkeyPatch)
     assert "reason" not in bundle.metadata["filter"]
 
 
-def test_auto_falls_back_to_numpy_if_torch_runtime_fails(
+def test_auto_retries_on_cpu_when_mps_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def _stub_generate_torch(_config, _layout, _seed, device):
+        calls.append(device)
+        if device == "mps":
+            raise RuntimeError("simulated mps failure")
+        return DatasetBundle(
+            X_train=torch.zeros((2, 2), dtype=torch.float32),
+            y_train=torch.zeros(2, dtype=torch.int64),
+            X_test=torch.zeros((1, 2), dtype=torch.float32),
+            y_test=torch.zeros(1, dtype=torch.int64),
+            feature_types=["num", "num"],
+            metadata={"backend": "torch", "device": "cpu"},
+        )
+
+    monkeypatch.setattr("cauchy_generator.core.dataset._resolve_device", lambda *_args: "mps")
+    monkeypatch.setattr("cauchy_generator.core.dataset._generate_torch", _stub_generate_torch)
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+
+    bundle = generate_one(cfg, seed=123, device="auto")
+    assert calls == ["mps", "cpu"]
+    assert bundle.metadata["backend"] == "torch"
+
+
+def test_auto_does_not_fallback_to_numpy_if_torch_runtime_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _raise_runtime(*_args, **_kwargs):
@@ -87,10 +103,9 @@ def test_auto_falls_back_to_numpy_if_torch_runtime_fails(
 
     monkeypatch.setattr("cauchy_generator.core.dataset._generate_torch", _raise_runtime)
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.prefer_torch = True
 
-    bundle = generate_one(cfg, seed=123, device="auto")
-    assert bundle.metadata["backend"] == "numpy"
+    with pytest.raises(RuntimeError, match="simulated torch runtime failure"):
+        generate_one(cfg, seed=123, device="auto")
 
 
 def test_explicit_cuda_request_raises_when_unavailable(
@@ -103,6 +118,18 @@ def test_explicit_cuda_request_raises_when_unavailable(
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     with pytest.raises(RuntimeError, match="Requested device 'cuda'"):
         generate_one(cfg, seed=123, device="cuda")
+
+
+def test_invalid_device_raises() -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    with pytest.raises(ValueError, match="Unsupported device"):
+        generate_one(cfg, seed=123, device="cud")
+
+
+def test_negative_num_datasets_raises() -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    with pytest.raises(ValueError, match="num_datasets must be >= 0"):
+        list(generate_batch_iter(cfg, num_datasets=-1, seed=123, device="cpu"))
 
 
 def test_invalid_class_split_raises_after_attempts() -> None:

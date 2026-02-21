@@ -7,3 +7,9 @@ repos:
         language: system
         types_or: [python, pyi]
         pass_filenames: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: true

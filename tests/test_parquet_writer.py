@@ -1,6 +1,7 @@
 import json
 
 import numpy as np
+import pytest
 
 from cauchy_generator.io.parquet_writer import write_parquet_shards, write_parquet_shards_stream
 from cauchy_generator.io.parquet_writer import _sanitize_json
@@ -62,7 +63,7 @@ def test_write_parquet_shards_stream_writes_iterable(tmp_path, monkeypatch) -> N
     assert metadata["peak_flops"] is None
 
 
-def test_write_parquet_shards_backcompat_returns_paths(tmp_path, monkeypatch) -> None:
+def test_write_parquet_shards_returns_paths(tmp_path, monkeypatch) -> None:
     def _stub_write_split(path, _x, _y, _compression):
         path.write_text("ok", encoding="utf-8")
 
@@ -71,3 +72,10 @@ def test_write_parquet_shards_backcompat_returns_paths(tmp_path, monkeypatch) ->
     assert len(paths) == 2
     assert paths[0].name == "dataset_000000"
     assert paths[1].name == "dataset_000001"
+
+
+def test_write_parquet_shards_stream_rejects_stale_output(tmp_path) -> None:
+    stale_dir = tmp_path / "shard_00000"
+    stale_dir.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(RuntimeError, match="already contains shard data"):
+        write_parquet_shards_stream([_bundle(1)], tmp_path, shard_size=1)

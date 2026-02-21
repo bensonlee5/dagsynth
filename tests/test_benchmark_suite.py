@@ -11,7 +11,6 @@ def _tiny_cpu_config() -> GeneratorConfig:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     cfg.dataset.task = "regression"
     cfg.runtime.device = "cpu"
-    cfg.runtime.prefer_torch = False
     cfg.dataset.n_train = 32
     cfg.dataset.n_test = 8
     cfg.dataset.n_features_min = 8

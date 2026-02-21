@@ -32,10 +32,8 @@ class GraphConfig:
 @dataclass(slots=True)
 class RuntimeConfig:
     device: str = "auto"
-    prefer_torch: bool = True
     torch_dtype: str = "float32"
     generation_engine: str = "appendix_light"
-    torch_output: bool = True
     hardware_aware: bool = True
     gpu_name_hint: str | None = None
     gpu_memory_gb_hint: float | None = None

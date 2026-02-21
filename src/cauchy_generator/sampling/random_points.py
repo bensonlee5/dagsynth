@@ -1,16 +1,7 @@
 """Random points mechanism (Appendix E.12)."""
 
-from typing import TYPE_CHECKING
-
 import numpy as np
-
-if TYPE_CHECKING:
-    import torch
-else:
-    try:
-        import torch
-    except ImportError:
-        torch = None
+import torch
 
 from cauchy_generator.functions.random_functions import (
     apply_random_function,

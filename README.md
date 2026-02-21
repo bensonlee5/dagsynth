@@ -9,7 +9,7 @@ uv sync --group dev
 uv run pre-commit install
 uv run cauchy-gen generate --config configs/default.yaml --out data/run1 --num-datasets 10
 uv run cauchy-gen benchmark --suite smoke --profile cpu
-uv run cauchy-gen benchmark --suite standard --profile all --out-dir benchmarks/results/latest
+uv run cauchy-gen benchmark --suite standard --profile cpu --out-dir benchmarks/results/latest
 ```
 
 ## Accessible Scripts
@@ -42,6 +42,8 @@ uv run cauchy-gen benchmark --suite standard --profile all
 uv run cauchy-gen benchmark --config configs/benchmark_cuda_desktop.yaml --profile custom --baseline benchmarks/baselines/desktop.json --fail-on-regression
 ```
 
+`--profile all` includes CUDA profiles and will hard-fail on machines without CUDA.
+
 Each run writes `summary.json` and `summary.md` under `benchmarks/results/<timestamp>/` by default.
 
 CI automation is configured in `.github/workflows/benchmark.yml`:
@@ -63,7 +65,7 @@ Unknown GPUs fall back safely (`peak_flops=inf`) so utilization metrics do not r
 
 This repository currently provides:
 - package/CLI/config scaffolding
-- Torch-first seeded batch generation with NumPy fallback paths
+- Torch-required seeded batch generation (CPU/CUDA/MPS)
 - Parquet writing interface
 - benchmark harness and test scaffolding
 

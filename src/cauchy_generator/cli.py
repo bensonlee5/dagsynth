@@ -19,6 +19,26 @@ from cauchy_generator.hardware import (
 )
 from cauchy_generator.io.parquet_writer import write_parquet_shards_stream
 
+DEVICE_CHOICES = ("auto", "cpu", "cuda", "mps")
+
+
+def _positive_int(value: str) -> int:
+    """argparse type: parse an integer > 0."""
+
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"Expected a positive integer, got {value}.")
+    return parsed
+
+
+def _non_negative_int(value: str) -> int:
+    """argparse type: parse an integer >= 0."""
+
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"Expected a non-negative integer, got {value}.")
+    return parsed
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """Create the CLI parser and register all subcommands/options."""
@@ -29,9 +49,19 @@ def _build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("generate", help="Generate synthetic datasets.")
     g.add_argument("--config", required=True, help="Path to YAML config.")
     g.add_argument("--out", default=None, help="Output directory for parquet shards.")
-    g.add_argument("--num-datasets", type=int, default=10, help="Number of datasets to generate.")
+    g.add_argument(
+        "--num-datasets",
+        type=_positive_int,
+        default=10,
+        help="Number of datasets to generate.",
+    )
     g.add_argument("--seed", type=int, default=None, help="Optional override for run seed.")
-    g.add_argument("--device", default=None, help="Device override (auto/cpu/cuda/mps).")
+    g.add_argument(
+        "--device",
+        default=None,
+        choices=DEVICE_CHOICES,
+        help="Device override (auto/cpu/cuda/mps).",
+    )
     g.add_argument(
         "--no-hardware-aware",
         action="store_true",
@@ -42,19 +72,26 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Generate in memory only and do not write parquet files.",
     )
-    g.add_argument(
-        "--prefer-torch",
-        action="store_true",
-        help="Favor PyTorch/CUDA backend even on CPU.",
-    )
-
     b = sub.add_parser("benchmark", help="Run benchmark suite across one or more profiles.")
     b.add_argument("--config", default=None, help="Optional YAML config for profile 'custom'.")
-    b.add_argument("--device", default=None, help="Device override for custom profile.")
     b.add_argument(
-        "--num-datasets", type=int, default=None, help="Override benchmark dataset count."
+        "--device",
+        default=None,
+        choices=DEVICE_CHOICES,
+        help="Device override for custom profile.",
     )
-    b.add_argument("--warmup", type=int, default=None, help="Override benchmark warmup count.")
+    b.add_argument(
+        "--num-datasets",
+        type=_positive_int,
+        default=None,
+        help="Override benchmark dataset count.",
+    )
+    b.add_argument(
+        "--warmup",
+        type=_non_negative_int,
+        default=None,
+        help="Override benchmark warmup count.",
+    )
     b.add_argument(
         "--no-hardware-aware",
         action="store_true",
@@ -112,7 +149,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     h = sub.add_parser("hardware", help="Inspect detected hardware and profile mapping.")
-    h.add_argument("--device", default=None, help="Requested device (auto/cpu/cuda/mps).")
+    h.add_argument(
+        "--device",
+        default=None,
+        choices=DEVICE_CHOICES,
+        help="Requested device (auto/cpu/cuda/mps).",
+    )
     return parser
 
 
@@ -135,8 +177,6 @@ def _run_generate(args: argparse.Namespace) -> int:
     """Execute the ``generate`` command."""
 
     config = GeneratorConfig.from_yaml(args.config)
-    if args.prefer_torch:
-        config.runtime.prefer_torch = True
     config, hw = _resolve_config_with_hardware(
         config,
         device=args.device,

@@ -15,10 +15,8 @@ graph:
   n_nodes_max: 32
 runtime:
   device: auto
-  prefer_torch: true
   torch_dtype: float32
   generation_engine: appendix_light
-  torch_output: true
   hardware_aware: true
 output:
   out_dir: data/run_default

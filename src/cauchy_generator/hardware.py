@@ -4,21 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
+import torch
 
 from cauchy_generator.config import GeneratorConfig
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import torch
-else:
-    try:
-        import torch
-    except ImportError:
-        torch = None
 
 
 @dataclass(slots=True)
@@ -70,7 +62,7 @@ def get_peak_flops(device_name: str) -> float:
         if all(p in name for p in patterns):
             return flops
 
-    if "data center gpu max 1550" in name and torch is not None and hasattr(torch, "xpu"):
+    if "data center gpu max 1550" in name and hasattr(torch, "xpu"):
         try:
             max_comp_units = torch.xpu.get_device_properties("xpu").max_compute_units
             return float(512 * max_comp_units * 1300 * 10**6)
@@ -100,16 +92,6 @@ def detect_hardware(requested_device: str | None = None) -> HardwareInfo:
     """Detect active accelerator backend/device metadata."""
 
     requested = (requested_device or "auto").lower()
-    if torch is None:
-        return HardwareInfo(
-            backend="numpy",
-            requested_device=requested,
-            device_name="cpu",
-            total_memory_gb=None,
-            peak_flops=float("inf"),
-            profile="cpu",
-        )
-
     if requested in ("cuda", "auto") and torch.cuda.is_available():
         idx = torch.cuda.current_device()
         props = torch.cuda.get_device_properties(idx)
@@ -139,9 +121,9 @@ def detect_hardware(requested_device: str | None = None) -> HardwareInfo:
             profile="cpu",
         )
 
-    if requested in ("cpu", "auto") and torch is not None:
+    if requested in ("cpu", "auto"):
         return HardwareInfo(
-            backend="torch",
+            backend="cpu",
             requested_device=requested,
             device_name="cpu",
             total_memory_gb=None,
@@ -166,9 +148,7 @@ def apply_hardware_profile(config: GeneratorConfig, hw: HardwareInfo) -> Generat
     config.runtime.gpu_memory_gb_hint = hw.total_memory_gb
     config.runtime.peak_flops_hint = hw.peak_flops
 
-    requested = (hw.requested_device or config.runtime.device or "auto").lower()
-    torch_intended = config.runtime.prefer_torch or requested in ("cuda", "mps")
-    if not config.runtime.hardware_aware or hw.backend != "cuda" or not torch_intended:
+    if not config.runtime.hardware_aware or hw.backend != "cuda":
         return config
 
     if hw.profile == "cuda_h100":
