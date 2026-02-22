@@ -23,6 +23,7 @@ dev = [
   "mypy>=1.11",
   "pre-commit>=3.8",
   "pytest>=8.0",
+  "pytest-cov>=6.0",
   "ruff>=0.6",
   "types-PyYAML",
 ]
@@ -40,6 +41,18 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+
+[tool.coverage.run]
+source = ["cauchy_generator"]
+omit = [
+  "src/cauchy_generator/cli.py",
+  "src/cauchy_generator/__main__.py",
+  "src/cauchy_generator/bench/*",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
 
 [tool.mypy]
 python_version = "3.13"
