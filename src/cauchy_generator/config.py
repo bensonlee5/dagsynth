@@ -85,6 +85,7 @@ class FilterConfig:
 @dataclass(slots=True)
 class GeneratorConfig:
     seed: int = 1
+    curriculum_stage: str | int = "auto"
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     graph: GraphConfig = field(default_factory=GraphConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
@@ -109,8 +110,10 @@ class GeneratorConfig:
         benchmark = BenchmarkConfig(**(data.get("benchmark") or {}))
         filter_cfg = FilterConfig(**(data.get("filter") or {}))
         seed = int(data.get("seed", 1))
+        curriculum_stage: str | int = data.get("curriculum_stage", "auto")
         return cls(
             seed=seed,
+            curriculum_stage=curriculum_stage,
             dataset=dataset,
             graph=graph,
             runtime=runtime,
