@@ -55,14 +55,14 @@ uv sync --group dev
 
 ```bash
 # Generate 10 datasets using the default high-quality prior
-uv run cauchy-gen generate --config configs/default.yaml --num-datasets 10
+uv run cauchy-gen generate --config configs/default.yaml --num-datasets 10 --out data/run1
 ```
 
 ### Benchmarking Performance
 
 ```bash
 # Run the standard benchmark suite across all detected hardware profiles
-uv run cauchy-gen benchmark --suite standard --profile all
+uv run cauchy-gen benchmark --suite standard --profile cpu
 ```
 
 ______________________________________________________________________
@@ -71,7 +71,7 @@ ______________________________________________________________________
 
 The development of `cauchy-generator` is strictly driven by recent literature in Tabular Deep Learning.
 
-- **Meta-Feature Diagnostics:** We are currently implementing a diagnostics module to ensure synthetic corpus coverage across regimes like linearity, correlation, and class imbalance.
+- **Meta-Feature Diagnostics:** A diagnostics module computes 15 structural metrics per dataset and aggregates coverage across generation runs. Next: soft steering to bias generation toward under-represented regimes.
 - **Missingness Generation:** Adding MAR/MCAR/MNAR mechanisms to simulate real-world data corruption.
 - **Shift-Aware SCMs:** Expanding the graph pipeline to support distribution shift and temporal drift.
 
