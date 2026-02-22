@@ -16,6 +16,12 @@ from cauchy_generator.config import (
     GeneratorConfig,
 )
 from cauchy_generator.core.dataset import generate_batch_iter
+from cauchy_generator.diagnostics import (
+    CoverageAggregationConfig,
+    CoverageAggregator,
+    write_coverage_summary_json,
+    write_coverage_summary_markdown,
+)
 from cauchy_generator.hardware import (
     HardwareInfo,
     apply_hardware_profile,
@@ -42,6 +48,26 @@ def _non_negative_int(value: str) -> int:
     if parsed < 0:
         raise argparse.ArgumentTypeError(f"Expected a non-negative integer, got {value}.")
     return parsed
+
+
+def _coerce_target_bands(
+    raw: dict[str, list[float] | tuple[float, float]],
+) -> dict[str, tuple[float, float]]:
+    """Normalize diagnostics target bands from config payload into tuple ranges."""
+
+    normalized: dict[str, tuple[float, float]] = {}
+    for metric_name, band in raw.items():
+        if not isinstance(metric_name, str):
+            continue
+        if not isinstance(band, (list, tuple)) or len(band) != 2:
+            continue
+        lo = float(band[0])
+        hi = float(band[1])
+        if lo <= hi:
+            normalized[metric_name] = (lo, hi)
+        else:
+            normalized[metric_name] = (hi, lo)
+    return normalized
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -75,6 +101,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-write",
         action="store_true",
         help="Generate in memory only and do not write parquet files.",
+    )
+    g.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Enable diagnostics coverage aggregation artifacts for this run.",
+    )
+    g.add_argument(
+        "--coverage-out-dir",
+        default=None,
+        help="Optional directory for coverage artifacts (defaults to output directory).",
     )
     g.add_argument(
         "--curriculum",
@@ -200,35 +236,65 @@ def _run_generate(args: argparse.Namespace) -> int:
         )
     seed = args.seed if args.seed is not None else config.seed
     out_dir = args.out or config.output.out_dir
+    coverage_enabled = bool(config.diagnostics.enabled or args.coverage)
+    coverage_out_dir = Path(args.coverage_out_dir or config.diagnostics.out_dir or out_dir)
+    coverage_aggregator: CoverageAggregator | None = None
+    if coverage_enabled:
+        coverage_aggregator = CoverageAggregator(
+            CoverageAggregationConfig(
+                include_spearman=bool(config.diagnostics.include_spearman),
+                histogram_bins=int(config.diagnostics.histogram_bins),
+                quantiles=tuple(float(q) for q in config.diagnostics.quantiles),
+                underrepresented_threshold=float(config.diagnostics.underrepresented_threshold),
+                target_bands=_coerce_target_bands(config.diagnostics.meta_feature_targets),
+            )
+        )
     print(
         f"Hardware backend={hw.backend} device='{hw.device_name}' "
         f"memory_gb={hw.total_memory_gb} peak_flops={hw.peak_flops:.3e} profile={hw.profile}"
     )
 
+    stream = generate_batch_iter(
+        config,
+        num_datasets=args.num_datasets,
+        seed=seed,
+        device=args.device,
+    )
+    if coverage_aggregator is not None:
+        base_stream = stream
+
+        def _stream_with_coverage():
+            for bundle in base_stream:
+                coverage_aggregator.update_bundle(bundle)
+                yield bundle
+
+        stream = _stream_with_coverage()
+
     if args.no_write:
-        generated = sum(
-            1
-            for _ in generate_batch_iter(
-                config,
-                num_datasets=args.num_datasets,
-                seed=seed,
-                device=args.device,
+        generated = sum(1 for _ in stream)
+        if coverage_aggregator is not None:
+            summary = coverage_aggregator.build_summary()
+            json_path = write_coverage_summary_json(
+                summary, coverage_out_dir / "coverage_summary.json"
             )
-        )
+            md_path = write_coverage_summary_markdown(
+                summary, coverage_out_dir / "coverage_summary.md"
+            )
+            print(f"Wrote coverage artifacts: {json_path} and {md_path}")
         print(f"Generated {generated} datasets (no-write mode).")
         return 0
 
     written = write_parquet_shards_stream(
-        generate_batch_iter(
-            config,
-            num_datasets=args.num_datasets,
-            seed=seed,
-            device=args.device,
-        ),
+        stream,
         out_dir=out_dir,
         shard_size=config.output.shard_size,
         compression=config.output.compression,
     )
+    if coverage_aggregator is not None:
+        summary = coverage_aggregator.build_summary()
+        json_path = write_coverage_summary_json(summary, coverage_out_dir / "coverage_summary.json")
+        md_path = write_coverage_summary_markdown(summary, coverage_out_dir / "coverage_summary.md")
+        print(f"Wrote coverage artifacts: {json_path} and {md_path}")
     print(f"Wrote {written} datasets to: {Path(out_dir)}")
     return 0
 
