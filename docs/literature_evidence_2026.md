@@ -1,261 +1,89 @@
 # Literature Evidence Appendix (2026Q1)
 
-This appendix links backlog items to primary sources and current repo gaps.
+This appendix links roadmap items in `docs/roadmap.md` to primary sources and current repo gaps.
+
+Related docs:
+
+- Canonical roadmap: `docs/roadmap.md`
+- Prioritized queue: `docs/improvement_ideas.md`
+- Decision rubric: `docs/backlog_decision_rules.md`
+- Implementation baseline: `docs/implementation.md`
 
 Conventions:
 
 - Confidence: `high`, `medium`, or `low`.
-- Mapping: how the evidence translates to `cauchy-generator` changes.
+- Lane:
+  roadmap milestone lane supported by this evidence (`Now`, `Next`, `Later`).
 
-## 1) TabPFN v2 (Nature, 2024)
+## Evidence-to-Roadmap Mapping
 
-Source:
+| Source                                                                                        | Key Claim Used                                                                                      | Roadmap IDs            | Lane             | Confidence  |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------- | ---------------- | ----------- |
+| TabPFN v2 (Nature, 2024) https://doi.org/10.1038/s41586-024-08328-6                           | Prior design realism (including missingness/noise diversity) materially affects tabular performance | RD-003, RD-005, RD-007 | Now, Next        | high        |
+| A Closer Look at TabPFN v2 (2502.17361) https://arxiv.org/abs/2502.17361                      | Coverage of weak meta-feature regimes improves reliability                                          | RD-008, RD-003         | Now              | high        |
+| TabPFN Unleashed (2502.02527) https://arxiv.org/abs/2502.02527                                | Many-class settings need dedicated handling and scaling                                             | RD-007                 | Now              | medium-high |
+| TabICL (2502.05564) https://arxiv.org/abs/2502.05564                                          | Curriculum and staged complexity improve optimization behavior                                      | RD-006                 | Now              | high        |
+| TabICLv2 (2602.11139) https://arxiv.org/abs/2602.11139                                        | Synthetic prior quality and scale remain central to tabular FM performance                          | RD-006, RD-007, RD-008 | Now              | high        |
+| Drift-Resilient TabPFN (2411.10634) https://arxiv.org/abs/2411.10634                          | Shift-aware constructions help drift robustness                                                     | RD-004                 | Next             | medium-high |
+| Foundation Models for Causal Inference via PFNs (2506.10914) https://arxiv.org/abs/2506.10914 | Broader SCM/noise families and interventions support causal fidelity                                | RD-002, RD-004, RD-007 | Later, Next, Now | medium-high |
+| TabPFGen (2406.05216) https://arxiv.org/abs/2406.05216                                        | Hard-regime synthetic generation can improve robustness behavior                                    | RD-005                 | Next             | medium      |
+| Scaling TabPFN (2311.10609) https://arxiv.org/abs/2311.10609                                  | Scaling regimes require broader size/diversity coverage and throughput-conscious design             | RD-009, RD-006         | Next, Now        | medium-high |
+| TabDPT (2410.18164) https://arxiv.org/abs/2410.18164                                          | Broader synthetic diversity and scale can improve pretraining realism                               | RD-006, RD-007         | Now              | medium      |
+| Robust tabular FM direction (2512.03307) https://arxiv.org/abs/2512.03307                     | Robustness-oriented training benefits from systematic stress regimes                                | RD-005                 | Next             | medium      |
 
-- https://doi.org/10.1038/s41586-024-08328-6
+## Per-Item Evidence Notes
 
-Claim relevant here:
+### RD-001: Ground-Truth DAG Artifact Export
 
-- Prior design details strongly affect tabular generalization; realism features such as missingness/noise diversity matter for robustness.
+- Evidence type: architectural necessity for causal mission claims.
+- Literature support: indirect from causal PFN framing and causal discovery use case.
+- Confidence: medium.
 
-Mapping to current repo:
+### RD-002: Interventional and Counterfactual Generation Modes
 
-- Supports adding explicit missingness and broader noise controls in config and generation flow.
+- Strongest source: Causal PFN (`2506.10914`).
+- Risk note: higher implementation and validation complexity than observational tracks.
+- Confidence: medium-high.
 
-Confidence:
+### RD-003: Missingness Generation (MCAR/MAR/MNAR)
 
-- High.
+- Strongest sources: TabPFN v2 (Nature) and A Closer Look.
+- Confidence: high.
 
-Backlog links:
+### RD-004: Shift-Aware SCM Generation
 
-- Missingness generation.
-- Noise family diversification.
-- Mechanism family expansion.
+- Strongest source: Drift-Resilient TabPFN (`2411.10634`).
+- Confidence: medium-high.
 
-## 2) A Closer Look at TabPFN v2 (arXiv:2502.17361)
+### RD-005: Robustness Stress Profiles
 
-Source:
+- Strongest sources: TabPFGen and robust tabular FM direction.
+- Confidence: medium.
 
-- https://arxiv.org/abs/2502.17361
+### RD-006: Curriculum Complexity Scaling
 
-Claim relevant here:
+- Strongest sources: TabICL and TabICLv2.
+- Confidence: high.
 
-- Performance is sensitive to dataset meta-features; identifying and covering weak meta-feature regimes improves reliability.
+### RD-007: Many-Class and High-Cardinality Expansion
 
-Mapping to current repo:
+- Strongest source: TabPFN Unleashed.
+- Supporting signal: TabPFN v2 and TabICLv2.
+- Confidence: medium-high.
 
-- Justifies a diagnostics module and coverage-steering loop against configured meta-feature targets.
+### RD-008: Meta-Feature Coverage Steering
 
-Confidence:
+- Strongest source: A Closer Look at TabPFN v2.
+- Confidence: high.
 
-- High.
+### RD-009: Parallel and Distributed Generation/Writing
 
-Backlog links:
-
-- Meta-feature coverage diagnostics + steering.
-- Missingness and class-imbalance coverage planning.
-
-## 3) TabPFN Unleashed (arXiv:2502.02527)
-
-Source:
-
-- https://arxiv.org/abs/2502.02527
-
-Claim relevant here:
-
-- Multi-class scaling remains a challenge, with practical adaptations needed for larger class spaces.
-
-Mapping to current repo:
-
-- Current class range cap (`<=10`) is a likely coverage gap; class-aware converter/filter behavior should be reviewed.
-
-Confidence:
-
-- Medium-High.
-
-Backlog links:
-
-- Expanded many-class support.
-
-## 4) TabICL (arXiv:2502.05564)
-
-Source:
-
-- https://arxiv.org/abs/2502.05564
-
-Claim relevant here:
-
-- Curriculum/progressive complexity is useful for stable optimization and better final performance.
-
-Mapping to current repo:
-
-- Supports staged config presets and curriculum controls in generator config.
-
-Confidence:
-
-- High.
-
-Backlog links:
-
-- Curriculum scheduling over complexity.
-
-## 5) TabICLv2 (arXiv:2602.11139)
-
-Source:
-
-- https://arxiv.org/abs/2602.11139
-
-Claim relevant here:
-
-- Scaling and improved synthetic prior design remain central to high-performing tabular foundation models.
-
-Mapping to current repo:
-
-- Confirms that complexity schedules and broader size/meta-feature coverage are relevant next steps.
-
-Confidence:
-
-- High.
-
-Backlog links:
-
-- Curriculum scheduling.
-- Context/size regime expansion.
-
-## 6) Drift-Resilient TabPFN (arXiv:2411.10634)
-
-Source:
-
-- https://arxiv.org/abs/2411.10634
-
-Claim relevant here:
-
-- Shift-aware SCM constructions improve temporal/distribution-shift resilience.
-
-Mapping to current repo:
-
-- Motivates adding latent shift variables and shift-dependent edge/mechanism controls.
-
-Confidence:
-
-- Medium-High.
-
-Backlog links:
-
-- 2nd-order / shift-aware SCM generation.
-
-## 7) Foundation Models for Causal Inference via PFNs (arXiv:2506.10914)
-
-Source:
-
-- https://arxiv.org/abs/2506.10914
-
-Claim relevant here:
-
-- Broader SCM/noise/mechanism families improve causal-faithful synthetic distributions.
-
-Mapping to current repo:
-
-- Supports adding richer noise and mechanism families, with optional interventional data tracks later.
-
-Confidence:
-
-- Medium-High.
-
-Backlog links:
-
-- Noise family diversification.
-- Mechanism family expansion.
-
-## 8) TabPFGen (arXiv:2406.05216)
-
-Source:
-
-- https://arxiv.org/abs/2406.05216
-
-Claim relevant here:
-
-- PFN-based synthetic generation can be used to target hard regimes and improve conditional generation quality.
-
-Mapping to current repo:
-
-- Motivates a research track for stress-test/hard-task generation presets.
-
-Confidence:
-
-- Medium.
-
-Backlog links:
-
-- Robustness-oriented hard-task generation.
-
-## 9) Scaling TabPFN (arXiv:2311.10609)
-
-Source:
-
-- https://arxiv.org/abs/2311.10609
-
-Claim relevant here:
-
-- Scaling to larger tables requires careful context/feature handling; data priors should reflect those size regimes.
-
-Mapping to current repo:
-
-- Supports expanding generated sample-size distributions and validating throughput impact.
-
-Confidence:
-
-- Medium-High.
-
-Backlog links:
-
-- Larger context/size regime expansion.
-
-## 10) TabDPT (arXiv:2410.18164)
-
-Source:
-
-- https://arxiv.org/abs/2410.18164
-
-Claim relevant here:
-
-- Real-data and larger-scale pretraining dynamics suggest broader synthetic diversity and size regimes are beneficial.
-
-Mapping to current repo:
-
-- Reinforces size/coverage expansion and benchmarking guardrails.
-
-Confidence:
-
-- Medium.
-
-Backlog links:
-
-- Larger context/size regime expansion.
-
-## 11) Robust Tabular Foundation Model Direction (arXiv:2512.03307)
-
-Source:
-
-- https://arxiv.org/abs/2512.03307
-
-Claim relevant here:
-
-- Robustness-focused evaluation/training suggests value in systematically generating challenging regimes.
-
-Mapping to current repo:
-
-- Supports explicit stress-test dataset modes (adversarial corruption, hard interactions, low-SNR zones).
-
-Confidence:
-
-- Medium.
-
-Backlog links:
-
-- Robustness-oriented hard-task generation.
+- Evidence type: scaling/throughput requirement for pretraining data factories.
+- Strongest source: Scaling TabPFN.
+- Confidence: medium.
 
 ## Evidence Limits and Assumptions
 
-- This appendix is a planning artifact, not a full reproduction study.
-- Claims are mapped at design level; implementation decisions should be validated with repo benchmarks and tests.
-- Where papers target downstream training methods rather than generator internals, mappings are marked as medium confidence.
+- This is a planning artifact, not a reproduction benchmark.
+- Mappings are design-level and must be validated against repo benchmarks/tests.
+- Lane assignments reflect current repo context and can be revised after implementation learning.

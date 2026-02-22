@@ -69,6 +69,14 @@ Release:
 
 Release notes are auto-generated from commit messages by CI.
 
+Changelog:
+
+- When making changes, add entries under `## [Unreleased]` in `CHANGELOG.md` using
+  [Keep a Changelog](https://keepachangelog.com) categories (Added, Changed, Fixed, Removed).
+- PRs that change files under `src/` should include a changelog entry.
+- The bump script automatically stamps the `[Unreleased]` section with the new version and date
+  when `--tag` is used, and inserts a fresh `[Unreleased]` header.
+
 ## Architecture & Performance Notes
 
 Primary runtime is PyTorch (CPU/CUDA/MPS) with NumPy used only where sklearn-backed postprocessing/filtering requires arrays. Keep hot paths vectorized and batch-oriented. Preserve Appendix E (`E.2`-`E.14`) behavior as the source of truth; use other papers in `reference/` only to clarify ambiguous details.
