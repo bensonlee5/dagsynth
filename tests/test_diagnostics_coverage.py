@@ -139,6 +139,24 @@ def test_target_band_counts_do_not_inflate_for_partial_bin_overlap() -> None:
     assert line["target_band"]["in_target_fraction"] == pytest.approx(0.0)
 
 
+def test_target_band_histogram_uses_target_range_for_coverage() -> None:
+    agg = CoverageAggregator(
+        CoverageAggregationConfig(
+            histogram_bins=10,
+            underrepresented_threshold=0.5,
+            target_bands={"linearity_proxy": (0.0, 1.0)},
+        )
+    )
+    for value in (0.95, 0.96, 0.98, 0.99, 1.0):
+        agg.update_metrics(_metric_fixture(linearity_proxy=value))
+
+    summary = agg.build_summary()
+    line = summary["metrics"]["linearity_proxy"]
+    # Coverage should reflect sparse occupancy inside the full target range.
+    assert line["histogram"]["coverage_ratio"] < 1.0
+    assert len(line["underrepresented_bins"]) > 0
+
+
 def test_generate_no_write_with_coverage_enabled_emits_artifacts(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

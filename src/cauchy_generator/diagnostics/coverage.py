@@ -97,7 +97,11 @@ class _MetricAccumulator:
             f"p{int(round(q * 100)):02d}": float(np.quantile(values, q)) for q in quantiles
         }
 
-        histogram = _build_histogram(values, bins=histogram_bins)
+        histogram = _build_histogram(
+            values,
+            bins=histogram_bins,
+            value_range=target_band,
+        )
         underrepresented_bins: list[dict[str, Any]] = []
         target_payload = _target_band_payload(target_band)
         if target_band is not None:
@@ -272,7 +276,12 @@ def _normalize_target_bands(
     return normalized
 
 
-def _build_histogram(values: np.ndarray, *, bins: int) -> dict[str, Any]:
+def _build_histogram(
+    values: np.ndarray,
+    *,
+    bins: int,
+    value_range: tuple[float, float] | None = None,
+) -> dict[str, Any]:
     if values.size <= 0:
         return {
             "num_bins": int(bins),
@@ -280,14 +289,23 @@ def _build_histogram(values: np.ndarray, *, bins: int) -> dict[str, Any]:
             "coverage_ratio": 0.0,
             "bins": [],
         }
-    v_min = float(np.min(values))
-    v_max = float(np.max(values))
-    if v_min == v_max:
-        lo = v_min - 0.5
-        hi = v_max + 0.5
+    if value_range is None:
+        v_min = float(np.min(values))
+        v_max = float(np.max(values))
+        if v_min == v_max:
+            lo = v_min - 0.5
+            hi = v_max + 0.5
+        else:
+            lo = v_min
+            hi = v_max
     else:
-        lo = v_min
-        hi = v_max
+        lo = float(value_range[0])
+        hi = float(value_range[1])
+        if lo > hi:
+            lo, hi = hi, lo
+        if lo == hi:
+            lo -= 0.5
+            hi += 0.5
     counts, edges = np.histogram(values, bins=bins, range=(lo, hi))
     total = float(np.sum(counts))
     bins_payload: list[dict[str, Any]] = []
