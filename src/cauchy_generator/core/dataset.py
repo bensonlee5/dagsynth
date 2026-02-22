@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
 
-from cauchy_generator.config import GeneratorConfig
+from cauchy_generator.config import DatasetConfig, GeneratorConfig
 from cauchy_generator.core.node_pipeline import (
     ConverterSpec,
     apply_node_pipeline_torch,
@@ -20,6 +20,125 @@ from cauchy_generator.postprocess import postprocess_dataset
 from cauchy_generator.rng import SeedManager
 from cauchy_generator.sampling import CorrelatedSampler
 from cauchy_generator.types import DatasetBundle
+
+_CURRICULUM_STAGE1_ROWS = 1024
+_CURRICULUM_STAGE2_MIN_ROWS = 400
+_CURRICULUM_STAGE2_MAX_ROWS = 10_240
+_CURRICULUM_STAGE3_MIN_ROWS = 400
+_CURRICULUM_STAGE3_MAX_ROWS = 60_000
+_CURRICULUM_STAGE1_TRAIN_FRACTION_MIN = 0.30
+_CURRICULUM_STAGE1_TRAIN_FRACTION_MAX = 0.90
+_CURRICULUM_STAGE23_TRAIN_FRACTION = 0.80
+_DEFAULT_CONFIGURED_N_TRAIN = int(DatasetConfig().n_train)
+_DEFAULT_CONFIGURED_N_TEST = int(DatasetConfig().n_test)
+
+CurriculumStage = Literal["auto", 1, 2, 3]
+
+_VALID_STAGES: dict[str | int, CurriculumStage] = {
+    "auto": "auto",
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    1: 1,
+    2: 2,
+    3: 3,
+}
+
+
+def _normalize_curriculum_stage(value: str | int) -> CurriculumStage:
+    """Normalize curriculum stage config into a validated internal value."""
+    if isinstance(value, bool):
+        raise ValueError(f"Unsupported curriculum_stage '{value}'. Expected auto, 1, 2, or 3.")
+    if isinstance(value, str):
+        value = value.strip().lower()
+    result = _VALID_STAGES.get(value)
+    if result is None:
+        raise ValueError(f"Unsupported curriculum_stage '{value}'. Expected auto, 1, 2, or 3.")
+    return result
+
+
+def _sample_log_uniform_int(rng: np.random.Generator, low: int, high: int) -> int:
+    """Sample an integer from a log-uniform range [low, high]."""
+
+    sampled = int(np.exp(rng.uniform(np.log(float(low)), np.log(float(high)))))
+    return int(np.clip(sampled, low, high))
+
+
+def _split_counts(n_total: int, train_fraction: float) -> tuple[int, int]:
+    """Split total rows into train/test while ensuring both sides are non-empty."""
+
+    n_total = max(2, int(n_total))
+    n_train = int(round(float(train_fraction) * n_total))
+    n_train = min(max(1, n_train), n_total - 1)
+    n_test = n_total - n_train
+    return n_train, n_test
+
+
+def _sample_stage_rows(stage: int, rng: np.random.Generator) -> tuple[int, float]:
+    """Sample total rows and train fraction for one curriculum stage."""
+
+    if stage == 1:
+        return (
+            _CURRICULUM_STAGE1_ROWS,
+            float(
+                rng.uniform(
+                    _CURRICULUM_STAGE1_TRAIN_FRACTION_MIN,
+                    _CURRICULUM_STAGE1_TRAIN_FRACTION_MAX,
+                )
+            ),
+        )
+    if stage == 2:
+        return (
+            _sample_log_uniform_int(rng, _CURRICULUM_STAGE2_MIN_ROWS, _CURRICULUM_STAGE2_MAX_ROWS),
+            _CURRICULUM_STAGE23_TRAIN_FRACTION,
+        )
+    if stage == 3:
+        return (
+            _sample_log_uniform_int(rng, _CURRICULUM_STAGE3_MIN_ROWS, _CURRICULUM_STAGE3_MAX_ROWS),
+            _CURRICULUM_STAGE23_TRAIN_FRACTION,
+        )
+    raise ValueError(f"Unsupported curriculum stage '{stage}'. Expected 1, 2, or 3.")
+
+
+def _sample_auto_stage(rng: np.random.Generator) -> int:
+    """Sample a curriculum stage uniformly from 1..3."""
+
+    return int(rng.integers(1, 4))
+
+
+def _sample_curriculum(
+    config: GeneratorConfig,
+    manager: SeedManager,
+    *,
+    auto_stage: int,
+) -> dict[str, Any]:
+    """Resolve stage and sample row/split regime for this dataset seed."""
+
+    mode = _normalize_curriculum_stage(config.curriculum_stage)
+    stage = auto_stage if mode == "auto" else int(mode)
+    rows_rng = manager.numpy_rng("curriculum", "rows", stage)
+    sampled_rows_total, train_fraction = _sample_stage_rows(stage, rows_rng)
+    configured_n_train = int(config.dataset.n_train)
+    configured_n_test = int(config.dataset.n_test)
+    configured_total = max(2, configured_n_train + configured_n_test)
+    n_rows_total = sampled_rows_total
+    # Preserve caller-provided split-size knobs as a workload ceiling when
+    # they intentionally deviate from baseline defaults.
+    has_split_override = (
+        configured_n_train != _DEFAULT_CONFIGURED_N_TRAIN
+        or configured_n_test != _DEFAULT_CONFIGURED_N_TEST
+    )
+    if has_split_override:
+        n_rows_total = min(sampled_rows_total, configured_total)
+    n_train, n_test = _split_counts(n_rows_total, train_fraction)
+    return {
+        "mode": "auto" if mode == "auto" else "fixed",
+        "stage": stage,
+        "n_rows_total": n_rows_total,
+        "n_train": n_train,
+        "n_test": n_test,
+        "train_fraction": float(train_fraction),
+    }
 
 
 def _resolve_device(config: GeneratorConfig, device_override: str | None) -> str:
@@ -58,6 +177,11 @@ def _to_numpy(value: Any) -> np.ndarray:
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().numpy()
     return np.asarray(value)
+
+
+def _to_torch(arr: Any, device: str, dtype: torch.dtype) -> torch.Tensor:
+    """Convert an array-like to a torch tensor on the given device."""
+    return torch.as_tensor(np.asarray(arr), device=device, dtype=dtype)
 
 
 def _sample_node_count(config: GeneratorConfig, rng: np.random.Generator) -> int:
@@ -184,12 +308,13 @@ def _generate_graph_dataset_torch(
     layout: dict[str, Any],
     seed: int,
     device: str,
+    *,
+    n_rows: int,
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
     """Generate raw X/y tensors via the Torch graph pipeline."""
     generator = torch.Generator(device=device)
     generator.manual_seed(seed)
 
-    n_rows = config.dataset.n_train + config.dataset.n_test
     n_features = int(layout["n_features"])
     task = config.dataset.task
     n_classes = int(layout["n_classes"])
@@ -218,7 +343,7 @@ def _generate_graph_dataset_torch(
             elif key == "target":
                 target_values = values
 
-    dtype = torch.float64 if config.runtime.torch_dtype == "float64" else torch.float32
+    dtype = _torch_dtype(config)
     x = torch.zeros((n_rows, n_features), dtype=dtype, device=device)
     feature_types = list(layout["feature_types"])
     card_by_feature: dict[int, int] = layout["card_by_feature"]
@@ -253,16 +378,27 @@ def _generate_torch(
     layout: dict[str, Any],
     seed: int,
     device: str,
+    *,
+    n_train: int,
+    n_test: int,
+    curriculum: dict[str, Any],
 ) -> DatasetBundle:
     """Generate one dataset in Torch while preserving Appendix E postprocess/filter contracts."""
 
     attempts = max(1, int(config.filter.max_attempts))
     last_reason = "unknown"
     dtype = _torch_dtype(config)
+    n_rows = n_train + n_test
 
     for attempt in range(attempts):
         try:
-            x, y, aux_meta = _generate_graph_dataset_torch(config, layout, seed + attempt, device)
+            x, y, aux_meta = _generate_graph_dataset_torch(
+                config,
+                layout,
+                seed + attempt,
+                device,
+                n_rows=n_rows,
+            )
         except Exception as exc:
             last_reason = f"generation_exception:{exc.__class__.__name__}"
             continue
@@ -276,7 +412,6 @@ def _generate_torch(
         x = x[order]
         y = y[order]
 
-        n_train = config.dataset.n_train
         x_train_t, x_test_t = x[:n_train], x[n_train:]
         y_train_t, y_test_t = y[:n_train], y[n_train:]
 
@@ -299,14 +434,11 @@ def _generate_torch(
             last_reason = "invalid_class_split"
             continue
 
-        x_train = torch.as_tensor(np.asarray(x_train_np), device=device, dtype=dtype)
-        x_test = torch.as_tensor(np.asarray(x_test_np), device=device, dtype=dtype)
-        if config.dataset.task == "classification":
-            y_train = torch.as_tensor(np.asarray(y_train_np), device=device, dtype=torch.int64)
-            y_test = torch.as_tensor(np.asarray(y_test_np), device=device, dtype=torch.int64)
-        else:
-            y_train = torch.as_tensor(np.asarray(y_train_np), device=device, dtype=dtype)
-            y_test = torch.as_tensor(np.asarray(y_test_np), device=device, dtype=dtype)
+        x_train = _to_torch(x_train_np, device, dtype)
+        x_test = _to_torch(x_test_np, device, dtype)
+        y_dtype = torch.int64 if config.dataset.task == "classification" else dtype
+        y_train = _to_torch(y_train_np, device, y_dtype)
+        y_test = _to_torch(y_test_np, device, y_dtype)
 
         metadata = {
             "backend": "torch",
@@ -322,6 +454,7 @@ def _generate_torch(
             "seed": seed,
             "attempt_used": attempt,
             "filter": aux_meta.get("filter", {}),
+            "curriculum": curriculum,
             "config": asdict(config),
         }
         return DatasetBundle(
@@ -378,6 +511,58 @@ def _apply_filter_torch(
     return accepted, details
 
 
+def _generate_one_seeded(
+    config: GeneratorConfig,
+    *,
+    seed: int,
+    requested_device: str,
+    resolved_device: str,
+    auto_stage: int,
+) -> DatasetBundle:
+    """Generate one dataset for a fully resolved seed/device/stage context."""
+
+    manager = SeedManager(seed)
+    curriculum = _sample_curriculum(config, manager, auto_stage=auto_stage)
+    layout_rng = manager.numpy_rng("layout")
+    layout = _sample_layout(config, layout_rng)
+    data_seed = manager.child("data")
+    n_train = int(curriculum["n_train"])
+    n_test = int(curriculum["n_test"])
+
+    if requested_device == "auto" and resolved_device == "mps":
+        try:
+            return _generate_torch(
+                config,
+                layout,
+                data_seed,
+                resolved_device,
+                n_train=n_train,
+                n_test=n_test,
+                curriculum=curriculum,
+            )
+        except Exception:
+            # Keep auto mode robust on partially supported MPS runtimes by retrying on CPU.
+            return _generate_torch(
+                config,
+                layout,
+                data_seed,
+                "cpu",
+                n_train=n_train,
+                n_test=n_test,
+                curriculum=curriculum,
+            )
+
+    return _generate_torch(
+        config,
+        layout,
+        data_seed,
+        resolved_device,
+        n_train=n_train,
+        n_test=n_test,
+        curriculum=curriculum,
+    )
+
+
 def generate_one(
     config: GeneratorConfig,
     *,
@@ -386,19 +571,18 @@ def generate_one(
 ) -> DatasetBundle:
     """Generate one dataset bundle with deterministic per-dataset randomness."""
 
-    manager = SeedManager(seed if seed is not None else config.seed)
-    layout_rng = manager.numpy_rng("layout")
-    layout = _sample_layout(config, layout_rng)
-    data_seed = manager.child("data")
+    mode = _normalize_curriculum_stage(config.curriculum_stage)
+    auto_stage = 1 if mode == "auto" else int(mode)
+    run_seed = seed if seed is not None else config.seed
     requested_device = (device or config.runtime.device or "auto").lower()
     resolved_device = _resolve_device(config, device)
-    if requested_device == "auto" and resolved_device == "mps":
-        try:
-            return _generate_torch(config, layout, data_seed, resolved_device)
-        except Exception:
-            # Keep auto mode robust on partially supported MPS runtimes by retrying on CPU.
-            return _generate_torch(config, layout, data_seed, "cpu")
-    return _generate_torch(config, layout, data_seed, resolved_device)
+    return _generate_one_seeded(
+        config,
+        seed=run_seed,
+        requested_device=requested_device,
+        resolved_device=resolved_device,
+        auto_stage=auto_stage,
+    )
 
 
 def generate_batch(
@@ -431,8 +615,25 @@ def generate_batch_iter(
 
     if num_datasets < 0:
         raise ValueError(f"num_datasets must be >= 0, got {num_datasets}")
+    if num_datasets == 0:
+        return
 
+    mode = _normalize_curriculum_stage(config.curriculum_stage)
+    requested_device = (device or config.runtime.device or "auto").lower()
+    resolved_device = _resolve_device(config, device)
     run_seed = seed if seed is not None else config.seed
     manager = SeedManager(run_seed)
     for i in range(num_datasets):
-        yield generate_one(config, seed=manager.child("dataset", i), device=device)
+        dataset_seed = manager.child("dataset", i)
+        auto_stage = 1
+        if mode == "auto":
+            stage_rng = SeedManager(dataset_seed).numpy_rng("curriculum", "stage")
+            auto_stage = _sample_auto_stage(stage_rng)
+
+        yield _generate_one_seeded(
+            config,
+            seed=dataset_seed,
+            requested_device=requested_device,
+            resolved_device=resolved_device,
+            auto_stage=auto_stage,
+        )

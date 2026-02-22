@@ -5,6 +5,7 @@ from cauchy_generator.config import GeneratorConfig
 
 def test_load_default_config() -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    assert cfg.curriculum_stage == "auto"
     assert cfg.dataset.n_train > 0
     assert cfg.dataset.n_features_min <= cfg.dataset.n_features_max
     assert cfg.output.shard_size > 0
@@ -34,12 +35,14 @@ def test_load_benchmark_profiles() -> None:
 def test_runtime_config_from_dict() -> None:
     cfg = GeneratorConfig.from_dict(
         {
+            "curriculum_stage": 2,
             "runtime": {
                 "device": "cpu",
                 "torch_dtype": "float64",
-            }
+            },
         }
     )
+    assert cfg.curriculum_stage == 2
     assert cfg.runtime.device == "cpu"
     assert cfg.runtime.torch_dtype == "float64"
 
