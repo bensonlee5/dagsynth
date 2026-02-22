@@ -51,23 +51,46 @@ def _non_negative_int(value: str) -> int:
 
 
 def _coerce_target_bands(
-    raw: dict[str, list[float] | tuple[float, float]],
+    raw: object,
 ) -> dict[str, tuple[float, float]]:
     """Normalize diagnostics target bands from config payload into tuple ranges."""
 
     normalized: dict[str, tuple[float, float]] = {}
+    if not isinstance(raw, dict):
+        return normalized
     for metric_name, band in raw.items():
         if not isinstance(metric_name, str):
             continue
         if not isinstance(band, (list, tuple)) or len(band) != 2:
             continue
-        lo = float(band[0])
-        hi = float(band[1])
+        try:
+            lo = float(band[0])
+            hi = float(band[1])
+        except (TypeError, ValueError):
+            continue
+        if not (lo == lo and hi == hi):
+            continue
         if lo <= hi:
             normalized[metric_name] = (lo, hi)
         else:
             normalized[metric_name] = (hi, lo)
     return normalized
+
+
+def _coerce_quantiles(raw: object) -> tuple[float, ...]:
+    """Normalize diagnostics quantiles into a tuple of floats."""
+
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    values: list[float] = []
+    for item in raw:
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            continue
+        if value == value:
+            values.append(value)
+    return tuple(values)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -244,7 +267,7 @@ def _run_generate(args: argparse.Namespace) -> int:
             CoverageAggregationConfig(
                 include_spearman=bool(config.diagnostics.include_spearman),
                 histogram_bins=int(config.diagnostics.histogram_bins),
-                quantiles=tuple(float(q) for q in config.diagnostics.quantiles),
+                quantiles=_coerce_quantiles(config.diagnostics.quantiles),
                 underrepresented_threshold=float(config.diagnostics.underrepresented_threshold),
                 target_bands=_coerce_target_bands(config.diagnostics.meta_feature_targets),
             )
