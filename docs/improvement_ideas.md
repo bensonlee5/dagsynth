@@ -1,95 +1,87 @@
 # Literature-Driven Improvement Backlog (2026Q1)
 
-This document is a docs-only backlog for improving synthetic data quality in `cauchy-generator`.
+This is the prioritized execution queue for roadmap items defined in `docs/roadmap.md`.
 
 Scope:
 
-- In scope: generator pipeline and diagnostics.
-- Out of scope (this phase): implementation changes in `src/`.
-
-Primary ranking objective:
-
-- Expected downstream model quality gain.
+- In scope: generator pipeline, diagnostics, and benchmark/throughput guardrails.
+- Out of scope (this phase): implementation changes in `src/` and `configs/`.
 
 Ranking method:
 
-- Defined in `docs/backlog_decision_rules.md`.
+- `docs/backlog_decision_rules.md`
+
+Related docs:
+
+- Canonical roadmap: `docs/roadmap.md`
+- Evidence appendix: `docs/literature_evidence_2026.md`
+- Current implementation contract: `docs/implementation.md`
 
 ## Current Gap Snapshot
 
 Observed from current code/config surface:
 
-- ~~Meta-feature diagnostics/coverage steering module is not present.~~ Extractors + coverage aggregation are merged; soft steering remains.
-- Class count support is capped (`n_classes_max=10`) in `src/cauchy_generator/config.py`.
-- Missingness generation is not exposed in config or postprocessing.
-- Noise family controls are not explicit in config.
-- Shift-aware SCM variants are not represented in graph/node pipeline interfaces.
-- Interventional / counterfactual data generation is not supported (observational only).
-- Curriculum stages scale row count only; feature count and graph complexity are fixed.
-- Generation is single-process sequential; no parallel or distributed shard writing.
+- Diagnostics extraction and coverage aggregation exist; soft steering is still missing.
+- Class support defaults remain narrow (`n_classes_max=10`) and categorical cardinality defaults are conservative.
+- Missingness mechanisms are not configurable.
+- Shift-aware SCM and interventional/counterfactual generation are not implemented.
+- Curriculum stages scale row counts and split regime only.
+- Streaming Parquet writing is sequential, not multi-worker.
 
-## Prioritized Backlog
+## Prioritized Queue
 
-### Near-Term Track (High Confidence)
+| Rank | Roadmap ID | Item                                             | Status   | Milestone | Mission Alignment                    | Expected Impact | Effort      | Risk        | Key Repo Touchpoints                                                                                                                    |
+| ---- | ---------- | ------------------------------------------------ | -------- | --------- | ------------------------------------ | --------------- | ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | RD-008     | Meta-feature coverage steering                   | planned  | Now       | foundation model pretraining         | High            | Medium      | Medium      | `src/cauchy_generator/diagnostics/coverage.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`                   |
+| 2    | RD-003     | Missingness generation (MCAR/MAR/MNAR)           | planned  | Now       | pretraining, robustness testing      | High            | Low-Medium  | Low         | `src/cauchy_generator/postprocess/postprocess.py`, `src/cauchy_generator/config.py`, `src/cauchy_generator/diagnostics/metrics.py`      |
+| 3    | RD-007     | Many-class and high-cardinality expansion        | planned  | Now       | pretraining                          | High            | Low-Medium  | Medium      | `src/cauchy_generator/config.py`, `src/cauchy_generator/converters/categorical.py`, `src/cauchy_generator/filtering/torch_rf_filter.py` |
+| 4    | RD-006     | Curriculum complexity scaling (features + graph) | planned  | Now       | pretraining                          | Medium-High     | Medium      | Medium      | `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`                                                                |
+| 5    | RD-001     | Ground-truth DAG artifact export                 | planned  | Now       | causal discovery                     | Medium-High     | Medium      | Low-Medium  | `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/io/parquet_writer.py`, `src/cauchy_generator/types.py`                    |
+| 6    | RD-004     | Shift-aware SCM generation                       | planned  | Next      | robustness testing, causal discovery | Medium-High     | High        | Medium-High | `src/cauchy_generator/sampling/random_weights.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/config.py`             |
+| 7    | RD-005     | Robustness hard-task/adversarial profiles        | research | Next      | robustness testing                   | Medium          | Medium-High | High        | `src/cauchy_generator/functions/`, `src/cauchy_generator/postprocess/`, `src/cauchy_generator/bench/`                                   |
+| 8    | RD-009     | Parallel/distributed generation                  | research | Next      | pretraining throughput               | Low-Medium      | High        | Medium      | `src/cauchy_generator/core/`, `src/cauchy_generator/io/parquet_writer.py`, `src/cauchy_generator/cli.py`                                |
+| 9    | RD-002     | Interventional and counterfactual generation     | research | Later     | causal discovery                     | Medium          | High        | High        | `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/config.py`                  |
 
-| Rank | Improvement                                              | Expected Quality Impact | Effort     | Risk   | Literature Evidence                              | Repo Touchpoints                                                                                                                        | Candidate Interface Additions (future)                                      |
-| ---- | -------------------------------------------------------- | ----------------------- | ---------- | ------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 1    | Meta-feature coverage diagnostics + steering             | High                    | Medium     | Medium | A Closer Look at TabPFN v2 (`2502.17361`)        | `src/cauchy_generator/config.py`, new `src/cauchy_generator/diagnostics/`, `src/cauchy_generator/filtering/`, benchmark reports         | `GeneratorConfig.meta_feature_targets`, per-run coverage report artifact    |
-| 2    | Missingness generation (MCAR/MAR/MNAR)                   | High                    | Low-Medium | Low    | TabPFN v2 (Nature), A Closer Look (`2502.17361`) | `src/cauchy_generator/postprocess/postprocess.py`, `src/cauchy_generator/config.py`                                                     | `DatasetConfig.missing_rate`, `DatasetConfig.missing_mechanism`             |
-| 3    | Expand many-class support beyond 10 classes              | High                    | Low-Medium | Medium | TabPFN Unleashed (`2502.02527`)                  | `src/cauchy_generator/config.py`, `src/cauchy_generator/converters/categorical.py`, `src/cauchy_generator/filtering/torch_rf_filter.py` | Wider `n_classes` ranges and class-aware filter thresholds                  |
-| 4    | Noise family diversification                             | Medium-High             | Low        | Low    | TabPFN v2 (Nature), Causal PFN (`2506.10914`)    | `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/config.py`                                                          | `GeneratorConfig.noise_distribution` (`gaussian/laplace/student_t/mixture`) |
-| 5    | Mechanism family expansion (BNN/GP kernels/interactions) | Medium-High             | Medium     | Medium | TabPFN v2 (Nature), Causal PFN (`2506.10914`)    | `src/cauchy_generator/functions/random_functions.py`, `src/cauchy_generator/functions/multi.py`, `src/cauchy_generator/config.py`       | `function_family_mix` with explicit kernel/mechanism weights                |
+## Candidate Interface Additions (Planning-Only)
 
-### Research Track (Higher Uncertainty)
+No interface changes are implemented in this phase. Candidate future additions by roadmap item:
 
-| Rank | Improvement                                                  | Expected Quality Impact | Effort      | Risk        | Literature Evidence                                                 | Repo Touchpoints                                                                                                                  | Candidate Interface Additions (future)                             |
-| ---- | ------------------------------------------------------------ | ----------------------- | ----------- | ----------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 6    | 2nd-order / shift-aware SCM generation                       | Medium-High             | High        | Medium-High | Drift-Resilient TabPFN (`2411.10634`)                               | `src/cauchy_generator/sampling/random_weights.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/config.py` | `GeneratorConfig.shift_profile`, latent shift variable propagation |
-| 7    | Robustness-oriented hard-task/adversarial synthetic regimes  | Medium                  | Medium-High | High        | Robust tabular FM direction (`2512.03307`), TabPFGen (`2406.05216`) | `src/cauchy_generator/functions/`, `src/cauchy_generator/postprocess/`, benchmark suites                                          | `difficulty_profile` and stress-test presets                       |
-| 8    | Larger context/size regime expansion for pretraining realism | Medium                  | Medium      | Medium      | Scaling TabPFN (`2311.10609`), TabDPT (`2410.18164`)                | `src/cauchy_generator/config.py`, benchmark configs, throughput harness                                                           | Wider dataset-size distributions with throughput guardrails        |
-| 9    | Interventional & counterfactual data generation              | Medium                  | High        | High        | Causal PFN (`2506.10914`)                                           | `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/sampling/`, `src/cauchy_generator/config.py`                  | `GeneratorConfig.intervention_mode`, do-calculus sampling helpers  |
-| 10   | Curriculum complexity scaling (features, graph depth)        | Medium                  | Medium      | Medium      | TabICL (`2502.05564`), TabICLv2 (`2602.11139`)                      | `src/cauchy_generator/config.py`, `src/cauchy_generator/core/graph_builder.py`                                                    | Per-stage feature count and graph depth ranges                     |
-| 11   | Parallel & distributed generation                            | Low-Medium              | High        | Medium      | Scaling TabPFN (`2311.10609`)                                       | `src/cauchy_generator/core/`, CLI entry point, shard writer                                                                       | `GeneratorConfig.num_workers`, shard-level parallelism             |
+- RD-003:
+  - `DatasetConfig.missing_rate: float`
+  - `DatasetConfig.missing_mechanism: Literal["off", "mcar", "mar", "mnar"]`
+- RD-004:
+  - `GeneratorConfig.shift_profile: str | dict[str, float]`
+- RD-006:
+  - per-stage feature/node/depth range controls under curriculum config
+- RD-007:
+  - expanded `DatasetConfig.n_classes_*` and categorical cardinality ranges
+- RD-008:
+  - steering config under diagnostics or generator scope with opt-in defaults
+- RD-002:
+  - `GeneratorConfig.intervention_mode: Literal["off", "do", "counterfactual"]`
+- RD-009:
+  - `GeneratorConfig.num_workers: int`
 
-## Public Interface Additions (Planning-Only)
+## Acceptance Scenarios (Execution Contract)
 
-No API changes are implemented in this phase. Candidate additions for future implementation:
-
-- `DatasetConfig`:
-  - `missing_rate: float`
-  - `missing_mechanism: str`
-  - expanded class and sample-size ranges
-- `GeneratorConfig`:
-  - `meta_feature_targets: dict[str, tuple[float, float]]`
-  - `noise_distribution: str`
-  - `shift_profile: str | dict[str, float]`
-- New diagnostics artifacts:
-  - meta-feature summary per generation run
-  - target-vs-observed coverage report
-- `GeneratorConfig.intervention_mode: str | None`
-- `GeneratorConfig.num_workers: int`
-- Per-curriculum-stage feature/graph complexity ranges
-
-## Acceptance Scenarios For Future Implementation
-
-1. Reproducibility:
-   fixed seeds preserve deterministic metadata lineage when new knobs are disabled.
-1. Coverage:
-   generated corpus meets configured target bands for selected meta-features.
-1. Missingness:
-   MCAR/MAR/MNAR mechanisms match expected missing-rate and dependency patterns.
-1. Many-class robustness:
-   high-class-count datasets are generated without excessive filter rejection.
-1. Shift-aware behavior:
-   configured drift modes produce measurable, intended distribution shift.
-1. Performance guardrail:
-   benchmark regression remains within configured warn/fail thresholds.
-1. Interventional consistency:
-   do-operator samples respect the truncated factorization implied by the intervention set.
-1. Curriculum complexity monotonicity:
-   later curriculum stages produce datasets with equal or greater feature count and graph depth.
-1. Parallel correctness (seed determinism):
-   multi-worker generation with identical seeds produces bitwise-identical output to single-worker.
+1. RD-001 ground-truth DAG artifacts:
+   generated outputs include adjacency and node assignment lineage with schema validation tests.
+1. RD-002 intervention/counterfactual consistency:
+   intervention mode preserves causal truncation behavior under fixed intervention sets.
+1. RD-003 missingness mechanisms:
+   MCAR/MAR/MNAR targets match expected missing-rate and dependency behavior.
+1. RD-004 shift-aware behavior:
+   enabled shift profile produces measurable drift; disabled profile matches baseline behavior.
+1. RD-005 stress profile validity:
+   hard-task presets produce intended diagnostics deltas versus baseline.
+1. RD-006 curriculum monotonicity:
+   later stages have equal or greater feature and graph complexity than earlier stages.
+1. RD-007 many-class robustness:
+   high-class datasets generate without excessive filter rejection and preserve label validity.
+1. RD-008 coverage steering:
+   configured target bands show improved in-band coverage versus non-steered baseline.
+1. RD-009 parallel determinism:
+   multi-worker mode reproduces single-worker outputs for fixed seeds within declared tolerance.
 
 ## Citations
 

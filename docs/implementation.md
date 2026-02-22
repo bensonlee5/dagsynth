@@ -4,12 +4,41 @@
 
 Build a Python repository that generates synthetic tabular datasets according to TabICLv2 Appendix E (`E.2`-`E.14`) with high throughput on NVIDIA CUDA GPUs and deterministic-seed best effort behavior.
 
+Related docs:
+
+- Canonical roadmap: `docs/roadmap.md`
+- Prioritized queue: `docs/improvement_ideas.md`
+- Decision rubric: `docs/backlog_decision_rules.md`
+- Literature evidence: `docs/literature_evidence_2026.md`
+
 ## Source of Truth
 
 - Normative behavior: `reference/TabICLv2.pdf` Appendix E.
 - Clarification-only sources:\
   `reference/A Closer Look at TabPFN v2.pdf` and\
   `reference/Accurate predictions on small data with a tabular foundation model.pdf`.
+
+## Current Scope vs README Mission Claims
+
+| Mission/Pillar Claim from README                                | Current Scope                                                                                 | Status  | Roadmap Follow-up              |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------- | ------------------------------ |
+| Foundation model pretraining with diverse priors                | Implemented baseline generation, diagnostics extraction, coverage aggregation, and benchmarks | partial | RD-003, RD-006, RD-007, RD-008 |
+| Causal discovery with ground-truth DAGs and interventions       | DAG sampling exists in pipeline internals; interventional generation does not                 | partial | RD-001, RD-002                 |
+| Robustness testing with hard tasks, shifts, adversarial regimes | Basic filtering and diagnostics proxies exist; dedicated robustness modes do not              | planned | RD-003, RD-004, RD-005         |
+| Complexity curriculum across features/nodes/samples             | Current curriculum stages rows/split regime only                                              | partial | RD-006                         |
+| Hardware-native performance with parallel streaming             | Torch + hardware-aware tuning implemented; streaming writes are sequential                    | partial | RD-009                         |
+
+## Known Missing Capabilities (Roadmap-Tracked)
+
+- RD-001: export full ground-truth DAG and assignment lineage as stable artifacts.
+- RD-002: add interventional and counterfactual generation tracks.
+- RD-003: add configurable missingness mechanisms (MCAR/MAR/MNAR).
+- RD-004: add shift-aware SCM generation controls.
+- RD-005: add robustness stress profiles for hard-task/adversarial regimes.
+- RD-006: extend curriculum to feature and graph complexity.
+- RD-007: expand many-class and high-cardinality support.
+- RD-008: add diagnostics-driven soft steering.
+- RD-009: add parallel/distributed generation and shard writing.
 
 ## Public Interfaces
 
@@ -33,6 +62,8 @@ Each `DatasetBundle` contains:
 - metadata (seed lineage, graph stats, function selections, filter decision)
 
 Persist generated outputs as Parquet shards with a sidecar metadata JSON per shard.
+
+Current metadata includes summary graph stats and config lineage. Full DAG artifact export is tracked under RD-001.
 
 ## Runtime Profiles
 
@@ -65,7 +96,7 @@ Persist generated outputs as Parquet shards with a sidecar metadata JSON per sha
 1. Keep kernels batch-oriented with vectorized NumPy operations and avoid Python loops in inner math paths.
 1. Use optional filtering (`E.14`) behind config flags to avoid CPU bottlenecks in throughput benchmarks.
 1. Profile with `bench/throughput.py` and track JSON baseline regressions by preset.
-1. Next optimization step is lifting node/function kernels from NumPy to Torch/CUDA while preserving seeded behavior.
+1. Next roadmap step for throughput is controlled multi-worker execution (RD-009) while preserving seeded behavior.
 
 ## Reproducibility Strategy
 
@@ -97,3 +128,4 @@ Persist generated outputs as Parquet shards with a sidecar metadata JSON per sha
 1. Implement `E.8`-`E.10` with GPU-first tensor kernels.
 1. Implement `E.11`-`E.14`, parquet writing, and integration tests.
 1. Add benchmark harness, tune bottlenecks, and lock baseline.
+1. Extend mission coverage through roadmap items RD-001..RD-009 in `docs/roadmap.md`.

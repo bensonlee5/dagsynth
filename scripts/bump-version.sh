@@ -75,12 +75,32 @@ echo "Updated pyproject.toml"
 # --- Optionally commit and tag ---
 if $TAG; then
   # Warn about uncommitted changes in other files
-  if [[ -n "$(git diff --name-only HEAD 2>/dev/null | grep -v '^pyproject.toml$' || true)" ]] || \
-     [[ -n "$(git diff --cached --name-only HEAD 2>/dev/null | grep -v '^pyproject.toml$' || true)" ]]; then
+  if [[ -n "$(git diff --name-only HEAD 2>/dev/null | grep -v '^pyproject.toml$' | grep -v '^CHANGELOG.md$' || true)" ]] || \
+     [[ -n "$(git diff --cached --name-only HEAD 2>/dev/null | grep -v '^pyproject.toml$' | grep -v '^CHANGELOG.md$' || true)" ]]; then
     echo "Warning: other files have uncommitted changes." >&2
   fi
 
-  git add pyproject.toml
+  # --- Stamp CHANGELOG.md ---
+  CHANGELOG="${REPO_ROOT}/CHANGELOG.md"
+  if [[ ! -f "$CHANGELOG" ]]; then
+    echo "Error: CHANGELOG.md not found." >&2
+    exit 1
+  fi
+
+  # Check that [Unreleased] has at least one entry
+  UNRELEASED_BODY=$(sed -n '/^## \[Unreleased\]/,/^## \[/{/^## \[/d; p;}' "$CHANGELOG")
+  if [[ -z "$(echo "$UNRELEASED_BODY" | grep -v '^[[:space:]]*$')" ]]; then
+    echo "Error: [Unreleased] section in CHANGELOG.md is empty. Add entries before tagging." >&2
+    exit 1
+  fi
+
+  TODAY=$(date +%Y-%m-%d)
+  # Replace "## [Unreleased]" with stamped header, preceded by a fresh Unreleased section
+  sed -i.bak "s/^## \[Unreleased\]/## [Unreleased]\n\n## [${NEW_VERSION}] - ${TODAY}/" "$CHANGELOG"
+  rm -f "${CHANGELOG}.bak"
+  echo "Stamped CHANGELOG.md for ${NEW_VERSION}"
+
+  git add pyproject.toml CHANGELOG.md
   git commit -m "chore: bump version to ${NEW_VERSION}"
   git tag "v${NEW_VERSION}"
   echo "Created tag v${NEW_VERSION}"

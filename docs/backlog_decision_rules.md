@@ -1,6 +1,13 @@
 # Backlog Decision Rules
 
-This document defines how improvement ideas are ranked and when they are ready for implementation PRs.
+This document defines how roadmap items are ranked and when they are ready for implementation PRs.
+
+Related docs:
+
+- Canonical roadmap: `docs/roadmap.md`
+- Prioritized queue: `docs/improvement_ideas.md`
+- Evidence appendix: `docs/literature_evidence_2026.md`
+- Implementation baseline: `docs/implementation.md`
 
 ## Objective
 
@@ -12,6 +19,7 @@ Secondary objectives:
 
 - Keep implementation risk manageable.
 - Preserve reproducibility and throughput guardrails.
+- Maintain explicit traceability to README mission and pillar claims.
 
 ## Scoring Rubric
 
@@ -28,7 +36,7 @@ Component definitions:
 - `coverage_gap` (0-3):
   degree to which the idea closes known synthetic-vs-real data blind spots.
 - `architecture_fit` (0-2):
-  compatibility with current module boundaries (`config`, `core`, `functions`, `postprocess`, `filtering`).
+  compatibility with current module boundaries (`config`, `core`, `functions`, `postprocess`, `filtering`, `diagnostics`, `io`).
 - `effort_penalty` (0-3):
   engineering complexity and cross-module coordination cost.
 - `risk_penalty` (0-3):
@@ -46,6 +54,25 @@ Tie-breakers (in order):
 1. Higher `evidence_strength`.
 1. Lower `effort_penalty`.
 
+## Required Metadata Per Backlog Item
+
+Every item must include:
+
+- `roadmap_id`:
+  stable ID from `docs/roadmap.md` (for example, `RD-003`).
+- `mission_alignment`:
+  one or more README mission claims explicitly served by the item.
+- `pillar_alignment`:
+  one or more README strategic pillars explicitly served by the item.
+- `status`:
+  one of `implemented`, `partial`, `planned`, `research`.
+- `milestone`:
+  one of `Now`, `Next`, `Later`.
+- `acceptance_criteria`:
+  measurable criteria that can be validated by tests and/or benchmark artifacts.
+- `repo_touchpoints`:
+  concrete module-level implementation surface.
+
 ## Go/No-Go Gates For Implementation PRs
 
 A backlog item is `go` only if all gates pass:
@@ -60,12 +87,18 @@ A backlog item is `go` only if all gates pass:
    expected runtime/memory impact and pass/fail thresholds are stated.
 1. Rollback plan:
    feature flag or config disable path exists.
+1. Mission traceability:
+   `mission_alignment` maps to at least one README mission claim.
+1. Measurability:
+   acceptance criteria define at least one objective pass/fail signal.
 
 Automatic `no-go` triggers:
 
 - Missing deterministic behavior expectations for fixed seeds.
 - Missing acceptance criteria for both classification and regression paths when applicable.
 - New config knobs without safe defaults preserving current behavior.
+- Missing or ambiguous `mission_alignment`.
+- Missing roadmap ID cross-reference.
 
 ## Default Assumptions For Future Work
 
@@ -82,3 +115,4 @@ Every future implementation PR should include:
 - Config schema updates and examples in `configs/`.
 - Tests covering invariants, reproducibility, and integration paths.
 - Benchmark delta summary for affected profiles.
+- Updated status/milestone in both `docs/roadmap.md` and `docs/improvement_ideas.md`.
