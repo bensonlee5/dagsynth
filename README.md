@@ -68,11 +68,26 @@ uv run cauchy-gen generate \
   --meta-target linearity_proxy=0.25:0.75:1.5
 ```
 
+```bash
+# Use discoverable presets for diagnostics-only and conservative steering runs
+uv run cauchy-gen generate --config configs/preset_diagnostics_on.yaml --num-datasets 25 --diagnostics --out data/run_diag
+uv run cauchy-gen generate --config configs/preset_steering_conservative.yaml --num-datasets 25 --diagnostics --out data/run_steering
+```
+
 ### Benchmarking Performance
 
 ```bash
 # Run the standard benchmark suite across all detected hardware profiles
 uv run cauchy-gen benchmark --suite standard --profile cpu
+```
+
+```bash
+# Collect diagnostics during benchmark runs and emit artifact pointers in summary outputs
+uv run cauchy-gen benchmark \
+  --suite smoke \
+  --profile cpu \
+  --diagnostics \
+  --out-dir benchmarks/results/smoke_cpu_diag
 ```
 
 ______________________________________________________________________

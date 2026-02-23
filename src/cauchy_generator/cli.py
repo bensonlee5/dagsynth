@@ -339,6 +339,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional path to write a baseline JSON derived from this run.",
     )
+    b.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help="Enable diagnostics coverage aggregation artifacts for each benchmark profile run.",
+    )
+    b.add_argument(
+        "--diagnostics-out-dir",
+        default=None,
+        help="Optional root directory for benchmark diagnostics artifacts.",
+    )
 
     h = sub.add_parser("hardware", help="Inspect detected hardware and profile mapping.")
     h.add_argument(
@@ -499,31 +509,66 @@ def _default_benchmark_config(args: argparse.Namespace) -> GeneratorConfig:
     return GeneratorConfig()
 
 
-def _benchmark_artifact_dir(args: argparse.Namespace) -> Path | None:
+def _default_benchmark_artifact_dir() -> Path:
+    """Return a timestamped benchmark artifact directory path."""
+
+    timestamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    return Path("benchmarks") / "results" / timestamp
+
+
+def _benchmark_artifact_dir(
+    args: argparse.Namespace,
+) -> Path | None:
     """Resolve optional output directory for benchmark summary artifacts."""
 
     if args.out_dir:
         return Path(args.out_dir)
 
-    if not args.json_out:
-        timestamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
-        return Path("benchmarks") / "results" / timestamp
-    return None
+    if args.json_out:
+        return None
+    return _default_benchmark_artifact_dir()
+
+
+def _benchmark_diagnostics_root_dir(
+    args: argparse.Namespace,
+    *,
+    artifact_dir: Path | None,
+) -> Path | None:
+    """Resolve diagnostics artifact root for benchmark profile coverage summaries."""
+
+    if not bool(args.diagnostics):
+        return None
+    if args.diagnostics_out_dir:
+        return Path(args.diagnostics_out_dir)
+    if artifact_dir is not None:
+        return artifact_dir
+    return _default_benchmark_artifact_dir()
 
 
 def _print_profile_result_line(result: dict[str, Any]) -> None:
     """Print one compact profile benchmark summary line."""
+
+    diagnostics_hint = ""
+    artifacts = result.get("diagnostics_artifacts")
+    if isinstance(artifacts, dict):
+        json_pointer = artifacts.get("json")
+        if isinstance(json_pointer, str) and json_pointer:
+            diagnostics_hint = f" diagnostics={json_pointer}"
 
     print(
         f"[{result.get('profile_key')}] device={result.get('device')} "
         f"backend={result.get('hardware_backend')} "
         f"datasets/min={float(result.get('datasets_per_minute', 0.0)):.2f} "
         f"latency_p95_ms={float(result.get('latency_p95_ms', 0.0)):.2f}"
+        f"{diagnostics_hint}"
     )
 
 
 def _run_benchmark(args: argparse.Namespace) -> int:
     """Execute the ``benchmark`` command."""
+
+    artifact_dir = _benchmark_artifact_dir(args)
+    diagnostics_root_dir = _benchmark_diagnostics_root_dir(args, artifact_dir=artifact_dir)
 
     default_cfg = _default_benchmark_config(args)
     suite = (args.suite or default_cfg.benchmark.suite).strip().lower()
@@ -560,6 +605,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
             bool(args.collect_reproducibility)
             or bool(default_cfg.benchmark.collect_reproducibility)
         ),
+        collect_diagnostics=bool(args.diagnostics),
+        diagnostics_root_dir=diagnostics_root_dir,
         fail_on_regression=bool(args.fail_on_regression),
         no_hardware_aware=bool(args.no_hardware_aware),
     )
@@ -572,7 +619,6 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         f"Regression status={regression.get('status', 'pass')} issues={len(regression.get('issues', []))}"
     )
 
-    artifact_dir = _benchmark_artifact_dir(args)
     if artifact_dir is not None:
         json_path = write_suite_json(summary, artifact_dir / "summary.json")
         md_path = write_suite_markdown(summary, artifact_dir / "summary.md")

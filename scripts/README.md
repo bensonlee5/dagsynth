@@ -17,10 +17,10 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
   - `curriculum` accepts `auto`, `1`, `2`, or `3`.
 - `scripts/fetch-additional-references.sh`
   - Downloads the additional arXiv papers listed in `reference/ADDITIONAL_PAPERS.md`.
-- `scripts/benchmark-suite.sh [suite] [profile] [out_dir]`
-  - Runs `cauchy-gen benchmark` with suite/profile selection.
-- `scripts/benchmark-smoke.sh [profile]`
-  - Quick smoke benchmark for a single profile.
+- `scripts/benchmark-suite.sh [suite] [profile] [out_dir] [diagnostics] [diagnostics_out_dir]`
+  - Runs `cauchy-gen benchmark` with suite/profile selection and optional diagnostics.
+- `scripts/benchmark-smoke.sh [profile] [diagnostics] [diagnostics_out_dir]`
+  - Quick smoke benchmark for a single profile with optional diagnostics.
 - `scripts/bump-version.sh <major|minor|patch> [--dry-run] [--tag]`
   - Bump the semver version in `pyproject.toml`. Use `--tag` to commit and create a git tag.
 
@@ -37,9 +37,18 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
 ./scripts/generate-curriculum.sh 5 cpu data/run_stage3 123 3
 ./scripts/fetch-additional-references.sh
 ./scripts/benchmark-smoke.sh cpu
+./scripts/benchmark-smoke.sh cpu on benchmarks/results/smoke_diag
 ./scripts/benchmark-suite.sh standard all benchmarks/results/latest
+./scripts/benchmark-suite.sh smoke cpu benchmarks/results/smoke_cpu_diag on
+uv run cauchy-gen generate --config configs/preset_diagnostics_on.yaml --num-datasets 25 --diagnostics --out data/run_diag
+uv run cauchy-gen generate --config configs/preset_steering_conservative.yaml --num-datasets 25 --diagnostics --out data/run_steering
 ./scripts/bump-version.sh patch --dry-run
 ./scripts/bump-version.sh minor --tag
 ```
 
 `benchmark-suite.sh` with profile `all` includes CUDA profiles and will hard-fail if CUDA is unavailable.
+
+When diagnostics is enabled for benchmark scripts, coverage artifacts are written under:
+
+- `<out_dir>/diagnostics/<profile>/coverage_summary.json`
+- `<out_dir>/diagnostics/<profile>/coverage_summary.md`

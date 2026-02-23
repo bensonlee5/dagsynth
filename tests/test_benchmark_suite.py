@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 
 import cauchy_generator.bench.suite as suite_mod
 from cauchy_generator.bench.micro import run_microbenchmarks
@@ -44,6 +45,8 @@ def test_run_benchmark_suite_smoke_single_profile() -> None:
         warmup_override=0,
         collect_memory=False,
         collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
         fail_on_regression=False,
         no_hardware_aware=True,
     )
@@ -108,3 +111,78 @@ def test_collect_reproducibility_uses_streaming_generation(
     assert out["reproducibility_match"] is True
     assert len(calls) == 2
     assert calls[0] == calls[1]
+
+
+def test_run_benchmark_suite_sanitizes_profile_key_for_diagnostics_paths(tmp_path) -> None:
+    cfg = _tiny_cpu_config()
+    spec = ProfileRunSpec(key="../../escape", config=cfg, device="cpu")
+    diagnostics_root = tmp_path / "diag_root"
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=True,
+        diagnostics_root_dir=diagnostics_root,
+        fail_on_regression=False,
+        no_hardware_aware=True,
+    )
+
+    result = summary["profile_results"][0]
+    artifacts = result["diagnostics_artifacts"]
+    assert isinstance(artifacts, dict)
+
+    json_path = Path(artifacts["json"]).resolve()
+    md_path = Path(artifacts["markdown"]).resolve()
+    assert json_path.exists()
+    assert md_path.exists()
+    assert json_path.is_relative_to(diagnostics_root.resolve())
+    assert md_path.is_relative_to(diagnostics_root.resolve())
+    assert not (tmp_path / "escape" / "coverage_summary.json").exists()
+
+
+def test_run_benchmark_suite_uses_unique_diagnostics_dirs_for_duplicate_profile_keys(
+    tmp_path,
+) -> None:
+    cfg_a = _tiny_cpu_config()
+    cfg_b = _tiny_cpu_config()
+    specs = [
+        ProfileRunSpec(key="cpu_test", config=cfg_a, device="cpu"),
+        ProfileRunSpec(key="cpu_test", config=cfg_b, device="cpu"),
+    ]
+    diagnostics_root = tmp_path / "diag_root"
+
+    summary = run_benchmark_suite(
+        specs,
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=True,
+        diagnostics_root_dir=diagnostics_root,
+        fail_on_regression=False,
+        no_hardware_aware=True,
+    )
+
+    results = summary["profile_results"]
+    assert len(results) == 2
+    art_0 = results[0]["diagnostics_artifacts"]
+    art_1 = results[1]["diagnostics_artifacts"]
+    assert isinstance(art_0, dict)
+    assert isinstance(art_1, dict)
+    assert art_0["json"] != art_1["json"]
+    assert art_0["markdown"] != art_1["markdown"]
+    assert Path(art_0["json"]).exists()
+    assert Path(art_1["json"]).exists()
+    assert Path(art_0["markdown"]).exists()
+    assert Path(art_1["markdown"]).exists()

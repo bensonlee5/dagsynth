@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from cauchy_generator.cli import main
 
@@ -68,3 +69,120 @@ def test_benchmark_cli_fail_on_regression(tmp_path) -> None:
         ]
     )
     assert code == 1
+
+
+def test_benchmark_cli_diagnostics_emits_artifacts(tmp_path) -> None:
+    out_dir = tmp_path / "bench_results"
+    code = main(
+        [
+            "benchmark",
+            "--config",
+            "configs/default.yaml",
+            "--profile",
+            "custom",
+            "--suite",
+            "smoke",
+            "--num-datasets",
+            "2",
+            "--warmup",
+            "0",
+            "--no-hardware-aware",
+            "--no-memory",
+            "--diagnostics",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+    assert code == 0
+
+    summary_path = out_dir / "summary.json"
+    assert summary_path.exists()
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    profile = payload["profile_results"][0]
+    assert profile["diagnostics_enabled"] is True
+
+    artifacts = profile["diagnostics_artifacts"]
+    assert isinstance(artifacts, dict)
+    assert isinstance(artifacts["json"], str)
+    assert isinstance(artifacts["markdown"], str)
+    assert Path(artifacts["json"]).exists()
+    assert Path(artifacts["markdown"]).exists()
+
+
+def test_benchmark_cli_json_out_diagnostics_does_not_emit_default_summary_artifacts(
+    tmp_path, monkeypatch
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "configs" / "default.yaml"
+    json_out = tmp_path / "summary.json"
+    diagnostics_out = tmp_path / "diag_out"
+    monkeypatch.chdir(tmp_path)
+
+    code = main(
+        [
+            "benchmark",
+            "--config",
+            str(config_path),
+            "--profile",
+            "custom",
+            "--suite",
+            "smoke",
+            "--num-datasets",
+            "2",
+            "--warmup",
+            "0",
+            "--no-hardware-aware",
+            "--no-memory",
+            "--diagnostics",
+            "--json-out",
+            str(json_out),
+            "--diagnostics-out-dir",
+            str(diagnostics_out),
+        ]
+    )
+    assert code == 0
+    assert json_out.exists()
+    assert not (tmp_path / "benchmarks").exists()
+
+
+def test_benchmark_cli_diagnostics_pointers_resolve_when_roots_differ(tmp_path) -> None:
+    out_dir = tmp_path / "bench_results"
+    diagnostics_out = tmp_path / "diag_out"
+    code = main(
+        [
+            "benchmark",
+            "--config",
+            "configs/default.yaml",
+            "--profile",
+            "custom",
+            "--suite",
+            "smoke",
+            "--num-datasets",
+            "2",
+            "--warmup",
+            "0",
+            "--no-hardware-aware",
+            "--no-memory",
+            "--diagnostics",
+            "--out-dir",
+            str(out_dir),
+            "--diagnostics-out-dir",
+            str(diagnostics_out),
+        ]
+    )
+    assert code == 0
+
+    summary_path = out_dir / "summary.json"
+    assert summary_path.exists()
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    profile = payload["profile_results"][0]
+    artifacts = profile["diagnostics_artifacts"]
+    assert isinstance(artifacts, dict)
+    json_path = Path(artifacts["json"])
+    md_path = Path(artifacts["markdown"])
+    assert json_path.is_absolute()
+    assert md_path.is_absolute()
+    assert json_path.exists()
+    assert md_path.exists()
+    assert json_path.resolve().is_relative_to(diagnostics_out.resolve())
+    assert md_path.resolve().is_relative_to(diagnostics_out.resolve())

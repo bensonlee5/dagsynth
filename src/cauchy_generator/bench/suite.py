@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import math
+import re
 import resource
 import sys
 import time
-import torch
+from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+import torch
 from cauchy_generator.bench.baseline import compare_summary_to_baseline
 from cauchy_generator.bench.micro import run_microbenchmarks
 from cauchy_generator.bench.metrics import (
@@ -19,6 +24,12 @@ from cauchy_generator.bench.metrics import (
 from cauchy_generator.bench.throughput import run_throughput_benchmark
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_batch_iter, generate_one
+from cauchy_generator.diagnostics import (
+    CoverageAggregationConfig,
+    CoverageAggregator,
+    write_coverage_summary_json,
+    write_coverage_summary_markdown,
+)
 from cauchy_generator.hardware import (
     HardwareInfo,
     apply_hardware_profile,
@@ -161,6 +172,68 @@ def _prepare_config_for_profile(
     return cfg, requested_device, hw
 
 
+def _coerce_target_bands(raw: object) -> dict[str, tuple[float, float]]:
+    """Normalize target band mappings into finite `(lo, hi)` tuples."""
+
+    normalized: dict[str, tuple[float, float]] = {}
+    if not isinstance(raw, dict):
+        return normalized
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            continue
+        if not isinstance(value, (list, tuple)) or len(value) < 2:
+            continue
+        try:
+            lo = float(value[0])
+            hi = float(value[1])
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(lo) and math.isfinite(hi)):
+            continue
+        normalized[key] = (lo, hi) if lo <= hi else (hi, lo)
+    return normalized
+
+
+def _resolve_target_bands(config: GeneratorConfig) -> dict[str, tuple[float, float]]:
+    """Merge diagnostics and top-level target mappings for coverage aggregation."""
+
+    merged = _coerce_target_bands(config.diagnostics.meta_feature_targets)
+    merged.update(_coerce_target_bands(config.meta_feature_targets))
+    return merged
+
+
+def _coerce_quantiles(raw: object) -> tuple[float, ...]:
+    """Normalize diagnostics quantiles into finite values."""
+
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    normalized: list[float] = []
+    for item in raw:
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            normalized.append(value)
+    return tuple(normalized)
+
+
+def _sanitize_profile_key(profile_key: str) -> str:
+    """Normalize profile key into a filesystem-safe unique path segment."""
+
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", profile_key).strip("._-")
+    if not normalized:
+        normalized = "profile"
+    suffix = hashlib.sha1(profile_key.encode("utf-8")).hexdigest()[:8]
+    return f"{normalized}_{suffix}"
+
+
+def _artifact_pointer(path: Path) -> str:
+    """Return a summary-safe pointer for diagnostics artifacts."""
+
+    return str(path.resolve())
+
+
 def run_profile_benchmark(
     spec: ProfileRunSpec,
     *,
@@ -171,6 +244,10 @@ def run_profile_benchmark(
     collect_reproducibility: bool,
     include_micro: bool,
     no_hardware_aware: bool,
+    collect_diagnostics: bool,
+    diagnostics_root_dir: Path | None,
+    diagnostics_occurrence_index: int,
+    diagnostics_occurrence_total: int,
 ) -> dict[str, Any]:
     """Run one benchmark profile and collect throughput, latency, and optional diagnostics."""
 
@@ -195,11 +272,27 @@ def run_profile_benchmark(
         except Exception:
             pass
 
+    diagnostics_enabled = bool(collect_diagnostics and diagnostics_root_dir is not None)
+    diagnostics_aggregator: CoverageAggregator | None = None
+    if diagnostics_enabled:
+        diagnostics_aggregator = CoverageAggregator(
+            CoverageAggregationConfig(
+                include_spearman=bool(config.diagnostics.include_spearman),
+                histogram_bins=max(1, int(config.diagnostics.histogram_bins)),
+                quantiles=_coerce_quantiles(config.diagnostics.quantiles),
+                underrepresented_threshold=float(config.diagnostics.underrepresented_threshold),
+                target_bands=_resolve_target_bands(config),
+            )
+        )
+
     result = run_throughput_benchmark(
         config,
         num_datasets=num_datasets,
         warmup_datasets=warmup,
         device=requested_device,
+        on_bundle=(
+            diagnostics_aggregator.update_bundle if diagnostics_aggregator is not None else None
+        ),
     )
     result["profile_key"] = spec.key
     result["suite"] = suite
@@ -209,6 +302,8 @@ def run_profile_benchmark(
     result["hardware_memory_gb"] = hw.total_memory_gb
     result["hardware_peak_flops"] = hw.peak_flops
     result["hardware_profile"] = hw.profile
+    result["diagnostics_enabled"] = diagnostics_enabled
+    result["diagnostics_artifacts"] = None
 
     latency_stats = _collect_latency(
         config,
@@ -239,6 +334,27 @@ def run_profile_benchmark(
 
     if include_micro:
         result.update(run_microbenchmarks(config, device=requested_device, repeats=3))
+
+    if (
+        diagnostics_enabled
+        and diagnostics_aggregator is not None
+        and diagnostics_root_dir is not None
+    ):
+        profile_segment = _sanitize_profile_key(spec.key)
+        if diagnostics_occurrence_total > 1:
+            profile_segment = f"{profile_segment}_run{diagnostics_occurrence_index + 1}"
+        profile_diagnostics_dir = diagnostics_root_dir / "diagnostics" / profile_segment
+        summary = diagnostics_aggregator.build_summary()
+        json_path = write_coverage_summary_json(
+            summary, profile_diagnostics_dir / "coverage_summary.json"
+        )
+        md_path = write_coverage_summary_markdown(
+            summary, profile_diagnostics_dir / "coverage_summary.md"
+        )
+        result["diagnostics_artifacts"] = {
+            "json": _artifact_pointer(json_path),
+            "markdown": _artifact_pointer(md_path),
+        }
 
     return result
 
@@ -301,6 +417,8 @@ def run_benchmark_suite(
     warmup_override: int | None,
     collect_memory: bool,
     collect_reproducibility: bool,
+    collect_diagnostics: bool,
+    diagnostics_root_dir: Path | None,
     fail_on_regression: bool,
     no_hardware_aware: bool,
 ) -> dict[str, Any]:
@@ -309,12 +427,18 @@ def run_benchmark_suite(
     normalized_suite = suite.lower().strip()
     if normalized_suite not in {"smoke", "standard", "full"}:
         raise ValueError(f"Unsupported suite: {suite}")
+    if collect_diagnostics and diagnostics_root_dir is None:
+        raise ValueError("Benchmark diagnostics collection requires a diagnostics_root_dir.")
 
     include_micro = normalized_suite == "full"
     enable_repro = collect_reproducibility or normalized_suite == "full"
+    key_totals: Counter[str] = Counter(spec.key for spec in profile_specs)
+    key_seen: dict[str, int] = {}
 
     profile_results: list[dict[str, Any]] = []
     for spec in profile_specs:
+        occurrence_index = key_seen.get(spec.key, 0)
+        key_seen[spec.key] = occurrence_index + 1
         profile_results.append(
             run_profile_benchmark(
                 spec,
@@ -323,8 +447,12 @@ def run_benchmark_suite(
                 warmup_override=warmup_override,
                 collect_memory=collect_memory,
                 collect_reproducibility=enable_repro,
+                collect_diagnostics=collect_diagnostics,
+                diagnostics_root_dir=diagnostics_root_dir,
                 include_micro=include_micro,
                 no_hardware_aware=no_hardware_aware,
+                diagnostics_occurrence_index=occurrence_index,
+                diagnostics_occurrence_total=key_totals[spec.key],
             )
         )
 

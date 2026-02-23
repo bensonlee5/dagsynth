@@ -2,10 +2,20 @@
 set -euo pipefail
 
 PROFILE="${1:-cpu}"
+DIAGNOSTICS="${2:-off}"
+DIAGNOSTICS_OUT_DIR="${3:-}"
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "error: uv not found in PATH" >&2
   exit 1
 fi
 
-uv run cauchy-gen benchmark --suite smoke --profile "$PROFILE"
+args=(benchmark --suite smoke --profile "$PROFILE")
+if [[ "$DIAGNOSTICS" == "on" || "$DIAGNOSTICS" == "true" || "$DIAGNOSTICS" == "1" ]]; then
+  args+=(--diagnostics)
+fi
+if [[ -n "$DIAGNOSTICS_OUT_DIR" ]]; then
+  args+=(--diagnostics-out-dir "$DIAGNOSTICS_OUT_DIR")
+fi
+
+uv run cauchy-gen "${args[@]}"
