@@ -1,6 +1,10 @@
 import pytest
 
-from cauchy_generator.config import GeneratorConfig
+from cauchy_generator.config import (
+    MISSINGNESS_MECHANISM_MCAR,
+    MISSINGNESS_MECHANISM_NONE,
+    GeneratorConfig,
+)
 
 
 def test_load_default_config() -> None:
@@ -26,6 +30,11 @@ def test_load_default_config() -> None:
     assert cfg.filter.depth >= 0
     assert cfg.filter.max_features == "auto"
     assert cfg.filter.n_split_candidates > 0
+    assert cfg.dataset.missing_rate == 0.0
+    assert cfg.dataset.missing_mechanism == MISSINGNESS_MECHANISM_NONE
+    assert cfg.dataset.missing_mar_observed_fraction == 0.5
+    assert cfg.dataset.missing_mar_logit_scale == 1.0
+    assert cfg.dataset.missing_mnar_logit_scale == 1.0
 
 
 def test_load_cuda_presets() -> None:
@@ -117,3 +126,77 @@ def test_legacy_filter_keys_are_rejected() -> None:
                 }
             }
         )
+
+
+def test_missingness_mechanism_normalization_is_case_insensitive() -> None:
+    cfg = GeneratorConfig.from_dict(
+        {"dataset": {"missing_rate": 0.25, "missing_mechanism": "MCAR"}}
+    )
+    assert cfg.dataset.missing_mechanism == MISSINGNESS_MECHANISM_MCAR
+
+
+def test_missingness_rejects_none_mechanism_when_rate_is_positive() -> None:
+    with pytest.raises(
+        ValueError,
+        match="dataset.missing_mechanism must be mcar, mar, or mnar when dataset.missing_rate > 0",
+    ):
+        GeneratorConfig.from_dict({"dataset": {"missing_rate": 0.1, "missing_mechanism": "none"}})
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1, float("inf"), float("nan"), True])
+def test_missing_rate_bounds_are_validated(value: float | bool) -> None:
+    with pytest.raises(
+        ValueError, match="dataset.missing_rate must be a finite value in \\[0, 1\\]"
+    ):
+        GeneratorConfig.from_dict({"dataset": {"missing_rate": value}})
+
+
+@pytest.mark.parametrize("value", [0.0, -0.1, 1.1, float("inf"), float("nan"), True])
+def test_missing_mar_observed_fraction_bounds_are_validated(value: float | bool) -> None:
+    with pytest.raises(
+        ValueError, match="dataset.missing_mar_observed_fraction must be in \\(0, 1\\]"
+    ):
+        GeneratorConfig.from_dict({"dataset": {"missing_mar_observed_fraction": value}})
+
+
+@pytest.mark.parametrize(
+    ("field_name", "bad_value"),
+    [
+        ("missing_mar_logit_scale", 0.0),
+        ("missing_mar_logit_scale", -1.0),
+        ("missing_mar_logit_scale", float("inf")),
+        ("missing_mar_logit_scale", float("nan")),
+        ("missing_mar_logit_scale", True),
+        ("missing_mnar_logit_scale", 0.0),
+        ("missing_mnar_logit_scale", -1.0),
+        ("missing_mnar_logit_scale", float("inf")),
+        ("missing_mnar_logit_scale", float("nan")),
+        ("missing_mnar_logit_scale", True),
+    ],
+)
+def test_missing_logit_scale_bounds_are_validated(field_name: str, bad_value: float | bool) -> None:
+    with pytest.raises(ValueError, match=rf"dataset.{field_name} must be a finite value > 0"):
+        GeneratorConfig.from_dict({"dataset": {field_name: bad_value}})
+
+
+def test_invalid_missing_mechanism_string_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported missing_mechanism"):
+        GeneratorConfig.from_dict({"dataset": {"missing_mechanism": "garbage"}})
+
+
+def test_unused_missingness_parameters_are_allowed_with_disabled_mechanism() -> None:
+    cfg = GeneratorConfig.from_dict(
+        {
+            "dataset": {
+                "missing_rate": 0.0,
+                "missing_mechanism": "none",
+                "missing_mar_observed_fraction": 0.8,
+                "missing_mar_logit_scale": 2.5,
+                "missing_mnar_logit_scale": 3.5,
+            }
+        }
+    )
+    assert cfg.dataset.missing_mechanism == MISSINGNESS_MECHANISM_NONE
+    assert cfg.dataset.missing_mar_observed_fraction == 0.8
+    assert cfg.dataset.missing_mar_logit_scale == 2.5
+    assert cfg.dataset.missing_mnar_logit_scale == 3.5

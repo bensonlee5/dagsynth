@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -25,6 +26,19 @@ _CURRICULUM_STAGE_VALUE_MAP: dict[str | int, CurriculumStage] = {
     3: 3,
 }
 
+MissingnessMechanism = Literal["none", "mcar", "mar", "mnar"]
+MISSINGNESS_MECHANISM_NONE: Literal["none"] = "none"
+MISSINGNESS_MECHANISM_MCAR: Literal["mcar"] = "mcar"
+MISSINGNESS_MECHANISM_MAR: Literal["mar"] = "mar"
+MISSINGNESS_MECHANISM_MNAR: Literal["mnar"] = "mnar"
+
+_MISSINGNESS_MECHANISM_VALUE_MAP: dict[str, MissingnessMechanism] = {
+    MISSINGNESS_MECHANISM_NONE: MISSINGNESS_MECHANISM_NONE,
+    MISSINGNESS_MECHANISM_MCAR: MISSINGNESS_MECHANISM_MCAR,
+    MISSINGNESS_MECHANISM_MAR: MISSINGNESS_MECHANISM_MAR,
+    MISSINGNESS_MECHANISM_MNAR: MISSINGNESS_MECHANISM_MNAR,
+}
+
 
 def normalize_curriculum_stage(value: str | int) -> CurriculumStage:
     """Normalize curriculum stage config into a validated internal value."""
@@ -36,6 +50,22 @@ def normalize_curriculum_stage(value: str | int) -> CurriculumStage:
     result = _CURRICULUM_STAGE_VALUE_MAP.get(value)
     if result is None:
         raise ValueError(f"Unsupported curriculum_stage '{value}'. Expected off, auto, 1, 2, or 3.")
+    return result
+
+
+def normalize_missing_mechanism(value: str) -> MissingnessMechanism:
+    """Normalize missingness mechanism into a validated internal value."""
+
+    if isinstance(value, bool) or not isinstance(value, str):
+        raise ValueError(
+            f"Unsupported missing_mechanism '{value}'. Expected none, mcar, mar, or mnar."
+        )
+    normalized = value.strip().lower()
+    result = _MISSINGNESS_MECHANISM_VALUE_MAP.get(normalized)
+    if result is None:
+        raise ValueError(
+            f"Unsupported missing_mechanism '{value}'. Expected none, mcar, mar, or mnar."
+        )
     return result
 
 
@@ -51,6 +81,66 @@ class DatasetConfig:
     categorical_ratio_min: float = -0.5
     categorical_ratio_max: float = 1.2
     max_categorical_cardinality: int = 9
+    missing_rate: float = 0.0
+    missing_mechanism: MissingnessMechanism = MISSINGNESS_MECHANISM_NONE
+    missing_mar_observed_fraction: float = 0.5
+    missing_mar_logit_scale: float = 1.0
+    missing_mnar_logit_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.missing_rate, bool):
+            raise ValueError(
+                f"dataset.missing_rate must be a finite value in [0, 1], got {self.missing_rate!r}."
+            )
+        self.missing_rate = float(self.missing_rate)
+        if not math.isfinite(self.missing_rate) or not (0.0 <= self.missing_rate <= 1.0):
+            raise ValueError(
+                f"dataset.missing_rate must be a finite value in [0, 1], got {self.missing_rate!r}."
+            )
+
+        self.missing_mechanism = normalize_missing_mechanism(self.missing_mechanism)
+        if self.missing_rate > 0.0 and self.missing_mechanism == MISSINGNESS_MECHANISM_NONE:
+            raise ValueError(
+                "dataset.missing_mechanism must be mcar, mar, or mnar when dataset.missing_rate > 0."
+            )
+
+        if isinstance(self.missing_mar_observed_fraction, bool):
+            raise ValueError(
+                "dataset.missing_mar_observed_fraction must be in (0, 1], got "
+                f"{self.missing_mar_observed_fraction!r}."
+            )
+        self.missing_mar_observed_fraction = float(self.missing_mar_observed_fraction)
+        if not math.isfinite(self.missing_mar_observed_fraction) or not (
+            0.0 < self.missing_mar_observed_fraction <= 1.0
+        ):
+            raise ValueError(
+                "dataset.missing_mar_observed_fraction must be in (0, 1], got "
+                f"{self.missing_mar_observed_fraction!r}."
+            )
+
+        if isinstance(self.missing_mar_logit_scale, bool):
+            raise ValueError(
+                "dataset.missing_mar_logit_scale must be a finite value > 0, got "
+                f"{self.missing_mar_logit_scale!r}."
+            )
+        self.missing_mar_logit_scale = float(self.missing_mar_logit_scale)
+        if not math.isfinite(self.missing_mar_logit_scale) or self.missing_mar_logit_scale <= 0.0:
+            raise ValueError(
+                "dataset.missing_mar_logit_scale must be a finite value > 0, got "
+                f"{self.missing_mar_logit_scale!r}."
+            )
+
+        if isinstance(self.missing_mnar_logit_scale, bool):
+            raise ValueError(
+                "dataset.missing_mnar_logit_scale must be a finite value > 0, got "
+                f"{self.missing_mnar_logit_scale!r}."
+            )
+        self.missing_mnar_logit_scale = float(self.missing_mnar_logit_scale)
+        if not math.isfinite(self.missing_mnar_logit_scale) or self.missing_mnar_logit_scale <= 0.0:
+            raise ValueError(
+                "dataset.missing_mnar_logit_scale must be a finite value > 0, got "
+                f"{self.missing_mnar_logit_scale!r}."
+            )
 
 
 @dataclass(slots=True)
