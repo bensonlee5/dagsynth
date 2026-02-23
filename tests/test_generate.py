@@ -272,3 +272,70 @@ def test_invalid_class_split_raises_after_attempts(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(ValueError, match="Failed to generate a valid dataset"):
         generate_one(cfg, seed=99, device="cpu")
+
+
+def _tiny_missingness_config(
+    *,
+    task: str,
+    mechanism: str,
+    missing_rate: float = 0.25,
+) -> GeneratorConfig:
+    cfg = _tiny_config()
+    cfg.dataset.task = task
+    cfg.dataset.n_train = 320
+    cfg.dataset.n_test = 160
+    cfg.dataset.missing_rate = missing_rate
+    cfg.dataset.missing_mechanism = mechanism  # type: ignore[assignment]
+    return cfg
+
+
+@pytest.mark.parametrize("mechanism", ["mcar", "mar", "mnar"])
+@pytest.mark.parametrize("task", ["classification", "regression"])
+def test_generate_one_applies_missingness_and_emits_summary(task: str, mechanism: str) -> None:
+    cfg = _tiny_missingness_config(task=task, mechanism=mechanism, missing_rate=0.25)
+    bundle = generate_one(cfg, seed=2718, device="cpu")
+
+    assert bundle.X_train.shape[0] == cfg.dataset.n_train
+    assert bundle.X_test.shape[0] == cfg.dataset.n_test
+    assert bundle.X_train.shape[1] == bundle.X_test.shape[1]
+    assert len(bundle.feature_types) == bundle.X_train.shape[1]
+
+    assert torch.isnan(bundle.X_train).any()
+    assert torch.isnan(bundle.X_test).any()
+
+    payload = bundle.metadata["missingness"]
+    assert payload["enabled"] is True
+    assert payload["mechanism"] == mechanism
+    assert payload["target_rate"] == pytest.approx(0.25)
+    assert payload["missing_count_overall"] == (
+        payload["missing_count_train"] + payload["missing_count_test"]
+    )
+    assert 0.0 <= float(payload["realized_rate_train"]) <= 1.0
+    assert 0.0 <= float(payload["realized_rate_test"]) <= 1.0
+    assert 0.0 <= float(payload["realized_rate_overall"]) <= 1.0
+    assert abs(float(payload["realized_rate_overall"]) - 0.25) <= 0.05
+
+    if task == "classification":
+        assert bundle.y_train.dtype == torch.int64
+        assert bundle.y_test.dtype == torch.int64
+    else:
+        assert torch.isfinite(bundle.y_train).all()
+        assert torch.isfinite(bundle.y_test).all()
+
+
+def test_generate_one_missingness_disabled_preserves_default_behavior() -> None:
+    cfg = _tiny_missingness_config(task="classification", mechanism="none", missing_rate=0.0)
+    bundle = generate_one(cfg, seed=31415, device="cpu")
+    assert "missingness" not in bundle.metadata
+    assert not torch.isnan(bundle.X_train).any()
+    assert not torch.isnan(bundle.X_test).any()
+
+
+def test_generate_one_missingness_mask_is_reproducible_for_fixed_seed() -> None:
+    cfg = _tiny_missingness_config(task="classification", mechanism="mar", missing_rate=0.3)
+    a = generate_one(cfg, seed=12345, device="cpu")
+    b = generate_one(cfg, seed=12345, device="cpu")
+
+    assert torch.equal(torch.isnan(a.X_train), torch.isnan(b.X_train))
+    assert torch.equal(torch.isnan(a.X_test), torch.isnan(b.X_test))
+    assert a.metadata["missingness"] == b.metadata["missingness"]
