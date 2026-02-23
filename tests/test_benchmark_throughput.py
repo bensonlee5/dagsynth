@@ -41,3 +41,36 @@ def test_run_throughput_benchmark_uses_streaming_generation(
     assert result["warmup_datasets"] == 2
 
     assert float(typing.cast(float, result["datasets_per_minute"])) >= 0.0
+
+
+def test_run_throughput_benchmark_updates_callback_on_measured_generation(
+    monkeypatch,
+) -> None:
+    observed: list[int] = []
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        for idx in range(num_datasets):
+            yield idx
+
+    monkeypatch.setattr(
+        "cauchy_generator.bench.throughput.generate_batch_iter",
+        _stub_generate_batch_iter,
+    )
+
+    cfg = GeneratorConfig()
+    run_throughput_benchmark(
+        cfg,
+        num_datasets=4,
+        warmup_datasets=2,
+        device="cpu",
+        on_bundle=lambda bundle: observed.append(int(bundle)),
+    )
+    assert observed == [0, 1, 2, 3]

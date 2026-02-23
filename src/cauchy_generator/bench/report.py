@@ -34,10 +34,11 @@ def _build_profile_table(profile_results: list[dict[str, Any]]) -> list[str]:
     """Create a markdown table summarizing per-profile performance metrics."""
 
     lines = [
-        "| Profile | Device | Backend | Datasets/min | Elapsed (s) | Latency p95 (ms) | Peak RSS (MB) |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Profile | Device | Backend | Datasets/min | Elapsed (s) | Latency p95 (ms) | Peak RSS (MB) | Diagnostics |",
+        "|---|---|---:|---:|---:|---:|---:|---|",
     ]
     for result in profile_results:
+        diagnostics_state = "on" if bool(result.get("diagnostics_enabled")) else "off"
         lines.append(
             "| "
             f"{result.get('profile_key', '-')} | "
@@ -46,8 +47,31 @@ def _build_profile_table(profile_results: list[dict[str, Any]]) -> list[str]:
             f"{_format_float(result.get('datasets_per_minute'), 2)} | "
             f"{_format_float(result.get('elapsed_seconds'), 3)} | "
             f"{_format_float(result.get('latency_p95_ms'), 2)} | "
-            f"{_format_float(result.get('peak_rss_mb'), 2)} |"
+            f"{_format_float(result.get('peak_rss_mb'), 2)} | "
+            f"{diagnostics_state} |"
         )
+    return lines
+
+
+def _build_diagnostics_table(profile_results: list[dict[str, Any]]) -> list[str]:
+    """Create a markdown table with per-profile diagnostics artifact pointers."""
+
+    lines = [
+        "| Profile | Coverage JSON | Coverage Markdown |",
+        "|---|---|---|",
+    ]
+    for result in profile_results:
+        artifacts = result.get("diagnostics_artifacts")
+        json_path = "-"
+        md_path = "-"
+        if isinstance(artifacts, dict):
+            json_value = artifacts.get("json")
+            md_value = artifacts.get("markdown")
+            if isinstance(json_value, str) and json_value:
+                json_path = f"`{json_value}`"
+            if isinstance(md_value, str) and md_value:
+                md_path = f"`{md_value}`"
+        lines.append(f"| {result.get('profile_key', '-')} | {json_path} | {md_path} |")
     return lines
 
 
@@ -74,6 +98,10 @@ def write_suite_markdown(summary: dict[str, Any], out_path: str | Path) -> Path:
         lines.append("## Profiles")
         lines.extend(_build_profile_table(profile_results))
         lines.append("")
+        if any(bool(result.get("diagnostics_enabled")) for result in profile_results):
+            lines.append("## Diagnostics Artifacts")
+            lines.extend(_build_diagnostics_table(profile_results))
+            lines.append("")
 
     if isinstance(regression, dict) and regression.get("issues"):
         lines.append("## Regression Issues")

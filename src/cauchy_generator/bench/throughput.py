@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import time
+from typing import Any, Callable
 
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_batch_iter
+from cauchy_generator.types import DatasetBundle
 
 
 def _consume_generation(
@@ -14,16 +16,18 @@ def _consume_generation(
     num_datasets: int,
     seed: int,
     device: str | None,
+    on_bundle: Callable[[DatasetBundle], object] | None = None,
 ) -> None:
     """Run generation for ``num_datasets`` items while discarding outputs."""
 
-    for _ in generate_batch_iter(
+    for bundle in generate_batch_iter(
         config,
         num_datasets=num_datasets,
         seed=seed,
         device=device,
     ):
-        pass
+        if on_bundle is not None:
+            on_bundle(bundle)
 
 
 def run_throughput_benchmark(
@@ -32,7 +36,8 @@ def run_throughput_benchmark(
     num_datasets: int,
     warmup_datasets: int = 10,
     device: str | None = None,
-) -> dict[str, float | int | str | None]:
+    on_bundle: Callable[[DatasetBundle], object] | None = None,
+) -> dict[str, Any]:
     """Measure end-to-end generation throughput for a benchmark profile."""
 
     if warmup_datasets > 0:
@@ -49,6 +54,7 @@ def run_throughput_benchmark(
         num_datasets=num_datasets,
         seed=config.seed + 2,
         device=device,
+        on_bundle=on_bundle,
     )
     elapsed = time.perf_counter() - start
     dps = num_datasets / elapsed if elapsed > 0 else 0.0

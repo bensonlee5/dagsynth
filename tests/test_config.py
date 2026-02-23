@@ -12,6 +12,10 @@ def test_load_default_config() -> None:
     assert cfg.output.shard_size > 0
     assert cfg.diagnostics.enabled is False
     assert cfg.diagnostics.histogram_bins > 0
+    assert cfg.diagnostics.quantiles
+    assert cfg.diagnostics.underrepresented_threshold >= 0
+    assert cfg.diagnostics.meta_feature_targets == {}
+    assert cfg.diagnostics.out_dir is None
     assert cfg.steering.enabled is False
     assert cfg.steering.max_attempts == 3
     assert cfg.steering.temperature > 0
@@ -25,6 +29,22 @@ def test_load_cuda_presets() -> None:
     cfg_h100 = GeneratorConfig.from_yaml("configs/preset_cuda_h100.yaml")
     assert cfg_h100.runtime.device == "cuda"
     assert cfg_h100.dataset.n_features_max >= 128
+
+
+def test_load_diagnostics_and_steering_presets() -> None:
+    cfg_diag = GeneratorConfig.from_yaml("configs/preset_diagnostics_on.yaml")
+    assert cfg_diag.diagnostics.enabled is True
+    assert cfg_diag.steering.enabled is False
+    assert cfg_diag.diagnostics.histogram_bins >= 8
+    assert cfg_diag.diagnostics.quantiles
+
+    cfg_steering = GeneratorConfig.from_yaml("configs/preset_steering_conservative.yaml")
+    assert cfg_steering.steering.enabled is True
+    assert cfg_steering.steering.max_attempts >= 2
+    assert cfg_steering.steering.temperature > 0
+    assert cfg_steering.meta_feature_targets
+    for band in cfg_steering.meta_feature_targets.values():
+        assert len(band) in {2, 3}
 
 
 def test_load_benchmark_profiles() -> None:
