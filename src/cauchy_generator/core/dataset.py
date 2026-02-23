@@ -24,7 +24,7 @@ from cauchy_generator.core.steering_metrics import extract_steering_metrics
 from cauchy_generator.diagnostics.types import DatasetMetrics
 from cauchy_generator.filtering import apply_torch_rf_filter
 from cauchy_generator.graph import sample_cauchy_dag
-from cauchy_generator.postprocess import postprocess_dataset
+from cauchy_generator.postprocess import inject_missingness, postprocess_dataset
 from cauchy_generator.rng import SeedManager
 from cauchy_generator.sampling import CorrelatedSampler
 from cauchy_generator.types import DatasetBundle
@@ -450,6 +450,14 @@ def _generate_torch(
             generator,
             device,
         )
+        x_train, x_test, missingness_summary = inject_missingness(
+            x_train,
+            x_test,
+            dataset_cfg=config.dataset,
+            seed=seed,
+            attempt=attempt,
+            device=device,
+        )
 
         if config.dataset.task == "classification" and not _classification_split_valid(
             y_train, y_test
@@ -480,6 +488,8 @@ def _generate_torch(
             "curriculum": curriculum,
             "config": asdict(config),
         }
+        if missingness_summary is not None:
+            metadata["missingness"] = missingness_summary
         return DatasetBundle(
             X_train=x_train,
             y_train=y_train,

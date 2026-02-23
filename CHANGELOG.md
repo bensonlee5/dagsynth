@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture documentation with mermaid diagrams (`docs/architecture.md`)
 - Torch-native steering metric extractor (`core/steering_metrics.py`) — avoids NumPy conversion during candidate scoring
 - Deterministic MCAR/MAR/MNAR missingness mask samplers with typed config validation coverage
+- End-to-end missingness injection in generation/postprocess path with compact metadata summaries for configured and realized rates
 
 ### Changed
 

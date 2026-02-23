@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
+
+from cauchy_generator.config import (
+    DatasetConfig,
+    MISSINGNESS_MECHANISM_NONE,
+    normalize_missing_mechanism,
+)
+from cauchy_generator.rng import SeedManager
+from cauchy_generator.sampling import sample_missingness_mask
 
 
 def _remove_constant_columns(
@@ -97,3 +107,65 @@ def postprocess_dataset(
         y_test_p = y_test.to(torch.int64)
 
     return x_train_p, y_train_p, x_test_p, y_test_p, feature_types
+
+
+def inject_missingness(
+    x_train: torch.Tensor,
+    x_test: torch.Tensor,
+    *,
+    dataset_cfg: DatasetConfig,
+    seed: int,
+    attempt: int,
+    device: str,
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any] | None]:
+    """
+    Inject configured missingness into train/test feature tensors.
+
+    Missing values are encoded as NaN and summary stats are returned for metadata.
+    """
+
+    missing_rate = float(dataset_cfg.missing_rate)
+    mechanism = normalize_missing_mechanism(dataset_cfg.missing_mechanism)
+    enabled = missing_rate > 0.0 and mechanism != MISSINGNESS_MECHANISM_NONE
+    if not enabled:
+        return x_train, x_test, None
+
+    run_manager = SeedManager(seed)
+    train_manager = SeedManager(run_manager.child("missingness", attempt, "train"))
+    test_manager = SeedManager(run_manager.child("missingness", attempt, "test"))
+
+    train_mask = sample_missingness_mask(
+        x_train,
+        dataset_cfg=dataset_cfg,
+        seed_manager=train_manager,
+        device=device,
+    )
+    test_mask = sample_missingness_mask(
+        x_test,
+        dataset_cfg=dataset_cfg,
+        seed_manager=test_manager,
+        device=device,
+    )
+
+    x_train_missing = x_train.masked_fill(train_mask, float("nan"))
+    x_test_missing = x_test.masked_fill(test_mask, float("nan"))
+
+    missing_count_train = int(train_mask.sum().item())
+    missing_count_test = int(test_mask.sum().item())
+    train_total = max(1, int(train_mask.numel()))
+    test_total = max(1, int(test_mask.numel()))
+    total = train_total + test_total
+    missing_count_overall = missing_count_train + missing_count_test
+
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "mechanism": mechanism,
+        "target_rate": float(missing_rate),
+        "realized_rate_train": float(missing_count_train / train_total),
+        "realized_rate_test": float(missing_count_test / test_total),
+        "realized_rate_overall": float(missing_count_overall / total),
+        "missing_count_train": missing_count_train,
+        "missing_count_test": missing_count_test,
+        "missing_count_overall": missing_count_overall,
+    }
+    return x_train_missing, x_test_missing, summary

@@ -2,7 +2,8 @@
 
 import torch
 
-from cauchy_generator.postprocess.postprocess import postprocess_dataset
+from cauchy_generator.config import DatasetConfig
+from cauchy_generator.postprocess.postprocess import inject_missingness, postprocess_dataset
 from conftest import make_generator as _make_generator
 
 
@@ -81,3 +82,72 @@ def test_deterministic() -> None:
     )
     torch.testing.assert_close(out1[0], out2[0])
     torch.testing.assert_close(out1[1], out2[1])
+
+
+def test_inject_missingness_disabled_noop() -> None:
+    g = _make_generator(5)
+    x_train = torch.randn(16, 4, generator=g)
+    x_test = torch.randn(8, 4, generator=g)
+    cfg = DatasetConfig(missing_rate=0.0, missing_mechanism="none")
+
+    out_train, out_test, summary = inject_missingness(
+        x_train, x_test, dataset_cfg=cfg, seed=77, attempt=0, device="cpu"
+    )
+
+    torch.testing.assert_close(out_train, x_train)
+    torch.testing.assert_close(out_test, x_test)
+    assert summary is None
+
+
+def test_inject_missingness_adds_nans_and_preserves_shape() -> None:
+    g = _make_generator(6)
+    x_train = torch.randn(64, 6, generator=g)
+    x_test = torch.randn(32, 6, generator=g)
+    cfg = DatasetConfig(missing_rate=0.3, missing_mechanism="mcar")
+
+    out_train, out_test, summary = inject_missingness(
+        x_train, x_test, dataset_cfg=cfg, seed=88, attempt=1, device="cpu"
+    )
+
+    assert out_train.shape == x_train.shape
+    assert out_test.shape == x_test.shape
+    assert torch.isnan(out_train).any()
+    assert torch.isnan(out_test).any()
+    assert summary is not None
+    assert summary["mechanism"] == "mcar"
+    assert summary["target_rate"] == 0.3
+    assert 0.0 <= float(summary["realized_rate_overall"]) <= 1.0
+
+
+def test_inject_missingness_deterministic_for_fixed_seed_and_attempt() -> None:
+    g = _make_generator(7)
+    x_train = torch.randn(96, 5, generator=g)
+    x_test = torch.randn(48, 5, generator=g)
+    cfg = DatasetConfig(missing_rate=0.35, missing_mechanism="mar")
+
+    a_train, a_test, _ = inject_missingness(
+        x_train, x_test, dataset_cfg=cfg, seed=101, attempt=2, device="cpu"
+    )
+    b_train, b_test, _ = inject_missingness(
+        x_train, x_test, dataset_cfg=cfg, seed=101, attempt=2, device="cpu"
+    )
+
+    assert torch.equal(torch.isnan(a_train), torch.isnan(b_train))
+    assert torch.equal(torch.isnan(a_test), torch.isnan(b_test))
+
+
+def test_inject_missingness_changes_for_different_seed() -> None:
+    g = _make_generator(8)
+    x_train = torch.randn(96, 5, generator=g)
+    x_test = torch.randn(48, 5, generator=g)
+    cfg = DatasetConfig(missing_rate=0.35, missing_mechanism="mnar")
+
+    a_train, a_test, _ = inject_missingness(
+        x_train, x_test, dataset_cfg=cfg, seed=202, attempt=0, device="cpu"
+    )
+    b_train, b_test, _ = inject_missingness(
+        x_train, x_test, dataset_cfg=cfg, seed=203, attempt=0, device="cpu"
+    )
+
+    assert not torch.equal(torch.isnan(a_train), torch.isnan(b_train))
+    assert not torch.equal(torch.isnan(a_test), torch.isnan(b_test))
