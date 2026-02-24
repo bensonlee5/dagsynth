@@ -267,7 +267,7 @@ def test_run_benchmark_suite_lineage_runtime_guardrail_updates_regression_status
     )
 
 
-def test_collect_lineage_guardrails_uses_median_of_three_trials(
+def test_collect_lineage_guardrails_uses_median_of_three_trials_with_runtime_gating_suppressed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = _tiny_cpu_config()
@@ -323,15 +323,86 @@ def test_collect_lineage_guardrails_uses_median_of_three_trials(
     )
 
     assert guardrails["enabled"] is True
+    assert guardrails["runtime_gating_enabled"] is False
+    assert guardrails["runtime_gating_min_sample_datasets"] == 5
+    assert guardrails["runtime_gating_suppressed_reason"] == "insufficient_sample_size"
     assert guardrails["runtime_trials"] == 3
     assert guardrails["runtime_baseline_trials_dpm"] == [100.0, 1000.0, 100.0]
     assert guardrails["runtime_with_lineage_trials_dpm"] == [90.0, 100.0, 90.0]
     assert guardrails["runtime_baseline_datasets_per_minute"] == pytest.approx(100.0)
     assert guardrails["runtime_with_lineage_datasets_per_minute"] == pytest.approx(90.0)
     assert guardrails["runtime_degradation_pct"] == pytest.approx(10.0)
-    assert guardrails["status"] == "warn"
+    assert guardrails["status"] == "pass"
+    assert not any(
+        issue["metric"] == "lineage_export_runtime_degradation_pct"
+        for issue in guardrails["issues"]
+    )
+
+
+def test_collect_lineage_guardrails_emits_runtime_issue_when_sample_is_sufficient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.benchmark.latency_num_samples = 6
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        for i in range(num_datasets):
+            yield DatasetBundle(
+                X_train=np.zeros((3, 4), dtype=np.float32),
+                y_train=np.zeros(3, dtype=np.int64),
+                X_test=np.zeros((1, 4), dtype=np.float32),
+                y_test=np.zeros(1, dtype=np.int64),
+                feature_types=["num", "num", "num", "num"],
+                metadata={
+                    "seed": i,
+                    "attempt_used": 0,
+                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                },
+            )
+
+    trial_values = iter([100.0, 70.0, 100.0, 70.0, 100.0, 70.0])
+
+    def _stub_measure(
+        _bundles: list[DatasetBundle],
+        *,
+        config: GeneratorConfig,
+    ) -> float:
+        _ = config
+        return float(next(trial_values))
+
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite.generate_batch_iter", _stub_generate_batch_iter
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._measure_persistence_datasets_per_minute",
+        _stub_measure,
+    )
+
+    guardrails = suite_mod._collect_lineage_guardrails(
+        cfg,
+        suite="smoke",
+        num_datasets=6,
+        device="cpu",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+    )
+
+    assert guardrails["enabled"] is True
+    assert guardrails["sample_datasets"] == 5
+    assert guardrails["runtime_gating_enabled"] is True
+    assert guardrails["runtime_gating_suppressed_reason"] is None
+    assert guardrails["runtime_degradation_pct"] == pytest.approx(30.0)
+    assert guardrails["status"] == "fail"
     assert any(
-        issue["metric"] == "lineage_export_runtime_degradation_pct" and issue["severity"] == "warn"
+        issue["metric"] == "lineage_export_runtime_degradation_pct" and issue["severity"] == "fail"
         for issue in guardrails["issues"]
     )
 

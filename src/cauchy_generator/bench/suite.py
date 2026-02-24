@@ -53,6 +53,7 @@ MISSINGNESS_RATE_FAIL_ABS_ERROR = 0.05
 LINEAGE_GUARDRAIL_SMOKE_SAMPLE_CAP = 5
 LINEAGE_GUARDRAIL_SEED_OFFSET = 123_000
 LINEAGE_GUARDRAIL_RUNTIME_TRIALS = 3
+LINEAGE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE = 5
 
 
 @dataclass(slots=True)
@@ -438,6 +439,7 @@ def _collect_lineage_guardrails(
         warn=float(warn_threshold_pct),
         fail=float(fail_threshold_pct),
     )
+    runtime_gating_enabled = sample_n >= LINEAGE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE
 
     issues: list[dict[str, Any]] = []
     if bundles_with_lineage != len(sample_bundles):
@@ -451,7 +453,7 @@ def _collect_lineage_guardrails(
                 detail="Lineage metadata must be present for all generated bundles.",
             )
         )
-    if runtime_severity != "pass":
+    if runtime_gating_enabled and runtime_severity != "pass":
         issues.append(
             _build_lineage_guardrail_issue(
                 metric="lineage_export_runtime_degradation_pct",
@@ -469,6 +471,11 @@ def _collect_lineage_guardrails(
     return {
         "enabled": True,
         "sample_datasets": int(sample_n),
+        "runtime_gating_enabled": bool(runtime_gating_enabled),
+        "runtime_gating_min_sample_datasets": int(LINEAGE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE),
+        "runtime_gating_suppressed_reason": (
+            None if runtime_gating_enabled else "insufficient_sample_size"
+        ),
         "runtime_trials": int(max(1, LINEAGE_GUARDRAIL_RUNTIME_TRIALS)),
         "runtime_baseline_trials_dpm": baseline_trials,
         "runtime_with_lineage_trials_dpm": current_trials,
