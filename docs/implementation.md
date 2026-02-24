@@ -69,7 +69,7 @@ Each `DatasetBundle` contains:
 
 Persist generated outputs as Parquet shards with a sidecar metadata JSON per shard.
 
-Current metadata includes summary graph stats, config lineage, and optional `missingness` payload fields (configured/realized rates and per-split counts). Full DAG artifact export is tracked under RD-001.
+Current metadata includes summary graph stats, versioned DAG lineage (`metadata.lineage`), config lineage, and optional `missingness` payload fields (configured/realized rates and per-split counts). Full DAG artifact persistence/guardrails rollout remains tracked under RD-001.
 
 #### DAG Lineage Schema (v1)
 
