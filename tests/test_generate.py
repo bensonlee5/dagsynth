@@ -4,6 +4,12 @@ import numpy as np
 
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_batch, generate_batch_iter, generate_one
+from cauchy_generator.io.lineage_schema import (
+    LINEAGE_SCHEMA_NAME,
+    LINEAGE_SCHEMA_VERSION,
+    validate_metadata_lineage,
+    validate_lineage_payload,
+)
 from cauchy_generator.types import DatasetBundle
 
 
@@ -30,6 +36,50 @@ def test_generate_one_shapes() -> None:
     assert len(bundle.feature_types) == bundle.X_train.shape[1]
 
 
+def test_generate_one_emits_lineage_metadata_schema_fields() -> None:
+    cfg = _tiny_config()
+    bundle = generate_one(cfg, seed=11, device="cpu")
+    lineage = bundle.metadata["lineage"]
+    assert lineage["schema_name"] == LINEAGE_SCHEMA_NAME
+    assert lineage["schema_version"] == LINEAGE_SCHEMA_VERSION
+    assert "graph" in lineage
+    assert "assignments" in lineage
+    validate_metadata_lineage(bundle.metadata, required=True)
+    validate_lineage_payload(lineage)
+
+
+def test_generate_one_lineage_shapes_match_graph_stats() -> None:
+    cfg = _tiny_config()
+    bundle = generate_one(cfg, seed=12, device="cpu")
+    lineage = bundle.metadata["lineage"]
+    graph = lineage["graph"]
+    adjacency = graph["adjacency"]
+    n_nodes = int(bundle.metadata["graph_nodes"])
+
+    assert int(graph["n_nodes"]) == n_nodes
+    assert len(adjacency) == n_nodes
+    for row in adjacency:
+        assert len(row) == n_nodes
+
+    edge_count = sum(sum(int(value) for value in row) for row in adjacency)
+    assert edge_count == int(bundle.metadata["graph_edges"])
+
+
+def test_generate_one_lineage_assignment_lengths_and_bounds() -> None:
+    cfg = _tiny_config()
+    bundle = generate_one(cfg, seed=13, device="cpu")
+    lineage = bundle.metadata["lineage"]
+    assignments = lineage["assignments"]
+    n_nodes = int(bundle.metadata["graph_nodes"])
+
+    feature_to_node = assignments["feature_to_node"]
+    target_to_node = int(assignments["target_to_node"])
+    assert len(feature_to_node) == int(bundle.metadata["n_features"])
+    assert 0 <= target_to_node < n_nodes
+    for node_index in feature_to_node:
+        assert 0 <= int(node_index) < n_nodes
+
+
 def test_generate_batch_reproducible_metadata() -> None:
     cfg = _tiny_config()
     batch_a = generate_batch(cfg, num_datasets=2, seed=123, device="cpu")
@@ -42,6 +92,88 @@ def test_generate_batch_reproducible_metadata() -> None:
         atol=1e-6,
         rtol=1e-6,
     )
+
+
+def test_generate_batch_reproducible_lineage_for_fixed_seed() -> None:
+    cfg = _tiny_config()
+    batch_a = generate_batch(cfg, num_datasets=2, seed=678, device="cpu")
+    batch_b = generate_batch(cfg, num_datasets=2, seed=678, device="cpu")
+
+    assert len(batch_a) == len(batch_b)
+    for bundle_a, bundle_b in zip(batch_a, batch_b, strict=True):
+        assert bundle_a.metadata["lineage"] == bundle_b.metadata["lineage"]
+
+
+def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_config()
+    cfg.dataset.task = "regression"
+    cfg.filter.enabled = False
+
+    layout = {
+        "feature_types": ["num", "cat", "num", "cat"],
+        "graph_nodes": 3,
+        "graph_edges": 2,
+        "adjacency": torch.tensor(
+            [
+                [0, 1, 1],
+                [0, 0, 0],
+                [0, 0, 0],
+            ],
+            dtype=torch.bool,
+        ),
+        "feature_node_assignment": [0, 1, 2, 1],
+        "target_node_assignment": 2,
+    }
+
+    monkeypatch.setattr(
+        "cauchy_generator.core.dataset._sample_layout",
+        lambda *_args, **_kwargs: layout,
+    )
+
+    def _stub_generate_graph_dataset_torch(_config, _layout, _seed, _device, *, n_rows):
+        x = torch.arange(n_rows * 4, dtype=torch.float32).reshape(n_rows, 4)
+        y = torch.linspace(0.0, 1.0, n_rows, dtype=torch.float32)
+        return x, y, {"filter": {"enabled": False}}
+
+    monkeypatch.setattr(
+        "cauchy_generator.core.dataset._generate_graph_dataset_torch",
+        _stub_generate_graph_dataset_torch,
+    )
+
+    def _stub_postprocess_dataset(
+        x_train,
+        y_train,
+        x_test,
+        y_test,
+        feature_types,
+        _task,
+        _generator,
+        _device,
+        *,
+        return_feature_index_map=False,
+    ):
+        assert return_feature_index_map is True
+        index_map = [2, 0, 3]
+        reordered_types = [feature_types[i] for i in index_map]
+        return (
+            x_train[:, index_map],
+            y_train,
+            x_test[:, index_map],
+            y_test,
+            reordered_types,
+            index_map,
+        )
+
+    monkeypatch.setattr(
+        "cauchy_generator.core.dataset.postprocess_dataset",
+        _stub_postprocess_dataset,
+    )
+
+    bundle = generate_one(cfg, seed=777, device="cpu")
+    assert int(bundle.metadata["n_features"]) == 3
+    assert bundle.metadata["lineage"]["assignments"]["feature_to_node"] == [2, 0, 1]
 
 
 def test_generate_batch_iter_matches_batch_ordering() -> None:

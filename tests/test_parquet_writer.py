@@ -3,6 +3,7 @@ import json
 import numpy as np
 import pytest
 
+from cauchy_generator.io.lineage_schema import LINEAGE_SCHEMA_NAME, LINEAGE_SCHEMA_VERSION
 from cauchy_generator.io.parquet_writer import write_parquet_shards, write_parquet_shards_stream
 from cauchy_generator.io.parquet_writer import _sanitize_json
 from cauchy_generator.types import DatasetBundle
@@ -79,3 +80,33 @@ def test_write_parquet_shards_stream_rejects_stale_output(tmp_path) -> None:
     stale_dir.mkdir(parents=True, exist_ok=True)
     with pytest.raises(RuntimeError, match="already contains shard data"):
         write_parquet_shards_stream([_bundle(1)], tmp_path, shard_size=1)
+
+
+def test_write_parquet_shards_stream_writes_lineage_metadata(tmp_path, monkeypatch) -> None:
+    def _stub_write_split(path, _x, _y, _compression):
+        path.write_text("ok", encoding="utf-8")
+
+    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
+    bundle = _bundle(7)
+    bundle.metadata["lineage"] = {
+        "schema_name": LINEAGE_SCHEMA_NAME,
+        "schema_version": LINEAGE_SCHEMA_VERSION,
+        "graph": {
+            "n_nodes": 2,
+            "adjacency": [[0, 1], [0, 0]],
+        },
+        "assignments": {
+            "feature_to_node": [0, 1],
+            "target_to_node": 1,
+        },
+    }
+
+    written = write_parquet_shards_stream([bundle], tmp_path, shard_size=1, compression="zstd")
+    assert written == 1
+    metadata = json.loads(
+        (tmp_path / "shard_00000" / "dataset_000000" / "metadata.json").read_text(encoding="utf-8")
+    )
+    lineage = metadata["lineage"]
+    assert lineage["schema_name"] == LINEAGE_SCHEMA_NAME
+    assert lineage["schema_version"] == LINEAGE_SCHEMA_VERSION
+    assert lineage["graph"]["adjacency"] == [[0, 1], [0, 0]]
