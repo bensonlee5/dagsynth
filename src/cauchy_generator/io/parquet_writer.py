@@ -40,6 +40,12 @@ def _array_to_columns(x: np.ndarray) -> dict[str, np.ndarray]:
     return {f"f_{i:04d}": x[:, i] for i in range(x.shape[1])}
 
 
+def _shard_id_for_dataset(*, dataset_index: int, shard_size: int) -> int:
+    """Return shard id for a dataset index under configured shard size."""
+
+    return dataset_index // max(1, shard_size)
+
+
 def _write_split(path: Path, x: np.ndarray, y: np.ndarray, compression: str) -> None:
     """Write one train/test split to a Parquet file."""
 
@@ -153,17 +159,23 @@ def _ensure_shard_blob_open(state: _ShardLineageState) -> BinaryIO:
     return opened
 
 
+def _close_shard_blob(state: _ShardLineageState) -> None:
+    """Close a single shard blob handle if open."""
+
+    blob_file = state.blob_file
+    if blob_file is None:
+        return
+    try:
+        blob_file.close()
+    finally:
+        state.blob_file = None
+
+
 def _close_shard_lineage_files(lineage_states: Mapping[int, _ShardLineageState]) -> None:
     """Close open shard blob handles."""
 
     for state in lineage_states.values():
-        blob_file = state.blob_file
-        if blob_file is None:
-            continue
-        try:
-            blob_file.close()
-        finally:
-            state.blob_file = None
+        _close_shard_blob(state)
 
 
 def _persist_lineage_artifact_for_dataset(
@@ -254,6 +266,27 @@ def _write_shard_lineage_indexes(lineage_states: Mapping[int, _ShardLineageState
             )
 
 
+def _finalize_lineage_states(
+    lineage_states: Mapping[int, _ShardLineageState],
+    *,
+    strict_index_write: bool,
+) -> None:
+    """Close handles and flush lineage indexes.
+
+    When `strict_index_write` is False, index write failures are swallowed so the
+    original generation exception remains the primary error.
+    """
+
+    _close_shard_lineage_files(lineage_states)
+    if strict_index_write:
+        _write_shard_lineage_indexes(lineage_states)
+        return
+    try:
+        _write_shard_lineage_indexes(lineage_states)
+    except Exception:
+        return
+
+
 def _write_bundle_dataset(
     bundle: DatasetBundle,
     *,
@@ -265,7 +298,7 @@ def _write_bundle_dataset(
 ) -> Path:
     """Write a single dataset bundle under its shard/dataset directory."""
 
-    shard_id = dataset_index // max(1, shard_size)
+    shard_id = _shard_id_for_dataset(dataset_index=dataset_index, shard_size=shard_size)
     shard_dir = out_dir / f"shard_{shard_id:05d}"
     shard_dir.mkdir(parents=True, exist_ok=True)
 
@@ -312,9 +345,17 @@ def write_parquet_shards_stream(
     _ensure_output_dir_safe(out)
 
     lineage_states: dict[int, _ShardLineageState] = {}
+    active_shard_id: int | None = None
     written = 0
+    success = False
     try:
         for idx, bundle in enumerate(bundles):
+            shard_id = _shard_id_for_dataset(dataset_index=idx, shard_size=shard_size)
+            if active_shard_id is not None and shard_id != active_shard_id:
+                previous_state = lineage_states.get(active_shard_id)
+                if previous_state is not None:
+                    _close_shard_blob(previous_state)
+            active_shard_id = shard_id
             _write_bundle_dataset(
                 bundle,
                 out_dir=out,
@@ -324,10 +365,10 @@ def write_parquet_shards_stream(
                 lineage_states=lineage_states,
             )
             written = idx + 1
-        _write_shard_lineage_indexes(lineage_states)
+        success = True
         return written
     finally:
-        _close_shard_lineage_files(lineage_states)
+        _finalize_lineage_states(lineage_states, strict_index_write=success)
 
 
 def write_parquet_shards(
@@ -342,10 +383,18 @@ def write_parquet_shards(
     out = Path(out_dir)
     _ensure_output_dir_safe(out)
     lineage_states: dict[int, _ShardLineageState] = {}
+    active_shard_id: int | None = None
     shard_paths: list[Path] = []
+    success = False
 
     try:
         for idx, bundle in enumerate(bundles):
+            shard_id = _shard_id_for_dataset(dataset_index=idx, shard_size=shard_size)
+            if active_shard_id is not None and shard_id != active_shard_id:
+                previous_state = lineage_states.get(active_shard_id)
+                if previous_state is not None:
+                    _close_shard_blob(previous_state)
+            active_shard_id = shard_id
             dataset_dir = _write_bundle_dataset(
                 bundle,
                 out_dir=out,
@@ -355,8 +404,7 @@ def write_parquet_shards(
                 lineage_states=lineage_states,
             )
             shard_paths.append(dataset_dir)
-
-        _write_shard_lineage_indexes(lineage_states)
+        success = True
         return shard_paths
     finally:
-        _close_shard_lineage_files(lineage_states)
+        _finalize_lineage_states(lineage_states, strict_index_write=success)
