@@ -149,14 +149,23 @@ class GraphConfig:
     n_nodes_max: int = 32
 
 
-def _validate_optional_int_bound(name: str, value: int | None, *, minimum: int) -> int | None:
+def _validate_optional_int_bound(name: str, value: object | None, *, minimum: int) -> int | None:
     """Validate an optional integer bound and normalize to int."""
 
     if value is None:
         return None
     if isinstance(value, bool):
         raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}.")
-    parsed = int(value)
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        normalized = value.strip()
+        signless = normalized[1:] if normalized.startswith(("+", "-")) else normalized
+        if not signless.isdigit():
+            raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}.")
+        parsed = int(normalized)
+    else:
+        raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}.")
     if parsed < minimum:
         raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}.")
     return parsed
@@ -225,16 +234,18 @@ def _normalize_curriculum_stage_key(value: str | int) -> int:
 
     if isinstance(value, bool):
         raise ValueError(f"Unsupported curriculum stage key '{value}'. Expected 1, 2, or 3.")
-    if isinstance(value, str):
-        value = value.strip()
-        if not value:
+    if isinstance(value, int):
+        stage = value
+    elif isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
             raise ValueError("Unsupported curriculum stage key ''. Expected 1, 2, or 3.")
-    try:
-        stage = int(value)
-    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
-        raise ValueError(
-            f"Unsupported curriculum stage key '{value}'. Expected 1, 2, or 3."
-        ) from exc
+        signless = normalized[1:] if normalized.startswith(("+", "-")) else normalized
+        if not signless.isdigit():
+            raise ValueError(f"Unsupported curriculum stage key '{value}'. Expected 1, 2, or 3.")
+        stage = int(normalized)
+    else:  # pragma: no cover - defensive
+        raise ValueError(f"Unsupported curriculum stage key '{value}'. Expected 1, 2, or 3.")
     if stage not in (1, 2, 3):
         raise ValueError(f"Unsupported curriculum stage key '{value}'. Expected 1, 2, or 3.")
     return stage

@@ -155,6 +155,12 @@ def test_curriculum_stage_schema_rejects_invalid_stage_key() -> None:
         GeneratorConfig.from_dict({"curriculum": {"stages": {"4": {"n_features_min": 8}}}})
 
 
+@pytest.mark.parametrize("stage_key", (1.9, "1.9"))
+def test_curriculum_stage_schema_rejects_decimal_stage_key(stage_key: object) -> None:
+    with pytest.raises(ValueError, match="Unsupported curriculum stage key"):
+        GeneratorConfig.from_dict({"curriculum": {"stages": {stage_key: {"n_features_min": 8}}}})
+
+
 def test_curriculum_stage_schema_rejects_non_mapping_stage_payload() -> None:
     with pytest.raises(ValueError, match=r"curriculum\.stages\['1'\] must be a mapping"):
         GeneratorConfig.from_dict({"curriculum": {"stages": {"1": 12}}})
@@ -175,6 +181,19 @@ def test_curriculum_stage_schema_rejects_invalid_stage_bounds() -> None:
                 "curriculum": {"stages": {"1": {"n_features_min": 16, "n_features_max": 8}}},
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    (("n_features_min", 16.9), ("n_nodes_max", 12.1), ("depth_min", "2.4")),
+)
+def test_curriculum_stage_schema_rejects_non_integral_bounds(
+    field_name: str, value: float | str
+) -> None:
+    with pytest.raises(
+        ValueError, match=rf"curriculum\.stages\.\*\.{field_name} must be an integer"
+    ):
+        GeneratorConfig.from_dict({"curriculum": {"stages": {"1": {field_name: value}}}})
 
 
 def test_curriculum_stage_schema_rejects_stage_bounds_outside_global_ranges() -> None:
