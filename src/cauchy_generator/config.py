@@ -245,10 +245,13 @@ class CurriculumConfig:
     stages: dict[int, CurriculumStageConfig] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> "CurriculumConfig":
+    def from_dict(cls, data: object | None) -> "CurriculumConfig":
         """Construct curriculum config from dictionary payload."""
 
-        data = data or {}
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise ValueError("curriculum must be a mapping.")
         raw_stages = data.get("stages", {})
         if raw_stages is None:
             raw_stages = {}
@@ -393,36 +396,56 @@ class GeneratorConfig:
         )
 
     def __post_init__(self) -> None:
+        dataset_n_features_min = int(self.dataset.n_features_min)
+        dataset_n_features_max = int(self.dataset.n_features_max)
+        graph_n_nodes_min = int(self.graph.n_nodes_min)
+        graph_n_nodes_max = int(self.graph.n_nodes_max)
         for stage, stage_cfg in self.curriculum.stages.items():
             _ = stage
-            if stage_cfg.n_features_min is not None and stage_cfg.n_features_min < int(
-                self.dataset.n_features_min
-            ):
-                raise ValueError(
-                    "curriculum.stages.*.n_features_min must be >= dataset.n_features_min "
-                    f"({self.dataset.n_features_min}), got {stage_cfg.n_features_min}."
-                )
-            if stage_cfg.n_features_max is not None and stage_cfg.n_features_max > int(
-                self.dataset.n_features_max
-            ):
-                raise ValueError(
-                    "curriculum.stages.*.n_features_max must be <= dataset.n_features_max "
-                    f"({self.dataset.n_features_max}), got {stage_cfg.n_features_max}."
-                )
-            if stage_cfg.n_nodes_min is not None and stage_cfg.n_nodes_min < int(
-                self.graph.n_nodes_min
-            ):
-                raise ValueError(
-                    "curriculum.stages.*.n_nodes_min must be >= graph.n_nodes_min "
-                    f"({self.graph.n_nodes_min}), got {stage_cfg.n_nodes_min}."
-                )
-            if stage_cfg.n_nodes_max is not None and stage_cfg.n_nodes_max > int(
-                self.graph.n_nodes_max
-            ):
-                raise ValueError(
-                    "curriculum.stages.*.n_nodes_max must be <= graph.n_nodes_max "
-                    f"({self.graph.n_nodes_max}), got {stage_cfg.n_nodes_max}."
-                )
+            if stage_cfg.n_features_min is not None:
+                if stage_cfg.n_features_min < dataset_n_features_min:
+                    raise ValueError(
+                        "curriculum.stages.*.n_features_min must be >= dataset.n_features_min "
+                        f"({dataset_n_features_min}), got {stage_cfg.n_features_min}."
+                    )
+                if stage_cfg.n_features_min > dataset_n_features_max:
+                    raise ValueError(
+                        "curriculum.stages.*.n_features_min must be <= dataset.n_features_max "
+                        f"({dataset_n_features_max}), got {stage_cfg.n_features_min}."
+                    )
+            if stage_cfg.n_features_max is not None:
+                if stage_cfg.n_features_max > dataset_n_features_max:
+                    raise ValueError(
+                        "curriculum.stages.*.n_features_max must be <= dataset.n_features_max "
+                        f"({dataset_n_features_max}), got {stage_cfg.n_features_max}."
+                    )
+                if stage_cfg.n_features_max < dataset_n_features_min:
+                    raise ValueError(
+                        "curriculum.stages.*.n_features_max must be >= dataset.n_features_min "
+                        f"({dataset_n_features_min}), got {stage_cfg.n_features_max}."
+                    )
+            if stage_cfg.n_nodes_min is not None:
+                if stage_cfg.n_nodes_min < graph_n_nodes_min:
+                    raise ValueError(
+                        "curriculum.stages.*.n_nodes_min must be >= graph.n_nodes_min "
+                        f"({graph_n_nodes_min}), got {stage_cfg.n_nodes_min}."
+                    )
+                if stage_cfg.n_nodes_min > graph_n_nodes_max:
+                    raise ValueError(
+                        "curriculum.stages.*.n_nodes_min must be <= graph.n_nodes_max "
+                        f"({graph_n_nodes_max}), got {stage_cfg.n_nodes_min}."
+                    )
+            if stage_cfg.n_nodes_max is not None:
+                if stage_cfg.n_nodes_max > graph_n_nodes_max:
+                    raise ValueError(
+                        "curriculum.stages.*.n_nodes_max must be <= graph.n_nodes_max "
+                        f"({graph_n_nodes_max}), got {stage_cfg.n_nodes_max}."
+                    )
+                if stage_cfg.n_nodes_max < graph_n_nodes_min:
+                    raise ValueError(
+                        "curriculum.stages.*.n_nodes_max must be >= graph.n_nodes_min "
+                        f"({graph_n_nodes_min}), got {stage_cfg.n_nodes_max}."
+                    )
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "GeneratorConfig":

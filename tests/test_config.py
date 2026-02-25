@@ -160,6 +160,14 @@ def test_curriculum_stage_schema_rejects_non_mapping_stage_payload() -> None:
         GeneratorConfig.from_dict({"curriculum": {"stages": {"1": 12}}})
 
 
+@pytest.mark.parametrize("bad_curriculum", ([1, 2], "bad"))
+def test_curriculum_schema_rejects_non_mapping_curriculum_payload(
+    bad_curriculum: object,
+) -> None:
+    with pytest.raises(ValueError, match=r"curriculum must be a mapping"):
+        GeneratorConfig.from_dict({"curriculum": bad_curriculum})
+
+
 def test_curriculum_stage_schema_rejects_invalid_stage_bounds() -> None:
     with pytest.raises(ValueError, match=r"n_features_min must be <= n_features_max"):
         GeneratorConfig.from_dict(
@@ -175,6 +183,46 @@ def test_curriculum_stage_schema_rejects_stage_bounds_outside_global_ranges() ->
             {
                 "graph": {"n_nodes_min": 2, "n_nodes_max": 10},
                 "curriculum": {"stages": {"2": {"n_nodes_min": 2, "n_nodes_max": 12}}},
+            }
+        )
+
+
+def test_curriculum_stage_schema_rejects_features_min_above_global_max() -> None:
+    with pytest.raises(ValueError, match=r"n_features_min must be <= dataset\.n_features_max"):
+        GeneratorConfig.from_dict(
+            {
+                "dataset": {"n_features_min": 8, "n_features_max": 32},
+                "curriculum": {"stages": {"2": {"n_features_min": 64}}},
+            }
+        )
+
+
+def test_curriculum_stage_schema_rejects_features_max_below_global_min() -> None:
+    with pytest.raises(ValueError, match=r"n_features_max must be >= dataset\.n_features_min"):
+        GeneratorConfig.from_dict(
+            {
+                "dataset": {"n_features_min": 16, "n_features_max": 64},
+                "curriculum": {"stages": {"2": {"n_features_max": 8}}},
+            }
+        )
+
+
+def test_curriculum_stage_schema_rejects_nodes_min_above_global_max() -> None:
+    with pytest.raises(ValueError, match=r"n_nodes_min must be <= graph\.n_nodes_max"):
+        GeneratorConfig.from_dict(
+            {
+                "graph": {"n_nodes_min": 2, "n_nodes_max": 10},
+                "curriculum": {"stages": {"2": {"n_nodes_min": 12}}},
+            }
+        )
+
+
+def test_curriculum_stage_schema_rejects_nodes_max_below_global_min() -> None:
+    with pytest.raises(ValueError, match=r"n_nodes_max must be >= graph\.n_nodes_min"):
+        GeneratorConfig.from_dict(
+            {
+                "graph": {"n_nodes_min": 4, "n_nodes_max": 12},
+                "curriculum": {"stages": {"2": {"n_nodes_max": 2}}},
             }
         )
 
