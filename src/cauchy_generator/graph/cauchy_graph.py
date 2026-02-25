@@ -1,4 +1,4 @@
-"""Appendix E.4 random Cauchy graph sampler."""
+"""Random Cauchy graph sampler."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import torch
 
 def sample_cauchy_dag(n_nodes: int, generator: torch.Generator, device: str) -> torch.Tensor:
     """
-    Sample a DAG adjacency matrix using Appendix E.4 style probabilities.
+    Sample a DAG adjacency matrix using Cauchy-style probabilities.
 
     For i < j:
       p_ij = sigmoid(A + B_i + C_j)

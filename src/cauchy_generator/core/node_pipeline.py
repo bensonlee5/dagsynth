@@ -1,4 +1,4 @@
-"""Node-level generation pipeline (Appendix E.5)."""
+"""Node-level generation pipeline."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def apply_node_pipeline(
     generator: torch.Generator,
     device: str,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Apply Appendix E.5-style node transform in torch."""
+    """Apply node transform in torch."""
     required_dim = int(sum(max(1, s.dim) for s in converter_specs))
     latent_extra = int(_log_uniform(generator, 1.0, 32.0, device))
     total_dim = required_dim + max(1, latent_extra)

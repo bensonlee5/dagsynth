@@ -1,4 +1,4 @@
-"""Tests for sampling/correlated.py — Appendix E.2."""
+"""Tests for sampling/correlated.py."""
 
 import torch
 

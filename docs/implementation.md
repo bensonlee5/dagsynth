@@ -7,7 +7,7 @@ Build a Python repository that generates synthetic tabular datasets according to
 Related docs:
 
 - Canonical roadmap: `docs/roadmap.md`
-- Prioritized queue: `docs/improvement_ideas.md`
+- Historical pointer only: `docs/improvement_ideas.md`
 - Decision rubric: `docs/backlog_decision_rules.md`
 - Literature evidence: `docs/literature_evidence_2026.md`
 
@@ -20,13 +20,13 @@ Related docs:
 
 ## Current Scope vs README Mission Claims
 
-| Mission/Pillar Claim from README                                | Current Scope                                                                                                                             | Status  | Roadmap Follow-up |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------- |
-| Foundation model pretraining with diverse priors                | Implemented baseline generation, diagnostics extraction, soft steering, configurable missingness, coverage aggregation, and benchmarks    | partial | RD-006, RD-007    |
-| Causal discovery with ground-truth DAGs and interventions       | DAG sampling exists in pipeline internals; interventional generation does not                                                             | partial | RD-001, RD-002    |
-| Robustness testing with hard tasks, shifts, adversarial regimes | Basic filtering and diagnostics proxies exist; missingness mechanisms and benchmark guardrails are implemented; shift/stress modes remain | partial | RD-004, RD-005    |
-| Complexity curriculum across features/nodes/samples             | Current curriculum stages rows/split regime only                                                                                          | partial | RD-006            |
-| Hardware-native performance with parallel streaming             | Torch + hardware-aware tuning implemented with coarse profile-tier overrides; streaming writes are sequential                             | partial | RD-009, RD-010    |
+| Mission/Pillar Claim from README                                | Current Scope                                                                                                                             | Status  | Roadmap Follow-up              |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------ |
+| Foundation model pretraining with diverse priors                | Implemented baseline generation, diagnostics extraction, soft steering, configurable missingness, coverage aggregation, and benchmarks    | partial | RD-006, RD-007, RD-011, RD-012 |
+| Causal discovery with ground-truth DAGs and interventions       | DAG sampling exists in pipeline internals; interventional generation does not                                                             | partial | RD-001, RD-002                 |
+| Robustness testing with hard tasks, shifts, adversarial regimes | Basic filtering and diagnostics proxies exist; missingness mechanisms and benchmark guardrails are implemented; shift/stress modes remain | partial | RD-004, RD-005, RD-011, RD-012 |
+| Complexity curriculum across features/nodes/samples             | Current curriculum stages rows/split regime only                                                                                          | partial | RD-006                         |
+| Hardware-native performance with parallel streaming             | Torch + hardware-aware tuning implemented with coarse profile-tier overrides; streaming writes are sequential                             | partial | RD-009, RD-010                 |
 
 ## Known Missing Capabilities (Roadmap-Tracked)
 
@@ -35,6 +35,8 @@ Related docs:
 - RD-005: add robustness stress profiles for hard-task/adversarial regimes.
 - RD-006: extend curriculum to feature and graph complexity.
 - RD-007: expand many-class and high-cardinality support.
+- RD-011: expand mechanism family mix (BNN/GP kernels/interactions).
+- RD-012: diversify noise families for synthetic generation.
 - RD-009: add parallel/distributed generation and shard writing.
 - RD-010: add bounded hardware-adaptive autotuning beyond coarse FLOPs-tier overrides.
 
@@ -166,4 +168,4 @@ Compatibility contract:
 1. Implement `E.8`-`E.10` with GPU-first tensor kernels.
 1. Implement `E.11`-`E.14`, parquet writing, and integration tests.
 1. Add benchmark harness, tune bottlenecks, and lock baseline.
-1. Extend mission coverage through roadmap items RD-001..RD-010 in `docs/roadmap.md`.
+1. Extend mission coverage through roadmap items RD-001..RD-012 in `docs/roadmap.md`.

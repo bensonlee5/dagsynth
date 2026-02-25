@@ -1,4 +1,4 @@
-"""Converters for extracting and transforming node outputs (Appendix E.6)."""
+"""Converters for extracting and transforming node outputs."""
 
 from .categorical import apply_categorical_converter
 from .numeric import apply_numeric_converter

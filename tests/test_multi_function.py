@@ -1,4 +1,4 @@
-"""Tests for functions/multi.py — Appendix E.7."""
+"""Tests for functions/multi.py."""
 
 import pytest
 import torch

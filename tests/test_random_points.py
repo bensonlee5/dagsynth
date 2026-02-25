@@ -1,4 +1,4 @@
-"""Tests for sampling/random_points.py — Appendix E.12."""
+"""Tests for sampling/random_points.py."""
 
 import pytest
 import torch

@@ -1,4 +1,4 @@
-"""Random activations (Appendix E.9)."""
+"""Random activations."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def apply_random_activation(
     with_standardize: bool = True,
     parametric_prob: float = 1.0 / 3.0,
 ) -> torch.Tensor:
-    """Apply one random activation from Appendix E.9-style families in torch."""
+    """Apply one random activation from supported families in torch."""
     y = x.to(torch.float32)
     if y.dim() == 1:
         y = y.unsqueeze(1)

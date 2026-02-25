@@ -144,7 +144,7 @@ The development of `cauchy-generator` is strictly driven by recent literature in
 - **Missingness Generation:** Configurable MAR/MCAR/MNAR mechanisms with CLI overrides and benchmark guardrails.
 - **Shift-Aware SCMs:** Expanding the graph pipeline to support distribution shift and temporal drift.
 
-See [docs/improvement_ideas.md](docs/improvement_ideas.md) for the prioritized research backlog.
+See [docs/roadmap.md](docs/roadmap.md) for the canonical prioritized research backlog.
 
 ______________________________________________________________________
 

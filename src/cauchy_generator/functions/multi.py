@@ -1,4 +1,4 @@
-"""Multi-input function composition (Appendix E.7)."""
+"""Multi-input function composition."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def apply_multi_function(
     *,
     out_dim: int,
 ) -> torch.Tensor:
-    """Apply Appendix E.7 style composition across parent node tensors in torch."""
+    """Apply composition across parent node tensors in torch."""
     if not inputs:
         raise ValueError("inputs must be non-empty")
     if len(inputs) == 1:
