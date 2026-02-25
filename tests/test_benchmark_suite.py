@@ -61,13 +61,21 @@ def test_run_benchmark_suite_smoke_single_profile() -> None:
     )
 
     assert summary["suite"] == "smoke"
-    assert summary["regression"]["status"] == "pass"
+    assert summary["regression"]["status"] in {"pass", "warn", "fail"}
+    if summary["regression"]["status"] != "pass":
+        assert any(
+            issue["metric"] == "lineage_export_runtime_degradation_pct"
+            for issue in summary["regression"]["issues"]
+        )
     assert len(summary["profile_results"]) == 1
 
     result = summary["profile_results"][0]
     assert result["profile_key"] == "cpu_test"
     assert result["datasets_per_minute"] > 0
     assert result["latency_p95_ms"] >= 0
+    lineage_guardrails = result["lineage_guardrails"]
+    assert lineage_guardrails["enabled"] is True
+    assert lineage_guardrails["status"] in {"pass", "warn", "fail"}
 
 
 def test_run_benchmark_suite_missingness_guardrails_emit_metrics() -> None:
@@ -97,6 +105,9 @@ def test_run_benchmark_suite_missingness_guardrails_emit_metrics() -> None:
     assert guardrails["metadata_coverage_rate"] == pytest.approx(1.0)
     assert 0.0 <= guardrails["realized_rate_overall"] <= 1.0
     assert guardrails["runtime_baseline_datasets_per_minute"] > 0.0
+    lineage_guardrails = result["lineage_guardrails"]
+    assert lineage_guardrails["enabled"] is True
+    assert lineage_guardrails["status"] in {"pass", "warn", "fail"}
 
 
 def test_run_benchmark_suite_missingness_runtime_guardrail_updates_regression_status(
@@ -196,6 +207,335 @@ def test_run_benchmark_suite_missingness_runtime_guardrail_updates_regression_st
     baseline_calls = [call for call in calls if not call["missing_enabled"]]
     assert baseline_calls
     assert all(call["has_callback"] for call in baseline_calls)
+
+
+def test_run_benchmark_suite_lineage_runtime_guardrail_updates_regression_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    spec = ProfileRunSpec(key="cpu_test", config=cfg, device="cpu")
+
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {
+            "enabled": True,
+            "sample_datasets": 2,
+            "lineage_metadata_coverage_rate": 1.0,
+            "runtime_baseline_datasets_per_minute": 100.0,
+            "runtime_with_lineage_datasets_per_minute": 70.0,
+            "runtime_degradation_pct": 30.0,
+            "runtime_warn_threshold_pct": 10.0,
+            "runtime_fail_threshold_pct": 20.0,
+            "issues": [
+                {
+                    "metric": "lineage_export_runtime_degradation_pct",
+                    "severity": "fail",
+                    "current": 70.0,
+                    "baseline": 100.0,
+                    "degradation_pct": 30.0,
+                    "detail": "lineage overhead exceeded threshold",
+                }
+            ],
+            "status": "fail",
+        },
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        fail_on_regression=False,
+        no_hardware_aware=True,
+    )
+
+    result = summary["profile_results"][0]
+    guardrails = result["lineage_guardrails"]
+    assert guardrails["enabled"] is True
+    assert guardrails["status"] == "fail"
+    assert summary["regression"]["status"] == "fail"
+    assert any(
+        issue["metric"] == "lineage_export_runtime_degradation_pct"
+        for issue in summary["regression"]["issues"]
+    )
+
+
+def test_collect_lineage_guardrails_uses_median_of_three_trials_with_runtime_gating_suppressed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        for i in range(num_datasets):
+            yield DatasetBundle(
+                X_train=np.zeros((3, 4), dtype=np.float32),
+                y_train=np.zeros(3, dtype=np.int64),
+                X_test=np.zeros((1, 4), dtype=np.float32),
+                y_test=np.zeros(1, dtype=np.int64),
+                feature_types=["num", "num", "num", "num"],
+                metadata={
+                    "seed": i,
+                    "attempt_used": 0,
+                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                },
+            )
+
+    trial_values = iter([100.0, 90.0, 1000.0, 100.0, 100.0, 90.0])
+
+    def _stub_measure(
+        _bundles,
+        *,
+        config: GeneratorConfig,
+        num_bundles: int,
+    ) -> float:
+        _ = config
+        assert not isinstance(_bundles, list)
+        assert num_bundles > 0
+        return float(next(trial_values))
+
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite.generate_batch_iter", _stub_generate_batch_iter
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._measure_persistence_datasets_per_minute",
+        _stub_measure,
+    )
+
+    guardrails = suite_mod._collect_lineage_guardrails(
+        cfg,
+        suite="smoke",
+        num_datasets=2,
+        device="cpu",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+    )
+
+    assert guardrails["enabled"] is True
+    assert guardrails["runtime_gating_enabled"] is False
+    assert guardrails["runtime_gating_min_sample_datasets"] == 5
+    assert guardrails["runtime_gating_suppressed_reason"] == "insufficient_sample_size"
+    assert guardrails["runtime_trials"] == 3
+    assert guardrails["runtime_baseline_trials_dpm"] == [100.0, 1000.0, 100.0]
+    assert guardrails["runtime_with_lineage_trials_dpm"] == [90.0, 100.0, 90.0]
+    assert guardrails["runtime_baseline_datasets_per_minute"] == pytest.approx(100.0)
+    assert guardrails["runtime_with_lineage_datasets_per_minute"] == pytest.approx(90.0)
+    assert guardrails["runtime_degradation_pct"] == pytest.approx(10.0)
+    assert guardrails["status"] == "pass"
+    assert not any(
+        issue["metric"] == "lineage_export_runtime_degradation_pct"
+        for issue in guardrails["issues"]
+    )
+
+
+def test_collect_lineage_guardrails_emits_runtime_issue_when_sample_is_sufficient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.benchmark.latency_num_samples = 6
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        for i in range(num_datasets):
+            yield DatasetBundle(
+                X_train=np.zeros((3, 4), dtype=np.float32),
+                y_train=np.zeros(3, dtype=np.int64),
+                X_test=np.zeros((1, 4), dtype=np.float32),
+                y_test=np.zeros(1, dtype=np.int64),
+                feature_types=["num", "num", "num", "num"],
+                metadata={
+                    "seed": i,
+                    "attempt_used": 0,
+                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                },
+            )
+
+    trial_values = iter([100.0, 70.0, 100.0, 70.0, 100.0, 70.0])
+
+    def _stub_measure(
+        _bundles,
+        *,
+        config: GeneratorConfig,
+        num_bundles: int,
+    ) -> float:
+        _ = config
+        assert not isinstance(_bundles, list)
+        assert num_bundles > 0
+        return float(next(trial_values))
+
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite.generate_batch_iter", _stub_generate_batch_iter
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._measure_persistence_datasets_per_minute",
+        _stub_measure,
+    )
+
+    guardrails = suite_mod._collect_lineage_guardrails(
+        cfg,
+        suite="smoke",
+        num_datasets=6,
+        device="cpu",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+    )
+
+    assert guardrails["enabled"] is True
+    assert guardrails["sample_datasets"] == 5
+    assert guardrails["runtime_gating_enabled"] is True
+    assert guardrails["runtime_gating_suppressed_reason"] is None
+    assert guardrails["runtime_degradation_pct"] == pytest.approx(30.0)
+    assert guardrails["status"] == "fail"
+    assert any(
+        issue["metric"] == "lineage_export_runtime_degradation_pct" and issue["severity"] == "fail"
+        for issue in guardrails["issues"]
+    )
+
+
+def test_collect_lineage_guardrails_reports_unavailable_for_non_runtime_persistence_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        for i in range(num_datasets):
+            yield DatasetBundle(
+                X_train=np.zeros((3, 4), dtype=np.float32),
+                y_train=np.zeros(3, dtype=np.int64),
+                X_test=np.zeros((1, 4), dtype=np.float32),
+                y_test=np.zeros(1, dtype=np.int64),
+                feature_types=["num", "num", "num", "num"],
+                metadata={
+                    "seed": i,
+                    "attempt_used": 0,
+                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                },
+            )
+
+    def _stub_trials(
+        *,
+        baseline_stage_dir: Path,
+        current_stage_dir: Path,
+        num_bundles: int,
+        config: GeneratorConfig,
+        trials: int,
+    ) -> tuple[list[float], list[float]]:
+        _ = baseline_stage_dir
+        _ = current_stage_dir
+        _ = num_bundles
+        _ = config
+        _ = trials
+        raise ValueError("codec unavailable")
+
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite.generate_batch_iter", _stub_generate_batch_iter
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._measure_lineage_persistence_trials",
+        _stub_trials,
+    )
+
+    guardrails = suite_mod._collect_lineage_guardrails(
+        cfg,
+        suite="smoke",
+        num_datasets=2,
+        device="cpu",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+    )
+
+    assert guardrails["enabled"] is False
+    assert guardrails["reason"] == "unavailable"
+    assert "codec unavailable" in guardrails["detail"]
+
+
+def test_measure_lineage_persistence_trials_replays_staged_bundles_without_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    baseline_stage_dir = tmp_path / "baseline"
+    current_stage_dir = tmp_path / "current"
+    baseline_stage_dir.mkdir(parents=True, exist_ok=True)
+    current_stage_dir.mkdir(parents=True, exist_ok=True)
+
+    bundle = DatasetBundle(
+        X_train=np.zeros((3, 4), dtype=np.float32),
+        y_train=np.zeros(3, dtype=np.int64),
+        X_test=np.zeros((1, 4), dtype=np.float32),
+        y_test=np.zeros(1, dtype=np.int64),
+        feature_types=["num", "num", "num", "num"],
+        metadata={"seed": 0, "attempt_used": 0, "lineage": {"schema_name": "x"}},
+    )
+    for idx in range(2):
+        file_name = f"bundle_{idx:06d}.pkl"
+        suite_mod._stage_bundle(current_stage_dir / file_name, bundle, strip_lineage=False)
+        suite_mod._stage_bundle(baseline_stage_dir / file_name, bundle, strip_lineage=True)
+
+    def _unexpected_generate(*_args, **_kwargs):
+        raise AssertionError("generate_batch_iter must not run during timed persistence trials")
+
+    call_counts: list[int] = []
+
+    def _stub_measure(
+        bundles,
+        *,
+        config: GeneratorConfig,
+        num_bundles: int,
+    ) -> float:
+        _ = config
+        seen = sum(1 for _ in bundles)
+        call_counts.append(seen)
+        assert num_bundles == 2
+        assert seen == 2
+        return 100.0 if len(call_counts) % 2 == 1 else 90.0
+
+    monkeypatch.setattr("cauchy_generator.bench.suite.generate_batch_iter", _unexpected_generate)
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._measure_persistence_datasets_per_minute",
+        _stub_measure,
+    )
+
+    baseline_trials, current_trials = suite_mod._measure_lineage_persistence_trials(
+        baseline_stage_dir=baseline_stage_dir,
+        current_stage_dir=current_stage_dir,
+        num_bundles=2,
+        config=cfg,
+        trials=3,
+    )
+
+    assert baseline_trials == [100.0, 100.0, 100.0]
+    assert current_trials == [90.0, 90.0, 90.0]
+    assert call_counts == [2, 2, 2, 2, 2, 2]
 
 
 def test_run_microbenchmarks_returns_expected_keys() -> None:
