@@ -1,4 +1,4 @@
-"""Postprocessing hooks (Appendix E.13)."""
+"""Postprocessing hooks."""
 
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ def postprocess_dataset(
     | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str], list[int]]
 ):
     """
-    Apply E.13-style postprocessing to train/test splits.
+    Apply postprocessing to train/test splits.
 
     - Remove constant columns
     - Standardize non-categorical columns

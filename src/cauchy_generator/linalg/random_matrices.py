@@ -1,4 +1,4 @@
-"""Random matrix generation (Appendix E.10)."""
+"""Random matrix generation."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def sample_random_matrix(
     *,
     kind: str | None = None,
 ) -> torch.Tensor:
-    """Sample one of Appendix E.10 matrix families in torch."""
+    """Sample one of the supported matrix families in torch."""
     if out_dim <= 0 or in_dim <= 0:
         raise ValueError(f"Matrix dimensions must be > 0. Got out_dim={out_dim}, in_dim={in_dim}")
 

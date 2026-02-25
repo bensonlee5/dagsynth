@@ -450,7 +450,7 @@ def _generate_torch(
     n_test: int,
     curriculum: dict[str, Any],
 ) -> DatasetBundle:
-    """Generate one dataset in Torch while preserving Appendix E postprocess/filter contracts."""
+    """Generate one dataset in Torch while preserving postprocess/filter contracts."""
 
     attempts = max(1, int(config.filter.max_attempts))
     last_reason = "unknown"
@@ -549,7 +549,7 @@ def _generate_torch(
 
 
 def _classification_split_valid(y_train: torch.Tensor, y_test: torch.Tensor) -> bool:
-    """Validate classification split constraints from Appendix E.13."""
+    """Validate classification split constraints."""
 
     train_classes = set(torch.unique(y_train).tolist())
     test_classes = set(torch.unique(y_test).tolist())
@@ -563,7 +563,7 @@ def _apply_filter_torch(
     *,
     seed: int,
 ) -> tuple[bool, dict[str, Any]]:
-    """Run E.14-style filtering natively in Torch using random forests."""
+    """Run filtering natively in Torch using random forests."""
 
     details: dict[str, Any] = {"enabled": config.filter.enabled}
     if not config.filter.enabled:

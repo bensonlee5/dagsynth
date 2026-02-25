@@ -1,4 +1,4 @@
-"""Torch-native random-forest filtering for E.14 learnability checks."""
+"""Torch-native random-forest filtering for learnability checks."""
 
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ def _predict_tree(tree: _TreeModel, x: torch.Tensor) -> torch.Tensor:
     Predict tree outputs for all rows.
 
     This traversal uses a Python loop over active node ids; it is appropriate for
-    shallow trees used by E.14 filter defaults.
+    shallow trees used by default filter settings.
     """
 
     n_rows = x.shape[0]
@@ -288,7 +288,7 @@ def apply_torch_rf_filter(
     n_bootstrap: int = 200,
     threshold: float = 0.95,
 ) -> tuple[bool, dict[str, Any]]:
-    """Apply Torch RF-based E.14 filtering with OOB bootstrap win-ratio scoring."""
+    """Apply Torch RF-based filtering with OOB bootstrap win-ratio scoring."""
 
     if n_trees < 1:
         raise ValueError(f"n_trees must be >= 1, got {n_trees}")

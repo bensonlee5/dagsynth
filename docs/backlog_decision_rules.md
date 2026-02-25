@@ -5,7 +5,7 @@ This document defines how roadmap items are ranked and when they are ready for i
 Related docs:
 
 - Canonical roadmap: `docs/roadmap.md`
-- Prioritized queue: `docs/improvement_ideas.md`
+- Historical pointer only: `docs/improvement_ideas.md`
 - Evidence appendix: `docs/literature_evidence_2026.md`
 - Implementation baseline: `docs/implementation.md`
 
@@ -116,4 +116,4 @@ Every future implementation PR should include:
 - Config schema updates and examples in `configs/`.
 - Tests covering invariants, reproducibility, and integration paths.
 - Benchmark delta summary for affected profiles.
-- Updated status/milestone in both `docs/roadmap.md` and `docs/improvement_ideas.md`.
+- Updated status/milestone/rank in `docs/roadmap.md`.

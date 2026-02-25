@@ -1,4 +1,4 @@
-"""Random function families (Appendix E.8)."""
+"""Random function families."""
 
 from __future__ import annotations
 

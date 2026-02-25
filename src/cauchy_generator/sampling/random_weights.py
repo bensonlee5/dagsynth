@@ -1,4 +1,4 @@
-"""Random positive weights sampling (Appendix E.11)."""
+"""Random positive weights sampling."""
 
 import math
 

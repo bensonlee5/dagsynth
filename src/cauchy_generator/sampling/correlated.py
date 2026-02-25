@@ -1,4 +1,4 @@
-"""Appendix E.2 correlated scalar and categorical sampling."""
+"""Correlated scalar and categorical sampling."""
 
 from __future__ import annotations
 

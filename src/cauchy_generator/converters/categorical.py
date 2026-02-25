@@ -1,4 +1,4 @@
-"""Categorical converter implementations (Appendix E.6)."""
+"""Categorical converter implementations."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Numeric converter implementations (Appendix E.6)."""
+"""Numeric converter implementations."""
 
 from __future__ import annotations
 

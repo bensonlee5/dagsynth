@@ -1,4 +1,4 @@
-"""Tests for functions/activations.py — Appendix E.9."""
+"""Tests for functions/activations.py."""
 
 import torch
 

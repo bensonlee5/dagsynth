@@ -1,4 +1,4 @@
-"""Tests for graph/cauchy_graph.py — Appendix E.4."""
+"""Tests for graph/cauchy_graph.py."""
 
 import torch
 

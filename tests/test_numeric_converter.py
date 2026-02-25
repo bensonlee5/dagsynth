@@ -1,4 +1,4 @@
-"""Tests for converters/numeric.py — Appendix E.6 numeric path."""
+"""Tests for converters/numeric.py numeric path."""
 
 import torch
 

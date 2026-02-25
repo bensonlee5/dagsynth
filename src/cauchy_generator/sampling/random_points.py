@@ -1,4 +1,4 @@
-"""Random points mechanism (Appendix E.12)."""
+"""Random points mechanism."""
 
 import torch
 

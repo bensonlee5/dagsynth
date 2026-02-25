@@ -1,4 +1,4 @@
-"""Tests for converters/categorical.py — Appendix E.6 categorical path."""
+"""Tests for converters/categorical.py categorical path."""
 
 import torch
 

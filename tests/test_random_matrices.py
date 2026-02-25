@@ -1,4 +1,4 @@
-"""Tests for linalg/random_matrices.py — Appendix E.10."""
+"""Tests for linalg/random_matrices.py."""
 
 import pytest
 import torch

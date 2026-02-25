@@ -1,4 +1,4 @@
-"""Tests for postprocess/postprocess.py — Appendix E.13."""
+"""Tests for postprocess/postprocess.py."""
 
 import torch
 
