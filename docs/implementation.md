@@ -20,20 +20,19 @@ Related docs:
 
 ## Current Scope vs README Mission Claims
 
-| Mission/Pillar Claim from README                                | Current Scope                                                                                                                             | Status  | Roadmap Follow-up              |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------ |
-| Foundation model pretraining with diverse priors                | Implemented baseline generation, diagnostics extraction, soft steering, configurable missingness, coverage aggregation, and benchmarks    | partial | RD-006, RD-007, RD-011, RD-012 |
-| Causal discovery with ground-truth DAGs and interventions       | DAG sampling exists in pipeline internals; interventional generation does not                                                             | partial | RD-001, RD-002                 |
-| Robustness testing with hard tasks, shifts, adversarial regimes | Basic filtering and diagnostics proxies exist; missingness mechanisms and benchmark guardrails are implemented; shift/stress modes remain | partial | RD-004, RD-005, RD-011, RD-012 |
-| Complexity curriculum across features/nodes/samples             | Current curriculum stages rows/split regime only                                                                                          | partial | RD-006                         |
-| Hardware-native performance with parallel streaming             | Torch + hardware-aware tuning implemented with coarse profile-tier overrides; streaming writes are sequential                             | partial | RD-009, RD-010                 |
+| Mission/Pillar Claim from README                                | Current Scope                                                                                                                             | Status      | Roadmap Follow-up              |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------ |
+| Foundation model pretraining with diverse priors                | Implemented baseline generation, diagnostics extraction, soft steering, configurable missingness, coverage aggregation, and benchmarks    | partial     | RD-006, RD-007, RD-011, RD-012 |
+| Causal discovery with ground-truth DAGs and interventions       | DAG sampling exists in pipeline internals; interventional generation does not                                                             | partial     | RD-001, RD-002                 |
+| Robustness testing with hard tasks, shifts, adversarial regimes | Basic filtering and diagnostics proxies exist; missingness mechanisms and benchmark guardrails are implemented; shift/stress modes remain | partial     | RD-004, RD-005, RD-011, RD-012 |
+| Complexity curriculum across features/nodes/samples             | Curriculum stage definitions now cover rows/features/nodes/depth with staged presets, CLI integration tests, and benchmark guardrails     | implemented | -                              |
+| Hardware-native performance with parallel streaming             | Torch + hardware-aware tuning implemented with coarse profile-tier overrides; streaming writes are sequential                             | partial     | RD-009, RD-010                 |
 
 ## Known Missing Capabilities (Roadmap-Tracked)
 
 - RD-002: add interventional and counterfactual generation tracks.
 - RD-004: add shift-aware SCM generation controls.
 - RD-005: add robustness stress profiles for hard-task/adversarial regimes.
-- RD-006: extend curriculum to feature and graph complexity.
 - RD-007: expand many-class and high-cardinality support.
 - RD-011: expand mechanism family mix (BNN/GP kernels/interactions).
 - RD-012: diversify noise families for synthetic generation.
@@ -107,6 +106,11 @@ Compatibility contract:
 - `configs/preset_missingness_mcar.yaml`: MCAR missingness preset.
 - `configs/preset_missingness_mar.yaml`: MAR missingness preset.
 - `configs/preset_missingness_mnar.yaml`: MNAR missingness preset.
+- `configs/preset_curriculum_stage1.yaml`: fixed stage-1 curriculum preset.
+- `configs/preset_curriculum_stage2.yaml`: fixed stage-2 curriculum preset.
+- `configs/preset_curriculum_stage3.yaml`: fixed stage-3 curriculum preset.
+- `configs/preset_curriculum_auto_staged.yaml`: auto-sampled staged curriculum preset.
+- `configs/preset_curriculum_benchmark_smoke.yaml`: CPU smoke benchmark preset for staged curriculum guardrail checks.
 - `configs/preset_lineage_benchmark_smoke.yaml`: CPU smoke benchmark preset for lineage export guardrail checks.
 - Runtime currently applies coarse profile-tier overrides from GPU FLOPS lookup + fallback behavior; adaptive autotuning is tracked in RD-010.
 
@@ -133,6 +137,7 @@ Compatibility contract:
 1. Use optional filtering (`E.14`) behind config flags to avoid CPU bottlenecks in throughput benchmarks.
 1. Profile with `bench/throughput.py` and track JSON baseline regressions by preset.
 1. Missingness-enabled benchmark runs include acceptance/runtime guardrails against missingness-off controls.
+1. Staged-curriculum benchmark runs include metadata/runtime guardrails (`curriculum_guardrails`) against curriculum-off controls.
 1. Benchmark profile summaries include lineage-export persistence overhead guardrails (`lineage_guardrails`) against lineage-stripped control persistence runs.
 1. Next hardware-aware step is bounded adaptive autotuning with explicit telemetry/guardrails (RD-010).
 1. Next roadmap step for throughput is controlled multi-worker execution (RD-009) while preserving seeded behavior.

@@ -101,6 +101,14 @@ cauchy-gen generate \
   --out data/run_missing_cli_mar
 ```
 
+```bash
+# Staged curriculum presets (fixed stages and auto-sampled mode)
+cauchy-gen generate --config configs/preset_curriculum_stage1.yaml --num-datasets 25 --out data/run_curriculum_stage1
+cauchy-gen generate --config configs/preset_curriculum_stage2.yaml --num-datasets 25 --out data/run_curriculum_stage2
+cauchy-gen generate --config configs/preset_curriculum_stage3.yaml --num-datasets 25 --out data/run_curriculum_stage3
+cauchy-gen generate --config configs/preset_curriculum_auto_staged.yaml --num-datasets 25 --out data/run_curriculum_auto
+```
+
 ### Benchmarking Performance
 
 ```bash
@@ -137,9 +145,39 @@ cauchy-gen benchmark \
   --out-dir benchmarks/results/smoke_lineage_guardrails
 ```
 
+```bash
+# Benchmark staged curriculum overhead guardrails on a CPU smoke preset
+cauchy-gen benchmark \
+  --config configs/preset_curriculum_benchmark_smoke.yaml \
+  --profile custom \
+  --suite smoke \
+  --no-memory \
+  --out-dir benchmarks/results/smoke_curriculum_guardrails
+```
+
 When missingness is enabled, benchmark summaries include `missingness_guardrails` per profile,
 lineage export checks are reported under `lineage_guardrails`, and guardrail warnings/failures
-are reflected in overall regression status.
+are reflected in overall regression status. When staged curriculum is enabled, benchmark summaries
+also include `curriculum_guardrails` with metadata coverage and staged-vs-off runtime checks.
+
+### Contributor Workflow
+
+```bash
+# Validate staged curriculum smoke benchmarks against regression thresholds
+cauchy-gen benchmark \
+  --config configs/preset_curriculum_benchmark_smoke.yaml \
+  --profile custom \
+  --suite smoke \
+  --warn-threshold-pct 10 \
+  --fail-threshold-pct 20 \
+  --fail-on-regression \
+  --no-hardware-aware \
+  --no-memory \
+  --out-dir benchmarks/results/ci_smoke_curriculum_local
+```
+
+When intentional performance changes occur, regenerate baseline payloads only after reviewing
+`summary.json`/`summary.md` and documenting rationale in the PR.
 
 ______________________________________________________________________
 
@@ -149,6 +187,7 @@ The development of `cauchy-generator` is strictly driven by recent literature in
 
 - **Meta-Feature Diagnostics:** A diagnostics module computes 19 structural metrics per dataset and aggregates coverage across generation runs. Soft steering is available to bias selection toward under-represented target bands.
 - **Missingness Generation:** Configurable MAR/MCAR/MNAR mechanisms with CLI overrides and benchmark guardrails.
+- **Staged Curriculum Controls:** Stage-aware feature/node/depth scaling with discoverable presets and benchmark guardrails.
 - **Shift-Aware SCMs:** Expanding the graph pipeline to support distribution shift and temporal drift.
 
 See [docs/roadmap.md](docs/roadmap.md) for the canonical prioritized research backlog.

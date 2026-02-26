@@ -6,6 +6,7 @@ import datetime as dt
 import hashlib
 import math
 import pickle
+import copy
 import re
 import resource
 import statistics
@@ -13,7 +14,7 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,13 @@ from cauchy_generator.bench.metrics import (
     summarize_latencies,
 )
 from cauchy_generator.bench.throughput import run_throughput_benchmark
-from cauchy_generator.config import GeneratorConfig, MISSINGNESS_MECHANISM_NONE
+from cauchy_generator.config import (
+    CURRICULUM_STAGE_AUTO,
+    CURRICULUM_STAGE_OFF,
+    GeneratorConfig,
+    MISSINGNESS_MECHANISM_NONE,
+    normalize_curriculum_stage,
+)
 from cauchy_generator.core.dataset import generate_batch_iter, generate_one
 from cauchy_generator.diagnostics import (
     CoverageAggregationConfig,
@@ -57,6 +64,7 @@ LINEAGE_GUARDRAIL_SMOKE_SAMPLE_CAP = 5
 LINEAGE_GUARDRAIL_SEED_OFFSET = 123_000
 LINEAGE_GUARDRAIL_RUNTIME_TRIALS = 3
 LINEAGE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE = 5
+CURRICULUM_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE = 5
 
 
 @dataclass(slots=True)
@@ -72,6 +80,12 @@ def _clone_config(config: GeneratorConfig) -> GeneratorConfig:
     """Clone nested benchmark config state to avoid in-place cross-profile mutations."""
 
     return GeneratorConfig.from_dict(config.to_dict())
+
+
+def _copy_runtime_config(config: GeneratorConfig) -> GeneratorConfig:
+    """Copy an already validated runtime config without re-running schema validation."""
+
+    return copy.deepcopy(config)
 
 
 def _peak_rss_mb() -> float:
@@ -443,7 +457,7 @@ def _median_throughput(values: list[float]) -> float:
     return float(statistics.median(finite))
 
 
-def _build_lineage_guardrail_issue(
+def _build_guardrail_issue(
     *,
     metric: str,
     severity: str,
@@ -452,7 +466,7 @@ def _build_lineage_guardrail_issue(
     degradation_pct: float | None,
     detail: str,
 ) -> dict[str, Any]:
-    """Create a normalized lineage guardrail issue payload."""
+    """Create a normalized guardrail issue payload."""
 
     return {
         "metric": metric,
@@ -535,7 +549,7 @@ def _collect_lineage_guardrails(
     issues: list[dict[str, Any]] = []
     if bundles_with_lineage != bundles_seen:
         issues.append(
-            _build_lineage_guardrail_issue(
+            _build_guardrail_issue(
                 metric="lineage_metadata_coverage",
                 severity="fail",
                 current=float(lineage_coverage_rate),
@@ -546,7 +560,7 @@ def _collect_lineage_guardrails(
         )
     if runtime_gating_enabled and runtime_severity != "pass":
         issues.append(
-            _build_lineage_guardrail_issue(
+            _build_guardrail_issue(
                 metric="lineage_export_runtime_degradation_pct",
                 severity=runtime_severity,
                 current=float(current_dpm),
@@ -616,6 +630,84 @@ def _status_from_issues(issues: list[dict[str, Any]]) -> str:
     if "warn" in severities:
         return "warn"
     return "pass"
+
+
+def _resolve_curriculum_guardrail_context(config: GeneratorConfig) -> tuple[bool, str, int | None]:
+    """Resolve curriculum guardrail mode from config."""
+
+    normalized_mode = normalize_curriculum_stage(config.curriculum_stage)
+    if normalized_mode == CURRICULUM_STAGE_OFF:
+        return (False, "off", None)
+    if normalized_mode == CURRICULUM_STAGE_AUTO:
+        return (True, CURRICULUM_STAGE_AUTO, None)
+    return (True, "fixed", int(normalized_mode))
+
+
+@dataclass(slots=True)
+class _CurriculumMetadataCollector:
+    """Collect staged curriculum metadata coverage during benchmark throughput runs."""
+
+    expected_mode: str
+    bundles_seen: int = 0
+    bundles_with_stage_metadata: int = 0
+    mode_mismatch_bundles: int = 0
+
+    def update(self, bundle: DatasetBundle) -> None:
+        """Collect curriculum metadata counters for one generated bundle."""
+
+        self.bundles_seen += 1
+        payload = bundle.metadata.get("curriculum")
+        if not isinstance(payload, dict):
+            return
+        mode_value = payload.get("mode")
+        if mode_value != self.expected_mode:
+            self.mode_mismatch_bundles += 1
+        stage_value = payload.get("stage")
+        if isinstance(stage_value, bool):
+            return
+        if isinstance(stage_value, int) and stage_value in (1, 2, 3):
+            self.bundles_with_stage_metadata += 1
+
+    def build_summary(self) -> dict[str, Any]:
+        """Build curriculum metadata guardrail metrics and issues."""
+
+        coverage_rate = (
+            float(self.bundles_with_stage_metadata) / float(self.bundles_seen)
+            if self.bundles_seen > 0
+            else 0.0
+        )
+
+        issues: list[dict[str, Any]] = []
+        if self.bundles_with_stage_metadata != self.bundles_seen:
+            issues.append(
+                {
+                    "metric": "curriculum_stage_metadata_coverage",
+                    "severity": "fail",
+                    "current": float(coverage_rate),
+                    "baseline": 1.0,
+                    "degradation_pct": float(max(0.0, (1.0 - coverage_rate) * 100.0)),
+                    "detail": "Curriculum stage metadata must be present for all staged bundles.",
+                }
+            )
+        if self.mode_mismatch_bundles > 0:
+            mismatch_rate = float(self.mode_mismatch_bundles) / float(self.bundles_seen)
+            issues.append(
+                {
+                    "metric": "curriculum_mode_metadata_mismatch",
+                    "severity": "fail",
+                    "current": float(mismatch_rate),
+                    "baseline": 0.0,
+                    "degradation_pct": float(mismatch_rate * 100.0),
+                    "detail": "Curriculum metadata mode must match configured staged mode.",
+                }
+            )
+
+        return {
+            "stage_metadata_coverage_rate": float(coverage_rate),
+            "mode_mismatch_bundles": int(self.mode_mismatch_bundles),
+            "issues": issues,
+            "status": _status_from_issues(issues),
+        }
 
 
 @dataclass(slots=True)
@@ -707,25 +799,30 @@ class _MissingnessAcceptanceCollector:
         }
 
 
-def _build_missingness_guardrail_issue(
+def _compose_bundle_callback(
     *,
-    metric: str,
-    severity: str,
-    current: float | None,
-    baseline: float | None,
-    degradation_pct: float | None,
-    detail: str,
-) -> dict[str, Any]:
-    """Create a normalized guardrail issue payload."""
+    diagnostics_aggregator: CoverageAggregator | None,
+    missingness_acceptance: _MissingnessAcceptanceCollector | None,
+    curriculum_metadata: _CurriculumMetadataCollector | None,
+) -> Callable[[DatasetBundle], None] | None:
+    """Compose optional per-bundle collectors into one callback."""
 
-    return {
-        "metric": metric,
-        "severity": severity,
-        "current": current,
-        "baseline": baseline,
-        "degradation_pct": degradation_pct,
-        "detail": detail,
-    }
+    if (
+        diagnostics_aggregator is None
+        and missingness_acceptance is None
+        and curriculum_metadata is None
+    ):
+        return None
+
+    def _on_bundle(bundle: DatasetBundle) -> None:
+        if diagnostics_aggregator is not None:
+            diagnostics_aggregator.update_bundle(bundle)
+        if missingness_acceptance is not None:
+            missingness_acceptance.update(bundle)
+        if curriculum_metadata is not None:
+            curriculum_metadata.update(bundle)
+
+    return _on_bundle
 
 
 def _issue_sort_key(issue: dict[str, Any]) -> tuple[int, float]:
@@ -742,36 +839,16 @@ def _issue_sort_key(issue: dict[str, Any]) -> tuple[int, float]:
     return (rank, -degradation)
 
 
-def _collect_missingness_regression_issues(
+def _collect_guardrail_regression_issues(
     profile_results: list[dict[str, Any]],
+    *,
+    guardrail_key: str,
 ) -> list[dict[str, Any]]:
-    """Flatten per-profile missingness guardrail issues into regression issue payloads."""
+    """Flatten one guardrail type into regression issue payloads."""
 
     issues: list[dict[str, Any]] = []
     for result in profile_results:
-        guardrails = result.get("missingness_guardrails")
-        if not isinstance(guardrails, dict) or not bool(guardrails.get("enabled")):
-            continue
-        raw_issues = guardrails.get("issues")
-        if not isinstance(raw_issues, list):
-            continue
-        for issue in raw_issues:
-            if not isinstance(issue, dict):
-                continue
-            merged = dict(issue)
-            merged["profile"] = str(result.get("profile_key"))
-            issues.append(merged)
-    return issues
-
-
-def _collect_lineage_regression_issues(
-    profile_results: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Flatten per-profile lineage guardrail issues into regression issue payloads."""
-
-    issues: list[dict[str, Any]] = []
-    for result in profile_results:
-        guardrails = result.get("lineage_guardrails")
+        guardrails = result.get(guardrail_key)
         if not isinstance(guardrails, dict) or not bool(guardrails.get("enabled")):
             continue
         raw_issues = guardrails.get("issues")
@@ -837,17 +914,18 @@ def run_profile_benchmark(
         if missingness_enabled
         else None
     )
+    curriculum_enabled, curriculum_mode, curriculum_configured_stage = (
+        _resolve_curriculum_guardrail_context(config)
+    )
+    curriculum_metadata = (
+        _CurriculumMetadataCollector(expected_mode=curriculum_mode) if curriculum_enabled else None
+    )
 
-    on_bundle_callback = None
-    if diagnostics_aggregator is not None or missingness_acceptance is not None:
-
-        def _on_bundle(bundle: DatasetBundle) -> None:
-            if diagnostics_aggregator is not None:
-                diagnostics_aggregator.update_bundle(bundle)
-            if missingness_acceptance is not None:
-                missingness_acceptance.update(bundle)
-
-        on_bundle_callback = _on_bundle
+    on_bundle_callback = _compose_bundle_callback(
+        diagnostics_aggregator=diagnostics_aggregator,
+        missingness_acceptance=missingness_acceptance,
+        curriculum_metadata=curriculum_metadata,
+    )
 
     result = run_throughput_benchmark(
         config,
@@ -866,6 +944,7 @@ def run_profile_benchmark(
     result["hardware_profile"] = hw.profile
     result["diagnostics_enabled"] = diagnostics_enabled
     result["diagnostics_artifacts"] = None
+    result["curriculum_guardrails"] = {"enabled": False}
     result["missingness_guardrails"] = {"enabled": False}
     result["lineage_guardrails"] = {"enabled": False}
 
@@ -899,8 +978,92 @@ def run_profile_benchmark(
     if include_micro:
         result.update(run_microbenchmarks(config, device=requested_device, repeats=3))
 
+    if curriculum_enabled and curriculum_metadata is not None:
+        # Control-run configs are derived from an already tuned runtime config;
+        # use deep-copy to avoid re-validating smoke-mutated curriculum bounds.
+        baseline_config = _copy_runtime_config(config)
+        baseline_config.curriculum_stage = CURRICULUM_STAGE_OFF
+        curriculum_baseline_diagnostics_aggregator: CoverageAggregator | None = None
+        if diagnostics_aggregator is not None:
+            curriculum_baseline_diagnostics_aggregator = _build_diagnostics_aggregator(
+                baseline_config
+            )
+        curriculum_baseline_missingness_acceptance = (
+            _MissingnessAcceptanceCollector(target_rate=float(config.dataset.missing_rate))
+            if missingness_acceptance is not None
+            else None
+        )
+        curriculum_baseline_metadata = _CurriculumMetadataCollector(expected_mode="off")
+        baseline_curriculum_on_bundle = _compose_bundle_callback(
+            diagnostics_aggregator=curriculum_baseline_diagnostics_aggregator,
+            missingness_acceptance=curriculum_baseline_missingness_acceptance,
+            curriculum_metadata=curriculum_baseline_metadata,
+        )
+
+        baseline_throughput = run_throughput_benchmark(
+            baseline_config,
+            num_datasets=num_datasets,
+            warmup_datasets=warmup,
+            device=requested_device,
+            on_bundle=baseline_curriculum_on_bundle,
+        )
+        baseline_dpm = float(baseline_throughput.get("datasets_per_minute", 0.0))
+        current_dpm = float(result.get("datasets_per_minute", 0.0))
+        runtime_degradation = degradation_percent("datasets_per_minute", current_dpm, baseline_dpm)
+        runtime_degradation_value = (
+            float(runtime_degradation) if runtime_degradation is not None else 0.0
+        )
+        runtime_severity = _severity_from_thresholds(
+            runtime_degradation_value,
+            warn=float(warn_threshold_pct),
+            fail=float(fail_threshold_pct),
+        )
+        runtime_gating_enabled = num_datasets >= CURRICULUM_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE
+
+        metadata_summary = curriculum_metadata.build_summary()
+        issues = list(metadata_summary["issues"])
+        if runtime_gating_enabled and runtime_severity != "pass":
+            issues.append(
+                _build_guardrail_issue(
+                    metric="curriculum_runtime_degradation_pct",
+                    severity=runtime_severity,
+                    current=current_dpm,
+                    baseline=baseline_dpm,
+                    degradation_pct=runtime_degradation_value,
+                    detail=(
+                        "Staged curriculum throughput regressed versus an equivalent "
+                        "curriculum-disabled control run."
+                    ),
+                )
+            )
+
+        result["curriculum_guardrails"] = {
+            "enabled": True,
+            "mode": curriculum_mode,
+            "configured_stage": curriculum_configured_stage,
+            "sample_datasets": int(num_datasets),
+            "runtime_gating_enabled": bool(runtime_gating_enabled),
+            "runtime_gating_min_sample_datasets": int(
+                CURRICULUM_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE
+            ),
+            "runtime_gating_suppressed_reason": (
+                None if runtime_gating_enabled else "insufficient_sample_size"
+            ),
+            "stage_metadata_coverage_rate": float(metadata_summary["stage_metadata_coverage_rate"]),
+            "mode_mismatch_bundles": int(metadata_summary["mode_mismatch_bundles"]),
+            "runtime_baseline_datasets_per_minute": baseline_dpm,
+            "runtime_with_curriculum_datasets_per_minute": current_dpm,
+            "runtime_degradation_pct": (
+                float(runtime_degradation) if runtime_degradation is not None else None
+            ),
+            "runtime_warn_threshold_pct": float(warn_threshold_pct),
+            "runtime_fail_threshold_pct": float(fail_threshold_pct),
+            "issues": issues,
+            "status": _status_from_issues(issues),
+        }
+
     if missingness_enabled and missingness_acceptance is not None:
-        baseline_config = _clone_config(config)
+        baseline_config = _copy_runtime_config(config)
         baseline_config.dataset.missing_rate = 0.0
         baseline_config.dataset.missing_mechanism = MISSINGNESS_MECHANISM_NONE
         baseline_diagnostics_aggregator: CoverageAggregator | None = None
@@ -909,21 +1072,18 @@ def run_profile_benchmark(
         baseline_missingness_acceptance = _MissingnessAcceptanceCollector(
             target_rate=float(config.dataset.missing_rate)
         )
-
-        baseline_on_bundle_callback = None
-        if baseline_diagnostics_aggregator is not None:
-
-            def _baseline_on_bundle(bundle: DatasetBundle) -> None:
-                baseline_diagnostics_aggregator.update_bundle(bundle)
-                baseline_missingness_acceptance.update(bundle)
-
-            baseline_on_bundle_callback = _baseline_on_bundle
-        else:
-
-            def _baseline_on_bundle(bundle: DatasetBundle) -> None:
-                baseline_missingness_acceptance.update(bundle)
-
-            baseline_on_bundle_callback = _baseline_on_bundle
+        baseline_curriculum_metadata = (
+            _CurriculumMetadataCollector(expected_mode=curriculum_mode)
+            if curriculum_metadata is not None
+            else None
+        )
+        # Keep control-run callback instrumentation equivalent so runtime delta
+        # reflects missingness overhead instead of callback overhead skew.
+        baseline_on_bundle_callback = _compose_bundle_callback(
+            diagnostics_aggregator=baseline_diagnostics_aggregator,
+            missingness_acceptance=baseline_missingness_acceptance,
+            curriculum_metadata=baseline_curriculum_metadata,
+        )
 
         baseline_throughput = run_throughput_benchmark(
             baseline_config,
@@ -948,7 +1108,7 @@ def run_profile_benchmark(
         issues = list(acceptance_summary["issues"])
         if runtime_severity != "pass":
             issues.append(
-                _build_missingness_guardrail_issue(
+                _build_guardrail_issue(
                     metric="missingness_runtime_degradation_pct",
                     severity=runtime_severity,
                     current=current_dpm,
@@ -1134,9 +1294,16 @@ def run_benchmark_suite(
             "issues": [],
         }
 
-    missingness_issues = _collect_missingness_regression_issues(profile_results)
-    lineage_issues = _collect_lineage_regression_issues(profile_results)
-    additional_issues = [*missingness_issues, *lineage_issues]
+    missingness_issues = _collect_guardrail_regression_issues(
+        profile_results, guardrail_key="missingness_guardrails"
+    )
+    lineage_issues = _collect_guardrail_regression_issues(
+        profile_results, guardrail_key="lineage_guardrails"
+    )
+    curriculum_issues = _collect_guardrail_regression_issues(
+        profile_results, guardrail_key="curriculum_guardrails"
+    )
+    additional_issues = [*missingness_issues, *lineage_issues, *curriculum_issues]
     if additional_issues:
         existing_issues = regression.get("issues", [])
         if not isinstance(existing_issues, list):

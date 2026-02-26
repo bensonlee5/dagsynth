@@ -712,12 +712,17 @@ def _print_profile_result_line(result: dict[str, Any]) -> None:
     if isinstance(lineage_guardrails, dict) and bool(lineage_guardrails.get("enabled")):
         lineage_hint = f" lineage={lineage_guardrails.get('status', 'pass')}"
 
+    curriculum_hint = ""
+    curriculum_guardrails = result.get("curriculum_guardrails")
+    if isinstance(curriculum_guardrails, dict) and bool(curriculum_guardrails.get("enabled")):
+        curriculum_hint = f" curriculum={curriculum_guardrails.get('status', 'pass')}"
+
     print(
         f"[{result.get('profile_key')}] device={result.get('device')} "
         f"backend={result.get('hardware_backend')} "
         f"datasets/min={float(result.get('datasets_per_minute', 0.0)):.2f} "
         f"latency_p95_ms={float(result.get('latency_p95_ms', 0.0)):.2f}"
-        f"{diagnostics_hint}{missingness_hint}{lineage_hint}"
+        f"{diagnostics_hint}{missingness_hint}{lineage_hint}{curriculum_hint}"
     )
 
 
