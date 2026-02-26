@@ -77,6 +77,12 @@ def test_dag_longest_path_nodes_rejects_non_upper_triangular_input() -> None:
         dag_longest_path_nodes(adjacency)
 
 
+def test_dag_longest_path_nodes_rejects_singleton_self_loop() -> None:
+    adjacency = torch.tensor([[1]], dtype=torch.bool)
+    with pytest.raises(ValueError, match="upper-triangular"):
+        dag_longest_path_nodes(adjacency)
+
+
 def test_dag_edge_density_on_known_graph() -> None:
     adjacency = torch.tensor(
         [
@@ -93,3 +99,9 @@ def test_dag_edge_density_on_known_graph() -> None:
 def test_dag_edge_density_single_node_is_zero() -> None:
     adjacency = torch.zeros((1, 1), dtype=torch.bool)
     assert dag_edge_density(adjacency) == 0.0
+
+
+def test_dag_edge_density_rejects_singleton_self_loop() -> None:
+    adjacency = torch.tensor([[1]], dtype=torch.bool)
+    with pytest.raises(ValueError, match="upper-triangular"):
+        dag_edge_density(adjacency)

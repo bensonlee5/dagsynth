@@ -51,15 +51,14 @@ def dag_longest_path_nodes(adjacency: torch.Tensor) -> int:
 
     if adjacency.ndim != 2 or adjacency.shape[0] != adjacency.shape[1]:
         raise ValueError(f"adjacency must be square, got shape={tuple(adjacency.shape)!r}")
+    adj_bool = adjacency.to(dtype=torch.bool)
+    if bool(torch.tril(adj_bool, diagonal=0).any().item()):
+        raise ValueError("adjacency must be strict upper-triangular for DAG depth computation.")
     n_nodes = int(adjacency.shape[0])
     if n_nodes == 0:
         return 0
     if n_nodes == 1:
         return 1
-
-    adj_bool = adjacency.to(dtype=torch.bool)
-    if bool(torch.tril(adj_bool, diagonal=0).any().item()):
-        raise ValueError("adjacency must be strict upper-triangular for DAG depth computation.")
 
     longest_from = [1] * n_nodes
     for src in range(n_nodes - 1, -1, -1):
@@ -76,12 +75,12 @@ def dag_edge_density(adjacency: torch.Tensor) -> float:
 
     if adjacency.ndim != 2 or adjacency.shape[0] != adjacency.shape[1]:
         raise ValueError(f"adjacency must be square, got shape={tuple(adjacency.shape)!r}")
-    n_nodes = int(adjacency.shape[0])
-    if n_nodes < 2:
-        return 0.0
     adj_bool = adjacency.to(dtype=torch.bool)
     if bool(torch.tril(adj_bool, diagonal=0).any().item()):
         raise ValueError("adjacency must be strict upper-triangular for density computation.")
+    n_nodes = int(adjacency.shape[0])
+    if n_nodes < 2:
+        return 0.0
 
     capacity = n_nodes * (n_nodes - 1) // 2
     edges = int(adj_bool.sum().item())
