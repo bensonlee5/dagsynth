@@ -318,7 +318,130 @@ def test_run_benchmark_suite_curriculum_runtime_guardrail_updates_regression_sta
     )
     baseline_calls = [call for call in calls if not call["curriculum_enabled"]]
     assert baseline_calls
-    assert all(not call["has_callback"] for call in baseline_calls)
+    assert all(call["has_callback"] for call in baseline_calls)
+
+
+def test_run_benchmark_suite_curriculum_runtime_guardrail_preserves_callback_parity_with_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.curriculum_stage = "auto"
+    cfg.curriculum.stages = {
+        1: {"n_features_min": 8, "n_features_max": 8},
+        2: {"n_features_min": 8, "n_features_max": 8},
+        3: {"n_features_min": 8, "n_features_max": 8},
+    }
+    spec = ProfileRunSpec(key="cpu_test", config=cfg, device="cpu")
+    calls: list[dict[str, bool]] = []
+
+    class _DummyDiagnosticsAggregator:
+        def __init__(self) -> None:
+            self.seen = 0
+
+        def update_bundle(self, bundle: DatasetBundle) -> None:
+            _ = bundle
+            self.seen += 1
+
+        def build_summary(self) -> dict[str, int]:
+            return {"seen": self.seen}
+
+    def _stub_throughput(
+        config,
+        *,
+        num_datasets: int,
+        warmup_datasets: int = 10,
+        device: str | None = None,
+        on_bundle=None,
+    ):
+        _ = warmup_datasets
+        _ = device
+        curriculum_enabled = str(config.curriculum_stage).strip().lower() != "off"
+        has_callback = on_bundle is not None
+        calls.append({"curriculum_enabled": curriculum_enabled, "has_callback": has_callback})
+        dpm = 100.0 if has_callback else 120.0
+        dps = dpm / 60.0
+        elapsed = (float(num_datasets) / dps) if dps > 0 else 0.0
+        if has_callback:
+            for i in range(num_datasets):
+                on_bundle(
+                    DatasetBundle(
+                        X_train=np.zeros((3, 4), dtype=np.float32),
+                        y_train=np.zeros(3, dtype=np.int64),
+                        X_test=np.zeros((1, 4), dtype=np.float32),
+                        y_test=np.zeros(1, dtype=np.int64),
+                        feature_types=["num", "num", "num", "num"],
+                        metadata={
+                            "seed": i,
+                            "attempt_used": 0,
+                            "curriculum": {
+                                "mode": "auto" if curriculum_enabled else "off",
+                                "stage": 1 if curriculum_enabled else None,
+                            },
+                        },
+                    )
+                )
+        return {
+            "profile": config.benchmark.profile_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": elapsed,
+            "datasets_per_second": dps,
+            "datasets_per_minute": dpm,
+            "slo_pass_100_datasets_per_min": dpm >= 100.0,
+        }
+
+    monkeypatch.setattr("cauchy_generator.bench.suite.run_throughput_benchmark", _stub_throughput)
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._collect_latency",
+        lambda _cfg, *, device, num_samples: {
+            "latency_samples": float(num_samples),
+            "latency_mean_ms": 1.0,
+            "latency_p95_ms": 1.0,
+            "latency_min_ms": 1.0,
+            "latency_max_ms": 1.0,
+        },
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite._build_diagnostics_aggregator",
+        lambda _cfg: _DummyDiagnosticsAggregator(),
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite.write_coverage_summary_json",
+        lambda summary, path: path,
+    )
+    monkeypatch.setattr(
+        "cauchy_generator.bench.suite.write_coverage_summary_markdown",
+        lambda summary, path: path,
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=6,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=True,
+        diagnostics_root_dir=tmp_path,
+        fail_on_regression=False,
+        no_hardware_aware=True,
+    )
+
+    result = summary["profile_results"][0]
+    guardrails = result["curriculum_guardrails"]
+    assert guardrails["enabled"] is True
+    assert guardrails["status"] == "pass"
+    baseline_calls = [call for call in calls if not call["curriculum_enabled"]]
+    assert baseline_calls
+    assert all(call["has_callback"] for call in baseline_calls)
 
 
 def test_run_benchmark_suite_lineage_runtime_guardrail_updates_regression_status(

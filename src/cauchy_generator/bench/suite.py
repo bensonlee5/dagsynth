@@ -1043,12 +1043,31 @@ def run_profile_benchmark(
     if curriculum_enabled and curriculum_metadata is not None:
         baseline_config = _clone_config(config)
         baseline_config.curriculum_stage = CURRICULUM_STAGE_OFF
+        curriculum_baseline_diagnostics_aggregator: CoverageAggregator | None = None
+        if diagnostics_aggregator is not None:
+            curriculum_baseline_diagnostics_aggregator = _build_diagnostics_aggregator(
+                baseline_config
+            )
+        curriculum_baseline_missingness_acceptance = (
+            _MissingnessAcceptanceCollector(target_rate=float(config.dataset.missing_rate))
+            if missingness_acceptance is not None
+            else None
+        )
+        curriculum_baseline_metadata = _CurriculumMetadataCollector(expected_mode="off")
+
+        def _baseline_curriculum_on_bundle(bundle: DatasetBundle) -> None:
+            if curriculum_baseline_diagnostics_aggregator is not None:
+                curriculum_baseline_diagnostics_aggregator.update_bundle(bundle)
+            if curriculum_baseline_missingness_acceptance is not None:
+                curriculum_baseline_missingness_acceptance.update(bundle)
+            curriculum_baseline_metadata.update(bundle)
+
         baseline_throughput = run_throughput_benchmark(
             baseline_config,
             num_datasets=num_datasets,
             warmup_datasets=warmup,
             device=requested_device,
-            on_bundle=None,
+            on_bundle=_baseline_curriculum_on_bundle,
         )
         baseline_dpm = float(baseline_throughput.get("datasets_per_minute", 0.0))
         current_dpm = float(result.get("datasets_per_minute", 0.0))
