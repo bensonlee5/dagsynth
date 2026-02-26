@@ -29,6 +29,27 @@ def _tiny_config() -> GeneratorConfig:
     return cfg
 
 
+def _layout_stub(
+    *,
+    feature_types: list[str],
+    graph_nodes: int,
+    adjacency: torch.Tensor,
+    feature_node_assignment: list[int],
+    target_node_assignment: int,
+) -> dict[str, object]:
+    graph_edges = int(adjacency.to(dtype=torch.int64).sum().item())
+    return {
+        "feature_types": list(feature_types),
+        "graph_nodes": int(graph_nodes),
+        "graph_edges": graph_edges,
+        "graph_depth_nodes": int(graph_nodes),
+        "graph_edge_density": 0.0,
+        "adjacency": adjacency,
+        "feature_node_assignment": list(feature_node_assignment),
+        "target_node_assignment": int(target_node_assignment),
+    }
+
+
 def test_generate_one_shapes() -> None:
     cfg = _tiny_config()
     bundle = generate_one(cfg, seed=7, device="cpu")
@@ -87,6 +108,18 @@ def test_generate_one_lineage_assignment_lengths_and_bounds() -> None:
         assert 0 <= int(node_index) < n_nodes
 
 
+def test_generate_one_emits_graph_complexity_metadata() -> None:
+    cfg = _tiny_config()
+    bundle = generate_one(cfg, seed=14, device="cpu")
+
+    graph_nodes = int(bundle.metadata["graph_nodes"])
+    graph_depth_nodes = int(bundle.metadata["graph_depth_nodes"])
+    graph_edge_density = float(bundle.metadata["graph_edge_density"])
+
+    assert 1 <= graph_depth_nodes <= graph_nodes
+    assert 0.0 <= graph_edge_density <= 1.0
+
+
 def test_generate_batch_reproducible_metadata() -> None:
     cfg = _tiny_config()
     batch_a = generate_batch(cfg, num_datasets=2, seed=123, device="cpu")
@@ -118,11 +151,10 @@ def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
     cfg.dataset.task = "regression"
     cfg.filter.enabled = False
 
-    layout = {
-        "feature_types": ["num", "cat", "num", "cat"],
-        "graph_nodes": 3,
-        "graph_edges": 2,
-        "adjacency": torch.tensor(
+    layout = _layout_stub(
+        feature_types=["num", "cat", "num", "cat"],
+        graph_nodes=3,
+        adjacency=torch.tensor(
             [
                 [0, 1, 1],
                 [0, 0, 0],
@@ -130,9 +162,9 @@ def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
             ],
             dtype=torch.bool,
         ),
-        "feature_node_assignment": [0, 1, 2, 1],
-        "target_node_assignment": 2,
-    }
+        feature_node_assignment=[0, 1, 2, 1],
+        target_node_assignment=2,
+    )
 
     monkeypatch.setattr(
         "cauchy_generator.core.dataset._sample_layout",
@@ -322,6 +354,122 @@ def test_fixed_curriculum_stage_ranges(stage: int, low: int, high: int) -> None:
     assert int(curriculum["n_train"]) + int(curriculum["n_test"]) == int(curriculum["n_rows_total"])
 
 
+def test_stagewise_structure_bias_increases_density_for_same_rng_stream() -> None:
+    cfg = _tiny_config()
+    cfg.dataset.task = "regression"
+    cfg.dataset.n_features_min = 8
+    cfg.dataset.n_features_max = 8
+    cfg.graph.n_nodes_min = 20
+    cfg.graph.n_nodes_max = 20
+
+    layout_stage1 = _sample_layout(
+        cfg,
+        SeedManager(190).torch_rng("layout"),
+        "cpu",
+        curriculum={"stage": 1},
+    )
+    layout_stage3 = _sample_layout(
+        cfg,
+        SeedManager(190).torch_rng("layout"),
+        "cpu",
+        curriculum={"stage": 3},
+    )
+
+    assert int(layout_stage3["graph_edges"]) >= int(layout_stage1["graph_edges"])
+    assert float(layout_stage3["graph_edge_density"]) >= float(layout_stage1["graph_edge_density"])
+
+
+@pytest.mark.parametrize("task", ["classification", "regression"])
+def test_fixed_curriculum_stage_enforces_graph_depth_bounds(task: str) -> None:
+    cfg = _tiny_config()
+    cfg.dataset.task = task
+    cfg.curriculum_stage = 2
+    cfg.filter.enabled = False
+    cfg.graph.n_nodes_min = 3
+    cfg.graph.n_nodes_max = 3
+    cfg.curriculum.stages = {
+        2: CurriculumStageConfig(
+            n_nodes_min=3,
+            n_nodes_max=3,
+            depth_min=3,
+            depth_max=3,
+        )
+    }
+
+    if task == "classification":
+        cfg.dataset.n_classes_min = 2
+        cfg.dataset.n_classes_max = 2
+
+    bundle = generate_one(cfg, seed=912 if task == "classification" else 913, device="cpu")
+    assert int(bundle.metadata["curriculum"]["stage"]) == 2
+    assert int(bundle.metadata["graph_nodes"]) == 3
+    assert int(bundle.metadata["graph_depth_nodes"]) == 3
+
+
+def test_stage_depth_min_above_nodes_min_still_generates_valid_graph() -> None:
+    cfg = _tiny_config()
+    cfg.dataset.task = "regression"
+    cfg.curriculum_stage = 2
+    cfg.filter.enabled = False
+    cfg.graph.n_nodes_min = 3
+    cfg.graph.n_nodes_max = 6
+    cfg.curriculum.stages = {
+        2: CurriculumStageConfig(
+            n_nodes_min=3,
+            n_nodes_max=6,
+            depth_min=5,
+        )
+    }
+
+    bundle = generate_one(cfg, seed=931, device="cpu")
+    assert int(bundle.metadata["curriculum"]["stage"]) == 2
+    assert int(bundle.metadata["graph_nodes"]) >= 5
+    assert int(bundle.metadata["graph_depth_nodes"]) >= 5
+
+
+def test_curriculum_off_ignores_stagewise_depth_bounds() -> None:
+    cfg = _tiny_config()
+    cfg.dataset.task = "regression"
+    cfg.curriculum_stage = "off"
+    cfg.filter.enabled = False
+    cfg.graph.n_nodes_min = 3
+    cfg.graph.n_nodes_max = 3
+    cfg.curriculum.stages = {
+        1: CurriculumStageConfig(
+            n_nodes_min=3,
+            n_nodes_max=3,
+            depth_min=4,
+            depth_max=4,
+        )
+    }
+
+    bundle = generate_one(cfg, seed=920, device="cpu")
+    assert bundle.metadata["curriculum"]["stage"] is None
+    assert int(bundle.metadata["graph_nodes"]) == 3
+    assert int(bundle.metadata["graph_depth_nodes"]) <= 3
+
+
+def test_sample_layout_rejects_infeasible_depth_vs_nodes_bounds() -> None:
+    cfg = _tiny_config()
+    cfg.graph.n_nodes_min = 3
+    cfg.graph.n_nodes_max = 5
+    cfg.curriculum.stages = {
+        2: CurriculumStageConfig(
+            n_nodes_min=3,
+            n_nodes_max=5,
+            depth_min=6,
+        )
+    }
+
+    with pytest.raises(ValueError, match="Invalid effective node/depth bounds"):
+        _sample_layout(
+            cfg,
+            SeedManager(932).torch_rng("layout"),
+            "cpu",
+            curriculum={"stage": 2},
+        )
+
+
 def test_fixed_curriculum_stage_enforces_feature_and_node_bounds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -451,6 +599,42 @@ def test_stagewise_layout_sampling_is_seed_reproducible_for_feature_and_node_bou
     assert layout_a["graph_nodes"] == layout_b["graph_nodes"]
     assert 13 <= int(layout_a["n_features"]) <= 19
     assert 5 <= int(layout_a["graph_nodes"]) <= 9
+
+
+def test_stagewise_layout_sampling_is_seed_reproducible_with_depth_constraints() -> None:
+    cfg = _tiny_config()
+    cfg.dataset.n_features_min = 8
+    cfg.dataset.n_features_max = 8
+    cfg.graph.n_nodes_min = 3
+    cfg.graph.n_nodes_max = 6
+    cfg.curriculum.stages = {
+        2: CurriculumStageConfig(
+            n_nodes_min=3,
+            n_nodes_max=6,
+            depth_min=5,
+            depth_max=5,
+        )
+    }
+    curriculum = {"stage": 2}
+
+    layout_a = _sample_layout(
+        cfg,
+        SeedManager(933).torch_rng("layout"),
+        "cpu",
+        curriculum=curriculum,
+    )
+    layout_b = _sample_layout(
+        cfg,
+        SeedManager(933).torch_rng("layout"),
+        "cpu",
+        curriculum=curriculum,
+    )
+
+    assert layout_a["graph_nodes"] == layout_b["graph_nodes"]
+    assert layout_a["graph_depth_nodes"] == layout_b["graph_depth_nodes"]
+    assert layout_a["graph_edges"] == layout_b["graph_edges"]
+    torch.testing.assert_close(layout_a["adjacency"], layout_b["adjacency"])
+    assert int(layout_a["graph_depth_nodes"]) == 5
 
 
 def test_auto_curriculum_batch_stage_sequence_reproducible() -> None:
