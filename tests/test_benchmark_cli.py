@@ -225,3 +225,33 @@ def test_benchmark_cli_missingness_guardrails_are_emitted(tmp_path) -> None:
     assert isinstance(lineage_guardrails["enabled"], bool)
     if lineage_guardrails["enabled"]:
         assert lineage_guardrails["status"] in {"pass", "warn", "fail"}
+
+
+def test_benchmark_cli_curriculum_guardrails_are_emitted(tmp_path) -> None:
+    out = tmp_path / "summary_curriculum.json"
+    code = main(
+        [
+            "benchmark",
+            "--config",
+            "configs/preset_curriculum_benchmark_smoke.yaml",
+            "--profile",
+            "custom",
+            "--suite",
+            "smoke",
+            "--num-datasets",
+            "6",
+            "--warmup",
+            "0",
+            "--no-hardware-aware",
+            "--no-memory",
+            "--json-out",
+            str(out),
+        ]
+    )
+    assert code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    profile = payload["profile_results"][0]
+    guardrails = profile["curriculum_guardrails"]
+    assert guardrails["enabled"] is True
+    assert guardrails["mode"] in {"auto", "fixed"}
+    assert guardrails["status"] in {"pass", "warn", "fail"}

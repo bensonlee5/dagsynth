@@ -115,6 +115,27 @@ def test_load_curriculum_preset() -> None:
     assert cfg.curriculum.stages == {}
 
 
+def test_load_curriculum_stage_presets() -> None:
+    cfg_auto = GeneratorConfig.from_yaml("configs/preset_curriculum_auto_staged.yaml")
+    cfg_stage1 = GeneratorConfig.from_yaml("configs/preset_curriculum_stage1.yaml")
+    cfg_stage2 = GeneratorConfig.from_yaml("configs/preset_curriculum_stage2.yaml")
+    cfg_stage3 = GeneratorConfig.from_yaml("configs/preset_curriculum_stage3.yaml")
+    cfg_benchmark = GeneratorConfig.from_yaml("configs/preset_curriculum_benchmark_smoke.yaml")
+
+    assert cfg_auto.curriculum_stage == "auto"
+    assert cfg_stage1.curriculum_stage == 1
+    assert cfg_stage2.curriculum_stage == 2
+    assert cfg_stage3.curriculum_stage == 3
+    assert set(cfg_auto.curriculum.stages) == {1, 2, 3}
+    assert set(cfg_stage1.curriculum.stages) == {1, 2, 3}
+    assert set(cfg_stage2.curriculum.stages) == {1, 2, 3}
+    assert set(cfg_stage3.curriculum.stages) == {1, 2, 3}
+    assert set(cfg_benchmark.curriculum.stages) == {1, 2, 3}
+    assert cfg_benchmark.runtime.device == "cpu"
+    assert cfg_benchmark.benchmark.profile_name == "curriculum_smoke"
+    assert "curriculum_smoke" in cfg_benchmark.benchmark.profiles
+
+
 def test_curriculum_stage_schema_parses_with_string_stage_keys() -> None:
     cfg = GeneratorConfig.from_dict(
         {

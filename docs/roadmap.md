@@ -38,20 +38,20 @@ If any other document disagrees with this file, this file is authoritative.
 
 Lower rank means higher priority. Rank `0` is reserved for completed items retained for traceability.
 
-| Rank | Roadmap ID | Item                                                         | Status      | Milestone | GitHub Tracking                                 |
-| ---- | ---------- | ------------------------------------------------------------ | ----------- | --------- | ----------------------------------------------- |
-| 0    | RD-001     | Ground-truth DAG artifact export                             | implemented | Now       | `#44 -> #45 -> #46 -> #47 -> #48` (completed)   |
-| 0    | RD-003     | Missingness generation (MCAR/MAR/MNAR)                       | implemented | Now       | `#15 -> #17 -> #18` (completed)                 |
-| 0    | RD-008     | Meta-feature coverage steering                               | implemented | Now       | `#9` (completed epic)                           |
-| 1    | RD-006     | Curriculum complexity scaling (features + graph)             | planned     | Now       | `#49 -> #50 -> #51 -> #90 -> #52 -> #53`        |
-| 2    | RD-004     | Shift-aware SCM generation                                   | planned     | Next      | `#64 -> #72 -> #73 -> #74 -> #75`               |
-| 3    | RD-012     | Noise family diversification for synthetic generation        | planned     | Next      | `#24 -> #25 -> #26 -> #27`                      |
-| 4    | RD-010     | Hardware-adaptive autotuning beyond coarse FLOPs tiers       | planned     | Next      | `#54 -> #55 -> #56 -> #70 -> #57 -> #71 -> #58` |
-| 5    | RD-011     | Mechanism family mix expansion (BNN/GP kernels/interactions) | planned     | Next      | `#28 -> #29 -> #30 -> #68 -> #69 -> #31 -> #32` |
-| 6    | RD-007     | Many-class and high-cardinality expansion                    | research    | Next      | `#19 -> #43 -> (#20 -> #21 -> #22 -> #23)`      |
-| 7    | RD-005     | Robustness stress profiles (hard-task/adversarial regimes)   | research    | Next      | `#65 -> #76 -> #79 -> #78 -> #77`               |
-| 8    | RD-009     | Parallel/distributed generation and writing                  | research    | Next      | `#66 -> #80 -> #81 -> #82 -> #83`               |
-| 9    | RD-002     | Interventional and counterfactual generation modes           | research    | Later     | `#67 -> #84 -> #85 -> #86 -> #87`               |
+| Rank | Roadmap ID | Item                                                         | Status      | Milestone | GitHub Tracking                                      |
+| ---- | ---------- | ------------------------------------------------------------ | ----------- | --------- | ---------------------------------------------------- |
+| 0    | RD-001     | Ground-truth DAG artifact export                             | implemented | Now       | `#44 -> #45 -> #46 -> #47 -> #48` (completed)        |
+| 0    | RD-003     | Missingness generation (MCAR/MAR/MNAR)                       | implemented | Now       | `#15 -> #17 -> #18` (completed)                      |
+| 0    | RD-008     | Meta-feature coverage steering                               | implemented | Now       | `#9` (completed epic)                                |
+| 0    | RD-006     | Curriculum complexity scaling (features + graph)             | implemented | Now       | `#49 -> #50 -> #51 -> #90 -> #52 -> #53` (completed) |
+| 2    | RD-004     | Shift-aware SCM generation                                   | planned     | Next      | `#64 -> #72 -> #73 -> #74 -> #75`                    |
+| 3    | RD-012     | Noise family diversification for synthetic generation        | planned     | Next      | `#24 -> #25 -> #26 -> #27`                           |
+| 4    | RD-010     | Hardware-adaptive autotuning beyond coarse FLOPs tiers       | planned     | Next      | `#54 -> #55 -> #56 -> #70 -> #57 -> #71 -> #58`      |
+| 5    | RD-011     | Mechanism family mix expansion (BNN/GP kernels/interactions) | planned     | Next      | `#28 -> #29 -> #30 -> #68 -> #69 -> #31 -> #32`      |
+| 6    | RD-007     | Many-class and high-cardinality expansion                    | research    | Next      | `#19 -> #43 -> (#20 -> #21 -> #22 -> #23)`           |
+| 7    | RD-005     | Robustness stress profiles (hard-task/adversarial regimes)   | research    | Next      | `#65 -> #76 -> #79 -> #78 -> #77`                    |
+| 8    | RD-009     | Parallel/distributed generation and writing                  | research    | Next      | `#66 -> #80 -> #81 -> #82 -> #83`                    |
+| 9    | RD-002     | Interventional and counterfactual generation modes           | research    | Later     | `#67 -> #84 -> #85 -> #86 -> #87`                    |
 
 ## Current Capability Matrix
 
@@ -61,8 +61,8 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 | Causal discovery with ground-truth DAGs and interventional datasets | `partial`     | DAG lineage metadata is emitted per dataset and persisted as compact shard-level artifacts with schema validation and benchmark guardrails               | Interventional/counterfactual generation semantics are not implemented                                            | RD-002                                 |
 | Robustness testing with hard tasks, shifts, adversarial regimes     | `partial`     | Basic filtering and diagnostics proxies exist; missingness mechanisms are implemented with deterministic controls and benchmark guardrails               | No explicit robustness profiles or shift/drift/noise-diversity controls                                           | RD-004, RD-005, RD-012                 |
 | Causal structural integrity (hierarchical dependencies)             | `implemented` | Graph-driven node pipeline and multi-family function composition                                                                                         | Deeper mechanism-family controls are not user-configurable                                                        | RD-007, RD-011                         |
-| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, and configurable missingness mechanisms are implemented                                             | High-cardinality/many-class limits and noise-family diversity remain conservative                                 | RD-006, RD-007, RD-012                 |
-| Complexity curriculum scales features/nodes/samples                 | `partial`     | Curriculum mode stages row/split regime                                                                                                                  | Curriculum does not yet stage feature count or graph complexity                                                   | RD-006                                 |
+| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, and staged curriculum controls are implemented                 | High-cardinality/many-class limits and noise-family diversity remain conservative                                 | RD-007, RD-012                         |
+| Complexity curriculum scales features/nodes/samples                 | `implemented` | Curriculum stages now cover row/feature/node/depth controls with staged presets, integration tests, and benchmark guardrails                             | -                                                                                                                 | -                                      |
 | Hardware-native performance (Torch + hardware-aware tuning)         | `partial`     | Torch CPU/CUDA/MPS path, hardware detection, coarse profile-based tuning, and benchmark suite                                                            | Hardware-adaptive autotuning is not implemented; parallel/distributed generation is not implemented               | RD-010, RD-009                         |
 | Parallel streaming Parquet sharding                                 | `partial`     | Streaming Parquet writing exists                                                                                                                         | Writing is currently single-process sequential                                                                    | RD-009                                 |
 
@@ -148,17 +148,22 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 
 ### RD-006: Curriculum Complexity Scaling (Features + Graph)
 
-- Status: `planned`
-- Milestone: `Now`
+- Status: `implemented`
+- Milestone: `Now` (completed via epics/issues `#50`, `#51`, `#90`, `#52`, `#53`)
 - Mission alignment: foundation model pretraining
 - Pillar alignment: tabular realism
 - Goal: extend curriculum stages beyond row count to feature/node/depth complexity.
 - GitHub tracking: epic `#49`; dependency chain `#50 -> #51 -> #90 -> #52 -> #53`
 - Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `configs/curriculum_tabiclv2.yaml`
-- Exit criteria:
-  - Stage definitions include row, feature, and graph complexity controls.
-  - Stage monotonicity tests verify non-decreasing complexity across stages.
-  - Existing curriculum mode remains valid when new knobs are absent.
+- Delivered scope:
+  - Stage definitions include row, feature, node, and graph-depth controls.
+  - Monotonicity diagnostics/metadata validate non-decreasing stage complexity axes.
+  - Discoverable staged presets and end-to-end CLI integration tests are available.
+  - Benchmark summaries include `curriculum_guardrails` runtime/metadata checks.
+- Completion evidence:
+  - Staged curriculum workflows are discoverable in `README.md` and config presets.
+  - Integration tests cover fixed-stage and auto-stage CLI generation paths.
+  - Performance impact is measured via benchmark guardrail thresholds.
 
 ### RD-007: Many-Class and High-Cardinality Expansion
 

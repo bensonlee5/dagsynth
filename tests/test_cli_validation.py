@@ -130,6 +130,110 @@ def test_generate_cli_defaults_to_non_staged_when_curriculum_not_set(
     assert captured["curriculum_stage"] == "off"
 
 
+def test_generate_cli_curriculum_auto_preset_end_to_end_no_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cauchy_generator.core import dataset as dataset_mod
+
+    captured_curriculum: list[dict[str, object]] = []
+    original_generate_batch_iter = dataset_mod.generate_batch_iter
+
+    def _capture_generate_batch_iter(
+        config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        for bundle in original_generate_batch_iter(
+            config,
+            num_datasets=num_datasets,
+            seed=seed,
+            device=device,
+        ):
+            payload = bundle.metadata["curriculum"]
+            assert isinstance(payload, dict)
+            captured_curriculum.append(payload)
+            yield bundle
+
+    monkeypatch.setattr(
+        "cauchy_generator.cli.generate_batch_iter",
+        _capture_generate_batch_iter,
+    )
+
+    code = main(
+        [
+            "generate",
+            "--config",
+            "configs/preset_curriculum_auto_staged.yaml",
+            "--num-datasets",
+            "3",
+            "--device",
+            "cpu",
+            "--no-hardware-aware",
+            "--no-write",
+        ]
+    )
+
+    assert code == 0
+    assert len(captured_curriculum) == 3
+    for payload in captured_curriculum:
+        assert payload["mode"] == "auto"
+        assert int(payload["stage"]) in {1, 2, 3}
+
+
+def test_generate_cli_curriculum_fixed_stage_preset_end_to_end_no_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cauchy_generator.core import dataset as dataset_mod
+
+    captured_curriculum: list[dict[str, object]] = []
+    original_generate_batch_iter = dataset_mod.generate_batch_iter
+
+    def _capture_generate_batch_iter(
+        config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        for bundle in original_generate_batch_iter(
+            config,
+            num_datasets=num_datasets,
+            seed=seed,
+            device=device,
+        ):
+            payload = bundle.metadata["curriculum"]
+            assert isinstance(payload, dict)
+            captured_curriculum.append(payload)
+            yield bundle
+
+    monkeypatch.setattr(
+        "cauchy_generator.cli.generate_batch_iter",
+        _capture_generate_batch_iter,
+    )
+
+    code = main(
+        [
+            "generate",
+            "--config",
+            "configs/preset_curriculum_stage2.yaml",
+            "--num-datasets",
+            "2",
+            "--device",
+            "cpu",
+            "--no-hardware-aware",
+            "--no-write",
+        ]
+    )
+
+    assert code == 0
+    assert len(captured_curriculum) == 2
+    for payload in captured_curriculum:
+        assert payload["mode"] == "fixed"
+        assert int(payload["stage"]) == 2
+
+
 def test_benchmark_cli_rejects_negative_warmup() -> None:
     with pytest.raises(SystemExit) as exc:
         main(
