@@ -462,15 +462,22 @@ class GeneratorConfig:
                 if stage_cfg.n_nodes_max is not None
                 else graph_n_nodes_max
             )
-            if stage_cfg.depth_min is not None and stage_cfg.depth_min > effective_stage_nodes_max:
+            effective_stage_nodes_max_for_depth = max(2, int(effective_stage_nodes_max))
+            if (
+                stage_cfg.depth_min is not None
+                and stage_cfg.depth_min > effective_stage_nodes_max_for_depth
+            ):
                 raise ValueError(
                     "curriculum.stages.*.depth_min must be <= effective graph.n_nodes_max "
-                    f"for stage {stage} ({effective_stage_nodes_max}), got {stage_cfg.depth_min}."
+                    f"for stage {stage} ({effective_stage_nodes_max_for_depth}), got {stage_cfg.depth_min}."
                 )
-            if stage_cfg.depth_max is not None and stage_cfg.depth_max > effective_stage_nodes_max:
+            if (
+                stage_cfg.depth_max is not None
+                and stage_cfg.depth_max > effective_stage_nodes_max_for_depth
+            ):
                 raise ValueError(
                     "curriculum.stages.*.depth_max must be <= effective graph.n_nodes_max "
-                    f"for stage {stage} ({effective_stage_nodes_max}), got {stage_cfg.depth_max}."
+                    f"for stage {stage} ({effective_stage_nodes_max_for_depth}), got {stage_cfg.depth_max}."
                 )
 
     @classmethod
