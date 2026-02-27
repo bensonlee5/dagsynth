@@ -144,10 +144,6 @@ def detect_hardware(requested_device: str | None = None) -> HardwareInfo:
 def apply_hardware_profile(config: GeneratorConfig, hw: HardwareInfo) -> GeneratorConfig:
     """Apply conservative config overrides based on detected hardware tier."""
 
-    config.runtime.gpu_name_hint = hw.device_name
-    config.runtime.gpu_memory_gb_hint = hw.total_memory_gb
-    config.runtime.peak_flops_hint = hw.peak_flops
-
     if not config.runtime.hardware_aware or hw.backend != "cuda":
         return config
 

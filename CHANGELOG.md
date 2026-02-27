@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Eliminated NumPy bottlenecks across generation pipeline: `functions/`, `linalg/`, `converters/` now use torch-native implementations
 - Steering candidate scoring uses torch-native metric path and torch softmax selection to avoid CPU/NumPy round trips on accelerator runs
+- Diagnostics extraction now normalizes input bundles to CPU and delegates metric computation to `core/steering_metrics.py`, avoiding device-specific float64 failures on non-CPU runtimes (notably MPS)
 - Diagnostics coverage aggregation now uses deterministic reservoir sampling per metric with configurable retention cap (`diagnostics.max_values_per_metric`) to bound memory on long runs
 - Root docs and script docs now include recommended missingness generation and benchmark commands
 - Roadmap/backlog/implementation docs now track RD-010 hardware-adaptive autotuning beyond coarse FLOPs-tier profile tuning
@@ -33,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parquet shard persistence now rewrites dense DAG lineage adjacency into shard-level bit-packed artifacts (`adjacency.bitpack.bin` + `adjacency.index.json`) and stores compact lineage pointers in per-dataset `metadata.json`
 - Benchmark CLI/report outputs now include lineage guardrail status in per-profile summaries
 - README/roadmap/implementation docs now document compact lineage artifact workflows and lineage-overhead benchmark guardrails
+- Internal refactors removed dataset/benchmark compatibility shim wrappers and centralized duplicated meta-target constants/helper wiring across CLI/core modules
+
+### Removed
+
+- `RuntimeConfig` keys: `generation_engine`, `gpu_name_hint`, `gpu_memory_gb_hint`, `peak_flops_hint`
+- `SeedManager.numpy_rng`
+
+### Compatibility
+
+- Configs that still set `runtime.generation_engine` now fail fast during config load (`TypeError`).
 
 ### Fixed
 
@@ -46,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New generation CLI controls: `--diagnostics`, `--steer-meta`, and repeatable `--meta-target key=min:max[:weight]`
 - Steering metadata payload propagation on generated bundles when steering is enabled
 - Benchmark diagnostics collection controls: `cauchy-gen benchmark --diagnostics [--diagnostics-out-dir ...]`
-- Per-profile benchmark diagnostics artifacts and summary pointers under `diagnostics/<profile>/`
+- Per-profile benchmark diagnostics artifacts and summary pointers under `diagnostics/<sanitized_profile_key>_<hash>/`
 - New presets: `configs/preset_diagnostics_on.yaml` and `configs/preset_steering_conservative.yaml`
 
 ### Changed

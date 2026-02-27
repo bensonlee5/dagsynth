@@ -348,6 +348,11 @@ def test_runtime_config_from_dict() -> None:
     assert cfg.steering.max_attempts == 4
 
 
+def test_runtime_config_rejects_generation_engine_key() -> None:
+    with pytest.raises(TypeError, match="generation_engine"):
+        GeneratorConfig.from_dict({"runtime": {"generation_engine": "appendix_light"}})
+
+
 def test_legacy_filter_keys_are_rejected() -> None:
     with pytest.raises(TypeError, match="n_estimators"):
         GeneratorConfig.from_dict(

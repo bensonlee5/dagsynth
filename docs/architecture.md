@@ -5,8 +5,10 @@ Visual documentation of `cauchy-generator` control flow and data flow.
 ## Reading Guide
 
 - Core generation is torch-native end-to-end (CPU/CUDA/MPS execution paths).
+- Curriculum and stage resolution are handled in `core/curriculum.py`.
+- Dataset layout and graph sampling are handled in `core/layout.py`.
 - Steering candidate scoring uses torch-native metrics (`core/steering_metrics.py`).
-- Diagnostics coverage extraction still uses the full NumPy-based metric extractor (`diagnostics/metrics.py`) for reporting artifacts.
+- Diagnostics coverage extraction uses `diagnostics/metrics.py`, which normalizes bundles to CPU and delegates all mathematical metric computation to the unified torch-native steering metrics.
 
 ## 1. High-Level System Overview
 
@@ -104,8 +106,8 @@ flowchart TB
     subgraph OneSeeded["_generate_one_seeded()"]
         direction TB
         SM["SeedManager(seed)"]
-        Curric["_sample_curriculum()<br/>stage/rows/train-test split"]
-        Layout["_sample_layout()<br/>feature mix, DAG, node assignments"]
+        Curric["_sample_curriculum()<br/><code>core/curriculum.py</code>"]
+        Layout["_sample_layout()<br/><code>core/layout.py</code>"]
         TorchGen["_generate_torch()"]
         SM --> Curric --> Layout --> TorchGen
     end
@@ -138,7 +140,7 @@ flowchart TB
 ### Context
 
 - Steering runs a bounded candidate loop per dataset, then selects one candidate probabilistically using deterministic seeded RNG.
-- The main generation path is torch-native. The NumPy diagnostics extractor is not used for steering decisions.
+- The main generation path is torch-native. Diagnostics extraction is separate from steering decisions.
 - Retry behavior is inside `_generate_torch()` and applies to both steered and non-steered generation.
 - Missingness injection happens after postprocess and before final bundle emission, with deterministic seed lineage.
 
@@ -150,8 +152,8 @@ Data flow inside `_generate_graph_dataset_torch()`: root nodes sample base rando
 flowchart TB
     subgraph GraphSetup["Graph Setup"]
         DAG["sample_cauchy_dag()<br/><code>graph/cauchy_graph.py</code>"]
-        Assign["_sample_assignments()<br/>feature/target -> node mapping"]
-        Specs["_build_node_specs()<br/>ConverterSpec per feature/target"]
+        Assign["_sample_assignments()<br/><code>core/layout.py</code>"]
+        Specs["_build_node_specs()<br/><code>core/layout.py</code>"]
     end
 
     DAG --> Walk
@@ -221,7 +223,7 @@ flowchart TB
         direction TB
         Stream["Wrap generated bundle stream"]
         UpdateBundle["aggregator.update_bundle(bundle)"]
-        FullMetrics["extract_dataset_metrics()<br/>diagnostics/metrics.py (NumPy full set)"]
+        FullMetrics["extract_dataset_metrics()<br/>diagnostics/metrics.py (delegates to unified torch metrics)"]
         Accum["_MetricAccumulator.update()"]
         Summary["aggregator.build_summary()"]
         OutJSON["write_coverage_summary_json()"]
@@ -257,6 +259,6 @@ flowchart TB
 ### Context
 
 - Steering metrics are a targeted subset optimized for selection-time performance.
-- Diagnostics metrics are broader and reporting-focused; they currently remain NumPy-based.
+- Diagnostics metrics are broader and reporting-focused; extraction runs on CPU-normalized bundles via torch-native metric computation.
 - Steering and diagnostics can be enabled independently, though they are often used together.
 - Missingness guardrails are benchmark-only and activate when missingness is enabled in the resolved profile config.

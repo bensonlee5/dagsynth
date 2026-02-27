@@ -185,7 +185,7 @@ ______________________________________________________________________
 
 The development of `cauchy-generator` is strictly driven by recent literature in Tabular Deep Learning.
 
-- **Meta-Feature Diagnostics:** A diagnostics module computes 19 structural metrics per dataset and aggregates coverage across generation runs. Soft steering is available to bias selection toward under-represented target bands.
+- **Meta-Feature Diagnostics:** A diagnostics module computes structural metrics per dataset and aggregates coverage across generation runs. Soft steering is available to bias selection toward under-represented target bands.
 - **Missingness Generation:** Configurable MAR/MCAR/MNAR mechanisms with CLI overrides and benchmark guardrails.
 - **Staged Curriculum Controls:** Stage-aware feature/node/depth scaling with discoverable presets and benchmark guardrails.
 - **Shift-Aware SCMs:** Expanding the graph pipeline to support distribution shift and temporal drift.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cauchy-generator"
-version = "0.1.13"
+version = "0.1.14"
 description = "High-performance synthetic tabular data generator"
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,7 @@ dev = [
   "pytest-cov>=6.0",
   "ruff>=0.6",
   "types-PyYAML",
+  "vulture>=2.14",
 ]
 
 [tool.hatch.build.targets.wheel]
