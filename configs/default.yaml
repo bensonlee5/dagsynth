@@ -22,7 +22,6 @@ graph:
 runtime:
   device: auto
   torch_dtype: float32
-  generation_engine: appendix_light
   hardware_aware: true
 output:
   out_dir: data/run_default

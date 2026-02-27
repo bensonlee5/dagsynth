@@ -308,11 +308,7 @@ class CurriculumConfig:
 class RuntimeConfig:
     device: str = "auto"
     torch_dtype: str = "float32"
-    generation_engine: str = "appendix_light"
     hardware_aware: bool = True
-    gpu_name_hint: str | None = None
-    gpu_memory_gb_hint: float | None = None
-    peak_flops_hint: float | None = None
 
 
 @dataclass(slots=True)

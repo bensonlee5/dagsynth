@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-import numpy as np
 import torch
 
 
@@ -30,11 +29,6 @@ class SeedManager:
         """Return a deterministic child seed for the provided component path."""
 
         return derive_seed(self.seed, *components)
-
-    def numpy_rng(self, *components: str | int) -> np.random.Generator:
-        """Return a NumPy Generator seeded from a deterministic child seed."""
-
-        return np.random.default_rng(self.child(*components))
 
     def torch_rng(self, *components: str | int, device: str = "cpu") -> torch.Generator:
         """Return a torch Generator seeded from a deterministic child seed."""
