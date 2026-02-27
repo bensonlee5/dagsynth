@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New generation CLI controls: `--diagnostics`, `--steer-meta`, and repeatable `--meta-target key=min:max[:weight]`
 - Steering metadata payload propagation on generated bundles when steering is enabled
 - Benchmark diagnostics collection controls: `cauchy-gen benchmark --diagnostics [--diagnostics-out-dir ...]`
-- Per-profile benchmark diagnostics artifacts and summary pointers under `diagnostics/<profile>/`
+- Per-profile benchmark diagnostics artifacts and summary pointers under `diagnostics/<sanitized_profile_key>_<hash>/`
 - New presets: `configs/preset_diagnostics_on.yaml` and `configs/preset_steering_conservative.yaml`
 
 ### Changed

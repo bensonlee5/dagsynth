@@ -56,8 +56,10 @@ uv run cauchy-gen benchmark --config configs/preset_missingness_mar.yaml --profi
 
 When diagnostics is enabled for benchmark scripts, coverage artifacts are written under:
 
-- `<out_dir>/diagnostics/<profile>/coverage_summary.json`
-- `<out_dir>/diagnostics/<profile>/coverage_summary.md`
+- `<out_dir>/diagnostics/<sanitized_profile_key>_<hash>/coverage_summary.json`
+- `<out_dir>/diagnostics/<sanitized_profile_key>_<hash>/coverage_summary.md`
+
+The diagnostics profile directory is sanitized and hash-suffixed (for example, `cpu_ca49ca4b`) to keep paths unique and filesystem-safe.
 
 When missingness is enabled in benchmark configs, summary JSON includes
 `profile_results[*].missingness_guardrails` and may escalate regression status via runtime or acceptance issues.

@@ -43,8 +43,8 @@ Related docs:
 
 ### Python API
 
-- `generate_one(config: GeneratorConfig, seed: int, device: str) -> DatasetBundle`
-- `generate_batch(config: GeneratorConfig, num_datasets: int, seed: int, device: str) -> list[DatasetBundle]`
+- `generate_one(config: GeneratorConfig, *, seed: int | None = None, device: str | None = None) -> DatasetBundle`
+- `generate_batch(config: GeneratorConfig, *, num_datasets: int, seed: int | None = None, device: str | None = None) -> list[DatasetBundle]`
 - `write_parquet_shards(bundles, out_dir, shard_size, compression="zstd")`
 - `DatasetConfig` missingness controls:
   - `missing_rate`
@@ -67,9 +67,9 @@ Each `DatasetBundle` contains:
 - `feature_types` (`"num"` or `"cat"`)
 - metadata (seed lineage, graph stats, function selections, filter decision, missingness summary when enabled)
 
-Persist generated outputs as Parquet shards with a sidecar metadata JSON per shard.
+Persist generated outputs as Parquet shards, with per-dataset `metadata.json` sidecars.
 
-Current metadata includes summary graph stats, versioned DAG lineage (`metadata.lineage`), config lineage, and optional `missingness` payload fields (configured/realized rates and per-split counts). Persisted shard metadata rewrites dense lineage adjacency into compact shard-level artifact pointers (`adjacency.bitpack.bin` + `adjacency.index.json`), and benchmark profile summaries include `lineage_guardrails` to measure export overhead.
+Current metadata includes summary graph stats, versioned DAG lineage (`metadata.lineage`), config lineage, and optional `missingness` payload fields (configured/realized rates and per-split counts). During persistence, dense lineage adjacency is rewritten into shard-level compact artifacts (`lineage/adjacency.bitpack.bin` + `lineage/adjacency.index.json`), with compact lineage pointers stored in each dataset's `metadata.json`. Benchmark profile summaries include `lineage_guardrails` to measure export overhead.
 
 #### DAG Lineage Schema (v1.0 + v1.1 compact persistence)
 
@@ -117,7 +117,9 @@ Compatibility contract:
 ## Module Plan (Appendix Mapping)
 
 - `sampling/correlated.py`: correlated scalar sampler (`E.2`)
-- `core/dataset.py`: dataset orchestration (`E.3`)
+- `core/dataset.py`: dataset orchestration entrypoint (`E.3`)
+- `core/curriculum.py`: curriculum and stagewise row sampling (`E.3`)
+- `core/layout.py`: dataset layout, graph sampling, and node assignments (`E.3`, `E.4`)
 - `graph/cauchy_graph.py`: random Cauchy DAG (`E.4`)
 - `core/node_pipeline.py`: per-node flow (`E.5`)
 - `converters/numeric.py`, `converters/categorical.py`: converters (`E.6`)
