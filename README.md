@@ -20,7 +20,7 @@ ______________________________________________________________________
 
 ### 1. Causal Structural Integrity
 
-Unlike traditional synthetic generators that rely on independent feature sampling, `cauchy-generator` builds datasets through **Cauchy DAG-based execution**.
+Unlike traditional synthetic generators that rely on independent feature sampling, `cauchy-generator` builds datasets through **Cauchy DAG-based execution** (Directed Acyclic Graph).
 
 - **Hierarchical Dependencies:** Features are generated as nodes in a graph, where child values are non-linear functional transforms of their parents.
 - **Deep Mechanism Families:** Functional relationships incorporate Neural Networks, Tree ensembles, and parametric activations, ensuring complex multi-order interactions.
@@ -37,7 +37,7 @@ The generator incorporates the "messiness" of real-world tabular data directly i
 
 Performance is a first-class citizen. The engine is built for datacenter-scale throughput:
 
-- **Torch-Native Pipeline:** Optimized for NVIDIA CUDA and Apple Silicon (MPS), minimizing Python-level bottlenecks.
+- **Torch-Native Pipeline:** Optimized for NVIDIA **CUDA** and Apple Silicon **MPS**, minimizing Python-level bottlenecks.
 - **Hardware-Aware Scaling:** Auto-detects GPU capabilities (e.g., H100 vs. RTX 4090) to tune generation parameters and maximize utilization.
 - **Parallel Streaming:** Native Parquet sharding for efficient data loading during model training.
 
@@ -77,7 +77,7 @@ cauchy-gen generate --config configs/default.yaml --num-datasets 10 --out data/r
 ### Steering & Realism
 
 ```bash
-# Enable meta-feature steering for specific linearity and SNR targets
+# Enable meta-feature steering for specific linearity and SNR (Signal-to-Noise Ratio) targets
 cauchy-gen generate \
   --config configs/default.yaml \
   --steer-meta \
@@ -161,14 +161,14 @@ ______________________________________________________________________
 
 ## Configuration Presets
 
-| Category    | Example file                                    | What it controls                                     |
-| ----------- | ----------------------------------------------- | ---------------------------------------------------- |
-| Default     | `configs/default.yaml`                          | Balanced baseline for classification                 |
-| Curriculum  | `configs/preset_curriculum_auto_staged.yaml`    | Staged difficulty (features, nodes, depth)           |
-| Missingness | `configs/preset_missingness_mcar.yaml`          | Synthetic missing-data injection (MCAR/MAR/MNAR)     |
-| Steering    | `configs/preset_steering_conservative.yaml`     | Soft selection toward meta-feature target bands      |
-| Many-class  | `configs/preset_many_class_generate_smoke.yaml` | High-class-count generation within 32-class envelope |
-| Benchmark   | `configs/benchmark_cpu.yaml`                    | Hardware-specific benchmark parameters               |
+| Category    | Example file                                    | What it controls                                                 |
+| ----------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| Default     | `configs/default.yaml`                          | Balanced baseline for classification                             |
+| Curriculum  | `configs/preset_curriculum_auto_staged.yaml`    | Staged difficulty (features, nodes, depth)                       |
+| Missingness | `configs/preset_missingness_mcar.yaml`          | Synthetic missing-data injection (**MCAR**/MAR/MNAR - see below) |
+| Steering    | `configs/preset_steering_conservative.yaml`     | Soft selection toward meta-feature target bands                  |
+| Many-class  | `configs/preset_many_class_generate_smoke.yaml` | High-class-count generation within 32-class envelope             |
+| Benchmark   | `configs/benchmark_cpu.yaml`                    | Hardware-specific benchmark parameters                           |
 
 Presets follow the `preset_<category>_<variant>.yaml` naming convention. You can compose presets by layering CLI `--config` with flag overrides.
 
@@ -176,7 +176,7 @@ ______________________________________________________________________
 
 ## Feature Highlights
 
-- **Configurable Missingness:** Native support for MCAR, MAR, and MNAR mechanisms with deterministic seeded behavior and benchmark guardrails.
+- **Configurable Missingness:** Native support for **MCAR** (Missing Completely At Random), **MAR** (Missing At Random), and **MNAR** (Missing Not At Random) mechanisms with deterministic seeded behavior and benchmark guardrails.
 - **Complexity Curriculum:** Stage-aware scaling of row counts, feature counts, node counts, and graph depth to support progressive model training.
 - **Configurable Shift/Drift:** Opt-in graph/mechanism/noise shift profiles with interpretable scale semantics and deterministic seed behavior.
 - **Meta-Feature Steering:** soft-steering loop that biases generation toward target meta-feature bands (e.g., specific linearity or SNR ranges) using under-coverage reweighting.
