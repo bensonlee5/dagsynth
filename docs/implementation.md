@@ -132,7 +132,7 @@ Compatibility contract:
 
 ## Performance Strategy
 
-1. Current generator path runs Torch on all devices (CPU/CUDA/MPS); NumPy usage is mainly in diagnostics/reporting and serialization boundaries.
+1. Current generator path runs Torch on all devices (CPU/CUDA/MPS); diagnostics extraction normalizes bundles to CPU and delegates metric computation to torch-native steering metrics.
 1. Keep kernels batch-oriented with vectorized torch operations and avoid Python loops in inner math paths.
 1. Use optional filtering (`E.14`) behind config flags to avoid CPU bottlenecks in throughput benchmarks.
 1. Profile with `bench/throughput.py` and track JSON baseline regressions by preset.
@@ -145,7 +145,7 @@ Compatibility contract:
 ## Reproducibility Strategy
 
 1. Global run seed -> per-dataset seed -> per-component derived seeds.
-1. Central RNG utilities wrap Python/NumPy/Torch RNGs.
+1. Central RNG utilities provide deterministic seed derivation and torch generator helpers.
 1. Document expected backend variation (best effort, not strict bitwise determinism).
 
 ## Validation and Benchmarks

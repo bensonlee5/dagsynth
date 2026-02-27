@@ -6,7 +6,7 @@ Visual documentation of `cauchy-generator` control flow and data flow.
 
 - Core generation is torch-native end-to-end (CPU/CUDA/MPS execution paths).
 - Steering candidate scoring uses torch-native metrics (`core/steering_metrics.py`).
-- Diagnostics coverage extraction still uses the full NumPy-based metric extractor (`diagnostics/metrics.py`) for reporting artifacts.
+- Diagnostics coverage extraction uses `diagnostics/metrics.py`, which normalizes bundles to CPU and delegates metric computation to torch-native steering metrics.
 
 ## 1. High-Level System Overview
 
@@ -138,7 +138,7 @@ flowchart TB
 ### Context
 
 - Steering runs a bounded candidate loop per dataset, then selects one candidate probabilistically using deterministic seeded RNG.
-- The main generation path is torch-native. The NumPy diagnostics extractor is not used for steering decisions.
+- The main generation path is torch-native. Diagnostics extraction is separate from steering decisions.
 - Retry behavior is inside `_generate_torch()` and applies to both steered and non-steered generation.
 - Missingness injection happens after postprocess and before final bundle emission, with deterministic seed lineage.
 
@@ -221,7 +221,7 @@ flowchart TB
         direction TB
         Stream["Wrap generated bundle stream"]
         UpdateBundle["aggregator.update_bundle(bundle)"]
-        FullMetrics["extract_dataset_metrics()<br/>diagnostics/metrics.py (NumPy full set)"]
+        FullMetrics["extract_dataset_metrics()<br/>diagnostics/metrics.py (CPU-normalized + torch metrics)"]
         Accum["_MetricAccumulator.update()"]
         Summary["aggregator.build_summary()"]
         OutJSON["write_coverage_summary_json()"]
@@ -257,6 +257,6 @@ flowchart TB
 ### Context
 
 - Steering metrics are a targeted subset optimized for selection-time performance.
-- Diagnostics metrics are broader and reporting-focused; they currently remain NumPy-based.
+- Diagnostics metrics are broader and reporting-focused; extraction runs on CPU-normalized bundles via torch-native metric computation.
 - Steering and diagnostics can be enabled independently, though they are often used together.
 - Missingness guardrails are benchmark-only and activate when missingness is enabled in the resolved profile config.
