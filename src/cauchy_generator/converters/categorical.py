@@ -41,7 +41,9 @@ def apply_categorical_converter(
     idx_joint = torch.randint(0, len(_JOINT_VARIANTS), (1,), generator=generator).item()
     selected_method, variant = _JOINT_VARIANTS[int(idx_joint)]
     if method is not None:
-        selected_method = method
+        selected_method = str(method).strip().lower()
+    if selected_method not in {"neighbor", "softmax"}:
+        raise ValueError(f"Unsupported categorical converter method: {selected_method!r}.")
 
     centers = None
     if selected_method == "neighbor":
@@ -95,4 +97,12 @@ def apply_categorical_converter(
     else:
         out = y
 
+    if out.shape[1] != d:
+        if out.shape[1] > d:
+            out = out[:, :d]
+        else:
+            out = torch.nn.functional.pad(out, (0, d - out.shape[1]))
+    out = torch.nan_to_num(out.to(torch.float32), nan=0.0, posinf=1e6, neginf=-1e6)
+
+    labels = torch.remainder(labels.to(torch.int64), c)
     return out, labels

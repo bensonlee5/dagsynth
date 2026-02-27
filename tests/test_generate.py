@@ -953,8 +953,35 @@ def test_stratified_split_ensures_valid_class_split_with_many_classes() -> None:
     bundle = generate_one(cfg, seed=42, device="cpu")
     train_classes = set(torch.unique(bundle.y_train).tolist())
     test_classes = set(torch.unique(bundle.y_test).tolist())
+    all_classes = torch.unique(torch.cat([bundle.y_train, bundle.y_test], dim=0), sorted=True)
+    expected = torch.arange(all_classes.numel(), dtype=all_classes.dtype)
     assert len(train_classes) >= 2
     assert train_classes == test_classes
+    assert torch.equal(all_classes, expected)
+
+    class_structure = bundle.metadata["class_structure"]
+    assert bundle.metadata["n_classes"] == int(class_structure["n_classes_realized"])
+    assert int(class_structure["n_classes_sampled"]) == 10
+    assert bool(class_structure["labels_contiguous"]) is True
+    assert bool(class_structure["train_test_class_match"]) is True
+    assert int(class_structure["min_label"]) == 0
+    assert int(class_structure["max_label"]) == int(all_classes.numel() - 1)
+
+
+def test_metadata_n_classes_uses_realized_class_count_for_classification() -> None:
+    cfg = _tiny_config()
+    cfg.dataset.task = "classification"
+    cfg.dataset.n_classes_min = 32
+    cfg.dataset.n_classes_max = 32
+    cfg.dataset.n_train = 256
+    cfg.dataset.n_test = 256
+    cfg.filter.max_attempts = 3
+
+    bundle = generate_one(cfg, seed=52, device="cpu")
+    all_classes = torch.unique(torch.cat([bundle.y_train, bundle.y_test], dim=0), sorted=True)
+    assert bundle.metadata["n_classes"] == int(all_classes.numel())
+    assert int(bundle.metadata["class_structure"]["n_classes_sampled"]) == 32
+    assert int(bundle.metadata["class_structure"]["n_classes_realized"]) == int(all_classes.numel())
 
 
 def test_stratified_split_indices_returns_exact_requested_sizes() -> None:
