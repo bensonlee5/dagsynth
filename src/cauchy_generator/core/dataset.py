@@ -69,6 +69,38 @@ def _torch_dtype(config: GeneratorConfig) -> torch.dtype:
     return torch.float64 if config.runtime.torch_dtype == "float64" else torch.float32
 
 
+def _classification_class_structure(
+    *,
+    y_train: torch.Tensor,
+    y_test: torch.Tensor,
+    n_classes_sampled: int,
+) -> dict[str, Any]:
+    """Build classification label-structure metadata for one emitted bundle."""
+
+    y_train_i64 = y_train.to(torch.int64)
+    y_test_i64 = y_test.to(torch.int64)
+    y_all = torch.cat([y_train_i64, y_test_i64], dim=0)
+    unique_all = torch.unique(y_all, sorted=True)
+    n_classes_realized = int(unique_all.numel())
+    labels_contiguous = bool(
+        torch.equal(
+            unique_all,
+            torch.arange(n_classes_realized, dtype=unique_all.dtype, device=unique_all.device),
+        )
+    )
+    train_classes = torch.unique(y_train_i64, sorted=True)
+    test_classes = torch.unique(y_test_i64, sorted=True)
+
+    return {
+        "n_classes_sampled": int(n_classes_sampled),
+        "n_classes_realized": int(n_classes_realized),
+        "labels_contiguous": bool(labels_contiguous),
+        "train_test_class_match": bool(torch.equal(train_classes, test_classes)),
+        "min_label": int(unique_all[0].item()) if n_classes_realized > 0 else None,
+        "max_label": int(unique_all[-1].item()) if n_classes_realized > 0 else None,
+    }
+
+
 def _generate_graph_dataset_torch(
     config: GeneratorConfig,
     layout: dict[str, Any],
@@ -225,6 +257,15 @@ def _generate_torch(
         y_dtype = torch.int64 if config.dataset.task == "classification" else dtype
         y_train = y_train.to(y_dtype)
         y_test = y_test.to(y_dtype)
+        class_structure: dict[str, Any] | None = None
+        n_classes: int | None = None
+        if config.dataset.task == "classification":
+            class_structure = _classification_class_structure(
+                y_train=y_train,
+                y_test=y_test,
+                n_classes_sampled=int(layout["n_classes"]),
+            )
+            n_classes = int(class_structure["n_classes_realized"])
         curriculum_metadata = _build_curriculum_metadata(
             curriculum,
             layout=layout,
@@ -239,9 +280,7 @@ def _generate_torch(
             "compute_backend": "torch_appendix_full",
             "n_features": int(x_train.shape[1]),
             "n_categorical_features": int(sum(1 for t in feature_types if t == "cat")),
-            "n_classes": (
-                int(layout["n_classes"]) if config.dataset.task == "classification" else None
-            ),
+            "n_classes": n_classes,
             "graph_nodes": int(layout["graph_nodes"]),
             "graph_edges": int(layout["graph_edges"]),
             "graph_depth_nodes": int(layout["graph_depth_nodes"]),
@@ -255,6 +294,8 @@ def _generate_torch(
         }
         if missingness_summary is not None:
             metadata["missingness"] = missingness_summary
+        if class_structure is not None:
+            metadata["class_structure"] = class_structure
         return DatasetBundle(
             X_train=x_train,
             y_train=y_train,

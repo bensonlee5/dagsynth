@@ -62,6 +62,50 @@ def test_preserves_class_counts() -> None:
     assert before_counts == after_counts
 
 
+def test_classification_labels_are_remapped_to_contiguous_indices() -> None:
+    g = _make_generator(12)
+    x_train = torch.randn(40, 4, generator=g)
+    x_test = torch.randn(20, 4, generator=g)
+    y_train = torch.tensor([0, 2, 5, 9] * 10, dtype=torch.int64)
+    y_test = torch.tensor([0, 2, 5, 9] * 5, dtype=torch.int64)
+    feature_types = ["num", "num", "num", "num"]
+
+    _, y_train_p, _, y_test_p, _ = postprocess_dataset(
+        x_train,
+        y_train,
+        x_test,
+        y_test,
+        feature_types,
+        "classification",
+        _make_generator(13),
+        "cpu",
+    )
+
+    y_all_after = torch.cat([y_train_p, y_test_p], dim=0)
+    unique_after = torch.unique(y_all_after, sorted=True)
+    expected = torch.arange(unique_after.numel(), dtype=unique_after.dtype)
+    assert torch.equal(unique_after, expected)
+
+    _, before_counts_raw = torch.unique(torch.cat([y_train, y_test], dim=0), return_counts=True)
+    _, after_counts_raw = torch.unique(y_all_after, return_counts=True)
+    before_counts = sorted(before_counts_raw.tolist())
+    after_counts = sorted(after_counts_raw.tolist())
+    assert before_counts == after_counts
+
+
+def test_many_class_postprocess_outputs_contiguous_labels() -> None:
+    g = _make_generator(14)
+    xt, yt, xte, yte, ft, task = _make_data(g, n_classes=32, n_train=256, n_test=256)
+    _, ytp, _, ytep, _ = postprocess_dataset(xt, yt, xte, yte, ft, task, _make_generator(15), "cpu")
+
+    y_all = torch.cat([ytp, ytep], dim=0)
+    unique_after = torch.unique(y_all, sorted=True)
+    expected = torch.arange(unique_after.numel(), dtype=unique_after.dtype)
+    assert torch.equal(unique_after, expected)
+    assert torch.all(y_all >= 0)
+    assert int(unique_after[-1].item()) == int(unique_after.numel() - 1)
+
+
 def test_regression_clips_targets() -> None:
     g = _make_generator(3)
     xt, yt, xte, yte, ft, task = _make_data(g, task="regression")

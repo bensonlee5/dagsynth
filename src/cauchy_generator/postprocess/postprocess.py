@@ -56,6 +56,13 @@ def _permute_classes(y: torch.Tensor, generator: torch.Generator, device: str) -
     return remapped
 
 
+def _remap_classes_to_contiguous(y: torch.Tensor) -> torch.Tensor:
+    """Map arbitrary class ids to contiguous 0..K-1 labels (sorted by original id)."""
+
+    _, inverse = torch.unique(y.to(torch.int64), sorted=True, return_inverse=True)
+    return inverse.to(torch.int64)
+
+
 @overload
 def postprocess_dataset(
     x_train: torch.Tensor,
@@ -143,15 +150,19 @@ def postprocess_dataset(
             )
         return x_train_p, y_all[:n_train], x_test_p, y_all[n_train:], feature_types
 
-    y_all = torch.cat([y_train, y_test], dim=0).to(torch.int64)
-    y_all = _permute_classes(y_all, generator, device)
+    y_all_original = torch.cat([y_train, y_test], dim=0).to(torch.int64)
+    y_all_permuted = _permute_classes(y_all_original, generator, device)
+    y_train_candidate = y_all_permuted[:n_train]
+    y_test_candidate = y_all_permuted[n_train:]
+
+    if torch.unique(y_train_candidate).numel() < 2 or torch.unique(y_test_candidate).numel() < 2:
+        # Fall back to original labels if permutation collapses effective class diversity.
+        y_all = y_all_original
+    else:
+        y_all = y_all_permuted
+    y_all = _remap_classes_to_contiguous(y_all)
     y_train_p = y_all[:n_train]
     y_test_p = y_all[n_train:]
-
-    if torch.unique(y_train_p).numel() < 2 or torch.unique(y_test_p).numel() < 2:
-        # Fall back to original labels if permutation collapses effective class diversity.
-        y_train_p = y_train.to(torch.int64)
-        y_test_p = y_test.to(torch.int64)
 
     if return_feature_index_map:
         return x_train_p, y_train_p, x_test_p, y_test_p, feature_types, feature_index_map

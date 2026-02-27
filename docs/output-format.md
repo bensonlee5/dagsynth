@@ -84,26 +84,27 @@ Each dataset's `metadata.json` contains:
 
 ### Top-level keys
 
-| Key                      | Type        | Description                              |
-| ------------------------ | ----------- | ---------------------------------------- |
-| `backend`                | str         | Always `"torch"`                         |
-| `device`                 | str         | Compute device (e.g., `"cpu"`, `"cuda"`) |
-| `compute_backend`        | str         | Implementation variant identifier        |
-| `n_features`             | int         | Number of features                       |
-| `n_categorical_features` | int         | Number of categorical features           |
-| `n_classes`              | int or null | Number of classes (null for regression)  |
-| `graph_nodes`            | int         | Number of nodes in the DAG               |
-| `graph_edges`            | int         | Number of edges in the DAG               |
-| `graph_depth_nodes`      | int         | Longest path length in the DAG           |
-| `graph_edge_density`     | float       | Edge count / max possible edges          |
-| `seed`                   | int         | Base seed for this dataset               |
-| `attempt_used`           | int         | Generation attempt index (0-based)       |
-| `lineage`                | object      | DAG lineage record (see Lineage below)   |
-| `curriculum`             | object      | Curriculum metadata (see below)          |
-| `config`                 | object      | Full serialized generator configuration  |
-| `filter`                 | object      | Filter results (see below)               |
-| `missingness`            | object      | Present only when missingness is enabled |
-| `steering`               | object      | Present only when steering is enabled    |
+| Key                      | Type        | Description                                                  |
+| ------------------------ | ----------- | ------------------------------------------------------------ |
+| `backend`                | str         | Always `"torch"`                                             |
+| `device`                 | str         | Compute device (e.g., `"cpu"`, `"cuda"`)                     |
+| `compute_backend`        | str         | Implementation variant identifier                            |
+| `n_features`             | int         | Number of features                                           |
+| `n_categorical_features` | int         | Number of categorical features                               |
+| `n_classes`              | int or null | Realized class count in emitted labels (null for regression) |
+| `graph_nodes`            | int         | Number of nodes in the DAG                                   |
+| `graph_edges`            | int         | Number of edges in the DAG                                   |
+| `graph_depth_nodes`      | int         | Longest path length in the DAG                               |
+| `graph_edge_density`     | float       | Edge count / max possible edges                              |
+| `seed`                   | int         | Base seed for this dataset                                   |
+| `attempt_used`           | int         | Generation attempt index (0-based)                           |
+| `lineage`                | object      | DAG lineage record (see Lineage below)                       |
+| `curriculum`             | object      | Curriculum metadata (see below)                              |
+| `config`                 | object      | Full serialized generator configuration                      |
+| `filter`                 | object      | Filter results (see below)                                   |
+| `class_structure`        | object      | Present only for classification (see below)                  |
+| `missingness`            | object      | Present only when missingness is enabled                     |
+| `steering`               | object      | Present only when steering is enabled                        |
 
 ### Curriculum sub-object
 
@@ -136,6 +137,19 @@ The `stage_bounds` object contains nullable min/max pairs:
 | `n_valid_oob` | int   | OOB sample count (when enabled)           |
 | `backend`     | str   | Filter implementation (when enabled)      |
 | `accepted`    | bool  | Whether the dataset passed (when enabled) |
+
+### Class Structure sub-object (classification only)
+
+Present only for classification datasets.
+
+| Key                      | Type        | Description                                        |
+| ------------------------ | ----------- | -------------------------------------------------- |
+| `n_classes_sampled`      | int         | Layout-sampled class count before postprocessing   |
+| `n_classes_realized`     | int         | Unique class count in emitted `y_train` + `y_test` |
+| `labels_contiguous`      | bool        | Whether labels form contiguous range `0..K-1`      |
+| `train_test_class_match` | bool        | Whether train and test class sets are identical    |
+| `min_label`              | int or null | Minimum emitted class label                        |
+| `max_label`              | int or null | Maximum emitted class label                        |
 
 ### Steering sub-object (optional)
 
