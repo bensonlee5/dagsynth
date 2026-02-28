@@ -545,9 +545,11 @@ def run_profile_benchmark(
         baseline_config = _copy_runtime_config(config)
         baseline_config.dataset.missing_rate = 0.0
         baseline_config.dataset.missing_mechanism = MISSINGNESS_MECHANISM_NONE
-        baseline_diagnostics_aggregator: CoverageAggregator | None = None
+        missingness_baseline_diagnostics_aggregator: CoverageAggregator | None = None
         if diagnostics_aggregator is not None:
-            baseline_diagnostics_aggregator = _build_diagnostics_aggregator(baseline_config)
+            missingness_baseline_diagnostics_aggregator = _build_diagnostics_aggregator(
+                baseline_config
+            )
         baseline_missingness_acceptance = _MissingnessAcceptanceCollector(
             target_rate=float(config.dataset.missing_rate)
         )
@@ -559,7 +561,7 @@ def run_profile_benchmark(
         # Keep control-run callback instrumentation equivalent so runtime delta
         # reflects missingness overhead instead of callback overhead skew.
         baseline_on_bundle_callback = _compose_bundle_callback(
-            diagnostics_aggregator=baseline_diagnostics_aggregator,
+            diagnostics_aggregator=missingness_baseline_diagnostics_aggregator,
             missingness_acceptance=baseline_missingness_acceptance,
             curriculum_metadata=baseline_curriculum_metadata,
             shift_guardrails=_ShiftGuardrailCollector() if shift_enabled else None,
@@ -628,10 +630,10 @@ def run_profile_benchmark(
         baseline_config.shift.graph_scale = None
         baseline_config.shift.mechanism_scale = None
         baseline_config.shift.noise_scale = None
-        baseline_diagnostics_aggregator: CoverageAggregator | None = None
+        shift_baseline_diagnostics_aggregator: CoverageAggregator | None = None
         if diagnostics_aggregator is not None:
-            baseline_diagnostics_aggregator = _build_diagnostics_aggregator(baseline_config)
-        baseline_missingness_acceptance = (
+            shift_baseline_diagnostics_aggregator = _build_diagnostics_aggregator(baseline_config)
+        shift_baseline_missingness_acceptance = (
             _MissingnessAcceptanceCollector(target_rate=float(config.dataset.missing_rate))
             if missingness_acceptance is not None
             else None
@@ -643,8 +645,8 @@ def run_profile_benchmark(
         )
         baseline_shift_guardrails = _ShiftGuardrailCollector()
         baseline_on_bundle_callback = _compose_bundle_callback(
-            diagnostics_aggregator=baseline_diagnostics_aggregator,
-            missingness_acceptance=baseline_missingness_acceptance,
+            diagnostics_aggregator=shift_baseline_diagnostics_aggregator,
+            missingness_acceptance=shift_baseline_missingness_acceptance,
             curriculum_metadata=baseline_curriculum_metadata,
             shift_guardrails=baseline_shift_guardrails,
         )
@@ -673,10 +675,10 @@ def run_profile_benchmark(
         current_summary = shift_guardrails.build_summary()
         baseline_summary = baseline_shift_guardrails.build_summary()
 
-        issues: list[dict[str, Any]] = []
+        shift_issues: list[dict[str, Any]] = []
         metadata_coverage_rate = float(current_summary["metadata_coverage_rate"])
         if metadata_coverage_rate < 1.0:
-            issues.append(
+            shift_issues.append(
                 _build_guardrail_issue(
                     metric="shift_metadata_coverage",
                     severity="fail",
@@ -688,7 +690,7 @@ def run_profile_benchmark(
             )
         shift_enabled_coverage_rate = float(current_summary["shift_enabled_coverage_rate"])
         if shift_enabled_coverage_rate < 1.0:
-            issues.append(
+            shift_issues.append(
                 _build_guardrail_issue(
                     metric="shift_enabled_metadata_coverage",
                     severity="fail",
@@ -699,7 +701,7 @@ def run_profile_benchmark(
                 )
             )
         if runtime_gating_enabled and runtime_severity != "pass":
-            issues.append(
+            shift_issues.append(
                 _build_guardrail_issue(
                     metric="shift_runtime_degradation_pct",
                     severity=runtime_severity,
@@ -748,7 +750,7 @@ def run_profile_benchmark(
         )
         for maybe_issue in (graph_issue, mechanism_issue, noise_issue):
             if maybe_issue is not None:
-                issues.append(maybe_issue)
+                shift_issues.append(maybe_issue)
 
         result["shift_guardrails"] = {
             "enabled": True,
@@ -795,8 +797,8 @@ def run_profile_benchmark(
             ),
             "runtime_warn_threshold_pct": float(warn_threshold_pct),
             "runtime_fail_threshold_pct": float(fail_threshold_pct),
-            "issues": issues,
-            "status": _status_from_issues(issues),
+            "issues": shift_issues,
+            "status": _status_from_issues(shift_issues),
         }
 
     result["lineage_guardrails"] = _collect_lineage_guardrails(
