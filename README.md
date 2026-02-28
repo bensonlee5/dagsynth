@@ -185,7 +185,7 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-## Theoretical Foundations
+## Acknowledgements & Roadmap
 
 - **TabICLv2 (2026):** Core generation prior and Appendix E implementation.
 - **TabPFN v2 (2025):** Insights into meta-feature coverage and tabular foundation model sensitivity.
