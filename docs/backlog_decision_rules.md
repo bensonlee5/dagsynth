@@ -13,6 +13,7 @@ Related docs:
 Primary objective:
 
 - Maximize expected downstream model quality gain.
+- Prefer improvements that increase useful PFN task coverage breadth (classification, regression, and time-series when applicable).
 
 Secondary objectives:
 

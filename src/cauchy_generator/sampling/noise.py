@@ -86,7 +86,7 @@ def _normalize_mixture_weights(
             )
         if key in parsed:
             raise ValueError(f"Duplicate mixture_weights key '{raw_key}' after normalization.")
-        weight = _validate_nonnegative_finite(f"mixture_weights.{key}", float(raw_weight))
+        weight = _validate_nonnegative_finite(f"mixture_weights.{key}", raw_weight)
         parsed[key] = float(weight)
 
     total = float(sum(parsed.values()))
@@ -98,8 +98,12 @@ def _normalize_mixture_weights(
 def _laplace(shape: tuple[int, ...], *, generator: torch.Generator, device: str) -> torch.Tensor:
     """Sample i.i.d. unit Laplace noise via inverse CDF."""
 
-    u = torch.empty(shape, device=device).uniform_(-0.5, 0.5, generator=generator)
-    return -torch.sign(u) * torch.log1p(-2.0 * torch.abs(u))
+    u = torch.rand(shape, generator=generator, device=device)
+    eps = torch.finfo(u.dtype).eps
+    u = torch.clamp(u, min=eps, max=1.0 - eps)
+    left = torch.log(2.0 * u)
+    right = -torch.log(2.0 * (1.0 - u))
+    return torch.where(u < 0.5, left, right)
 
 
 def _student_t(
@@ -109,21 +113,54 @@ def _student_t(
     generator: torch.Generator,
     device: str,
 ) -> torch.Tensor:
-    """Sample i.i.d. Student-t noise with generator-seeded forked RNG."""
+    """Sample i.i.d. Student-t noise with backend-safe deterministic fallback."""
 
     dof = _validate_positive_finite("student_t_df", df, lower_bound=2.0)
-    local_seed = int(
-        torch.randint(0, _MAX_TORCH_SEED, (1,), generator=generator, device=device).item()
-    )
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(local_seed)
-        distribution = torch.distributions.StudentT(
-            df=torch.tensor(dof, dtype=torch.float32),
-            loc=torch.tensor(0.0, dtype=torch.float32),
-            scale=torch.tensor(1.0, dtype=torch.float32),
+    resolved_device = torch.device(device)
+
+    def _sample_with_standard_gamma(
+        *,
+        local_generator: torch.Generator,
+        local_device: str,
+    ) -> torch.Tensor:
+        z = torch.randn(shape, generator=local_generator, device=local_device)
+        alpha = torch.full(
+            shape,
+            float(dof) / 2.0,
+            device=local_device,
+            dtype=z.dtype,
         )
-        samples = distribution.sample(torch.Size(shape))
-    return samples.to(device=device, dtype=torch.float32)
+        chi2 = 2.0 * torch._standard_gamma(alpha, generator=local_generator)
+        denom = torch.sqrt(torch.clamp(chi2 / float(dof), min=torch.finfo(z.dtype).tiny))
+        return z / denom
+
+    def _cpu_fallback() -> torch.Tensor:
+        local_seed = int(
+            torch.randint(
+                0,
+                _MAX_TORCH_SEED,
+                (1,),
+                generator=generator,
+                device=device,
+            ).item()
+        )
+        cpu_generator = torch.Generator(device="cpu")
+        cpu_generator.manual_seed(local_seed)
+        return _sample_with_standard_gamma(
+            local_generator=cpu_generator,
+            local_device="cpu",
+        ).to(device=resolved_device)
+
+    if resolved_device.type == "mps":
+        return _cpu_fallback()
+
+    try:
+        return _sample_with_standard_gamma(
+            local_generator=generator,
+            local_device=device,
+        )
+    except NotImplementedError:
+        return _cpu_fallback()
 
 
 def _sample_family(

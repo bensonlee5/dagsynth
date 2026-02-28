@@ -3,6 +3,7 @@ import torch
 
 from cauchy_generator.sampling.noise import sample_noise
 from conftest import make_generator as _make_generator
+import cauchy_generator.sampling.noise as noise_mod
 
 
 @pytest.mark.parametrize(
@@ -82,3 +83,97 @@ def test_sample_noise_rejects_mixture_with_nonpositive_total_weight() -> None:
             family="mixture",
             mixture_weights={"gaussian": 0.0, "laplace": 0.0},
         )
+
+
+def test_sample_noise_rejects_boolean_mixture_weights() -> None:
+    with pytest.raises(ValueError, match="must be a finite value >= 0"):
+        sample_noise(
+            (32,),
+            generator=_make_generator(2),
+            device="cpu",
+            family="mixture",
+            mixture_weights={"gaussian": True},
+        )
+
+
+def test_sample_noise_laplace_clamps_uniform_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _rand_zeros(*args, **kwargs) -> torch.Tensor:
+        shape = args[0]
+        device = kwargs.get("device", "cpu")
+        return torch.zeros(shape, device=device, dtype=torch.float32)
+
+    monkeypatch.setattr(noise_mod.torch, "rand", _rand_zeros)
+    samples = sample_noise((64,), generator=_make_generator(5), device="cpu", family="laplace")
+    assert torch.all(torch.isfinite(samples))
+
+
+def test_sample_noise_student_t_does_not_call_global_manual_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = _make_generator(11)
+
+    def _fail_manual_seed(*_args, **_kwargs):
+        raise AssertionError("torch.manual_seed should not be called in student_t sampling")
+
+    monkeypatch.setattr(noise_mod.torch, "manual_seed", _fail_manual_seed)
+    samples = sample_noise((64,), generator=generator, device="cpu", family="student_t")
+    assert torch.all(torch.isfinite(samples))
+
+
+def test_sample_noise_mixture_student_t_does_not_call_global_manual_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = _make_generator(13)
+
+    def _fail_manual_seed(*_args, **_kwargs):
+        raise AssertionError("torch.manual_seed should not be called in mixture sampling")
+
+    monkeypatch.setattr(noise_mod.torch, "manual_seed", _fail_manual_seed)
+    samples = sample_noise(
+        (64,),
+        generator=generator,
+        device="cpu",
+        family="mixture",
+        mixture_weights={"student_t": 1.0},
+    )
+    assert torch.all(torch.isfinite(samples))
+
+
+def test_sample_noise_student_t_falls_back_when_standard_gamma_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = _make_generator(17)
+    original_standard_gamma = noise_mod.torch._standard_gamma
+
+    def _fail_for_primary_generator(alpha, *args, **kwargs):
+        if kwargs.get("generator") is generator:
+            raise NotImplementedError("simulated backend gap for primary generator")
+        return original_standard_gamma(alpha, *args, **kwargs)
+
+    monkeypatch.setattr(noise_mod.torch, "_standard_gamma", _fail_for_primary_generator)
+    samples = sample_noise((64,), generator=generator, device="cpu", family="student_t")
+    assert samples.shape == (64,)
+    assert torch.all(torch.isfinite(samples))
+
+
+def test_sample_noise_mixture_student_t_falls_back_when_standard_gamma_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = _make_generator(19)
+    original_standard_gamma = noise_mod.torch._standard_gamma
+
+    def _fail_for_primary_generator(alpha, *args, **kwargs):
+        if kwargs.get("generator") is generator:
+            raise NotImplementedError("simulated backend gap for primary generator")
+        return original_standard_gamma(alpha, *args, **kwargs)
+
+    monkeypatch.setattr(noise_mod.torch, "_standard_gamma", _fail_for_primary_generator)
+    samples = sample_noise(
+        (128,),
+        generator=generator,
+        device="cpu",
+        family="mixture",
+        mixture_weights={"student_t": 1.0},
+    )
+    assert samples.shape == (128,)
+    assert torch.all(torch.isfinite(samples))
