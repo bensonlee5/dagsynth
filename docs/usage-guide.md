@@ -32,25 +32,21 @@ cauchy-gen generate --config configs/default.yaml --num-datasets 10 --out data/r
 
 ______________________________________________________________________
 
-## 2. Diagnostics and meta steering
+## 2. Diagnostics
 
-Use diagnostics to emit per-dataset observability artifacts. Add steering when
-coverage should favor specific meta-feature target bands.
+Use diagnostics to emit per-dataset observability artifacts.
 
 ```bash
 cauchy-gen generate \
   --config configs/default.yaml \
   --num-datasets 50 \
   --diagnostics \
-  --steer-meta \
-  --meta-target linearity_proxy=0.25:0.75:1.5 \
-  --out data/run_steer
+  --out data/run_diag
 ```
 
 Detailed guides:
 
 - [Diagnostics](features/diagnostics.md)
-- [Steering](features/steering.md)
 
 ______________________________________________________________________
 
@@ -126,7 +122,6 @@ ______________________________________________________________________
 
 - Feature deep dives:
   [diagnostics](features/diagnostics.md),
-  [steering](features/steering.md),
   [missingness](features/missingness.md),
   [curriculum](features/curriculum.md),
   [many-class](features/many-class.md),

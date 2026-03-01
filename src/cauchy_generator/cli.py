@@ -43,13 +43,8 @@ from cauchy_generator.hardware import (
 )
 from cauchy_generator.io.parquet_writer import write_parquet_shards_stream
 from cauchy_generator.meta_targets import (
-    CLASSIFICATION_ONLY_METRICS,
-    SUPPORTED_METRICS,
     coerce_quantiles,
-    collect_unknown_target_metrics,
-    merge_weighted_target_specs,
-    validate_target_specs_for_task,
-    weighted_specs_to_bands,
+    merge_target_bands,
 )
 
 DEVICE_CHOICES = ("auto", "cpu", "cuda", "mps")
@@ -180,72 +175,10 @@ def _parse_missing_mechanism_arg(raw: str) -> str:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
-def _parse_meta_target_arg(raw: str) -> tuple[str, tuple[float, float, float]]:
-    """argparse type: parse `metric=min:max[:weight]` target overrides."""
+def _resolve_diagnostics_target_bands(config: GeneratorConfig) -> dict[str, tuple[float, float]]:
+    """Resolve diagnostics target bands from diagnostics config payloads."""
 
-    value = raw.strip()
-    if "=" not in value:
-        raise argparse.ArgumentTypeError(
-            f"Invalid --meta-target '{raw}'. Expected format: key=min:max[:weight]."
-        )
-    metric_name, band = value.split("=", maxsplit=1)
-    metric_name = metric_name.strip()
-    if not metric_name:
-        raise argparse.ArgumentTypeError(
-            f"Invalid --meta-target '{raw}'. Metric key must be non-empty."
-        )
-    if metric_name not in SUPPORTED_METRICS:
-        supported = ", ".join(sorted(SUPPORTED_METRICS))
-        raise argparse.ArgumentTypeError(
-            f"Unsupported --meta-target metric '{metric_name}'. Supported metrics: {supported}."
-        )
-    parts = [part.strip() for part in band.split(":")]
-    if len(parts) not in {2, 3}:
-        raise argparse.ArgumentTypeError(
-            f"Invalid --meta-target '{raw}'. Expected exactly two or three values after '='."
-        )
-    try:
-        lo = float(parts[0])
-        hi = float(parts[1])
-        weight = float(parts[2]) if len(parts) == 3 else 1.0
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            f"Invalid --meta-target '{raw}'. min/max/weight must be numeric."
-        ) from exc
-    if not (math.isfinite(lo) and math.isfinite(hi) and math.isfinite(weight)):
-        raise argparse.ArgumentTypeError(
-            f"Invalid --meta-target '{raw}'. min/max/weight must be finite."
-        )
-    if weight <= 0:
-        raise argparse.ArgumentTypeError(f"Invalid --meta-target '{raw}'. weight must be > 0.")
-    if lo > hi:
-        lo, hi = hi, lo
-    return metric_name, (lo, hi, weight)
-
-
-def _resolve_meta_target_specs(
-    config: GeneratorConfig,
-    cli_overrides: list[tuple[str, tuple[float, float, float]]] | None,
-) -> dict[str, tuple[float, float, float]]:
-    """Merge target specs across legacy diagnostics, top-level config, and CLI."""
-
-    resolved = merge_weighted_target_specs(
-        config.diagnostics.meta_feature_targets,
-        config.meta_feature_targets,
-        supported_metrics=SUPPORTED_METRICS,
-    )
-    if cli_overrides:
-        for metric_name, spec in cli_overrides:
-            resolved[metric_name] = spec
-    return resolved
-
-
-def _target_specs_to_bands(
-    target_specs: dict[str, tuple[float, float, float]],
-) -> dict[str, tuple[float, float]]:
-    """Drop steering weights for diagnostics coverage aggregation payload."""
-
-    return weighted_specs_to_bands(target_specs)
+    return merge_target_bands(config.diagnostics.meta_feature_targets)
 
 
 def _raise_usage_error(message: str) -> None:
@@ -296,22 +229,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--diagnostics-out-dir",
         default=None,
         help="Optional directory for diagnostics artifacts (defaults to output directory).",
-    )
-    g.add_argument(
-        "--steer-meta",
-        action="store_true",
-        help="Enable soft steering toward configured meta-feature target bands.",
-    )
-    g.add_argument(
-        "--meta-target",
-        action="append",
-        default=None,
-        type=_parse_meta_target_arg,
-        metavar="KEY=MIN:MAX[:WEIGHT]",
-        help=(
-            "Repeatable meta-feature target override used by diagnostics and steering. "
-            "Format: key=min:max[:weight]."
-        ),
     )
     g.add_argument(
         "--missing-rate",
@@ -512,40 +429,7 @@ def _run_generate(args: argparse.Namespace) -> int:
             else int(args.curriculum)
         )
     _apply_missingness_cli_overrides(config, args)
-    steering_requested = bool(config.steering.enabled or args.steer_meta or bool(args.meta_target))
-    resolved_target_specs = _resolve_meta_target_specs(config, args.meta_target)
-    if steering_requested:
-        unknown_metrics = collect_unknown_target_metrics(
-            config.diagnostics.meta_feature_targets,
-            config.meta_feature_targets,
-            supported_metrics=SUPPORTED_METRICS,
-        )
-        if unknown_metrics:
-            unknown = ", ".join(unknown_metrics)
-            supported = ", ".join(sorted(SUPPORTED_METRICS))
-            _raise_usage_error(
-                f"Unsupported steering target metric(s): {unknown}. Supported metrics: {supported}."
-            )
-        incompatible_metrics = validate_target_specs_for_task(
-            task=str(config.dataset.task),
-            target_specs=resolved_target_specs,
-            classification_only_metrics=CLASSIFICATION_ONLY_METRICS,
-        )
-        if incompatible_metrics:
-            metrics = ", ".join(incompatible_metrics)
-            _raise_usage_error(
-                "Incompatible --meta-target metrics for regression task: "
-                f"{metrics}. Remove these metrics or switch task=classification."
-            )
-    if resolved_target_specs:
-        config.meta_feature_targets = {
-            metric_name: [lo, hi, weight]
-            for metric_name, (lo, hi, weight) in sorted(resolved_target_specs.items())
-        }
-    elif args.meta_target:
-        config.meta_feature_targets = {}
-    if args.steer_meta or bool(args.meta_target):
-        config.steering.enabled = True
+    resolved_target_bands = _resolve_diagnostics_target_bands(config)
     if args.diagnostics:
         config.diagnostics.enabled = True
 
@@ -566,12 +450,8 @@ def _run_generate(args: argparse.Namespace) -> int:
                 quantiles=coerce_quantiles(config.diagnostics.quantiles),
                 underrepresented_threshold=float(config.diagnostics.underrepresented_threshold),
                 max_values_per_metric=config.diagnostics.max_values_per_metric,
-                target_bands=_target_specs_to_bands(resolved_target_specs),
+                target_bands=resolved_target_bands,
             )
-        )
-    if bool(config.steering.enabled) and not resolved_target_specs:
-        print(
-            "Steering enabled but no valid meta-feature targets were resolved; steering is a no-op."
         )
     print(
         f"Hardware backend={hw.backend} device='{hw.device_name}' "

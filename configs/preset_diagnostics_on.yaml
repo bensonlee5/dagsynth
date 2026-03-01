@@ -19,6 +19,3 @@ diagnostics:
   meta_feature_targets:
     linearity_proxy: [0.2, 0.8]
     nonlinearity_proxy: [0.1, 0.9]
-
-steering:
-  enabled: false

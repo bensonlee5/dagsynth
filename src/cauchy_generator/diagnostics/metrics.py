@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 
-from cauchy_generator.core.steering_metrics import extract_steering_metrics
+from cauchy_generator.core.metrics_torch import extract_torch_metrics
 from cauchy_generator.types import DatasetBundle
 
 from .types import DatasetMetrics
@@ -57,7 +57,7 @@ def extract_dataset_metrics(
     if not include_spearman:
         metric_names -= {"spearman_abs_mean", "spearman_abs_max"}
 
-    raw = extract_steering_metrics(
+    raw = extract_torch_metrics(
         cpu_bundle, target_metric_names=metric_names, include_spearman=include_spearman
     )
 

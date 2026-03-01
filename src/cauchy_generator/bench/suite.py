@@ -227,9 +227,9 @@ def _prepare_config_for_profile(
 
 
 def _resolve_target_bands(config: GeneratorConfig) -> dict[str, tuple[float, float]]:
-    """Merge diagnostics and top-level target mappings for coverage aggregation."""
+    """Resolve diagnostics target mappings for coverage aggregation."""
 
-    return merge_target_bands(config.diagnostics.meta_feature_targets, config.meta_feature_targets)
+    return merge_target_bands(config.diagnostics.meta_feature_targets)
 
 
 def _sanitize_profile_key(profile_key: str) -> str:

@@ -65,15 +65,12 @@ Exact output contracts are documented in
 
 ______________________________________________________________________
 
-## Diagnostics and steering
+## Diagnostics target bands
 
-Diagnostics and steering are complementary:
+Diagnostics supports optional `diagnostics.meta_feature_targets` to annotate
+coverage summaries with in-band counts/fractions for selected metrics.
 
-- Steering biases candidate selection during generation.
-- Diagnostics reports what was emitted after selection.
-
-For steering configuration and behavior, see
-[steering.md](steering.md).
+Target bands do not alter generation; they are reporting metadata only.
 
 ______________________________________________________________________
 

@@ -13,6 +13,3 @@ output:
 
 diagnostics:
   enabled: false
-
-steering:
-  enabled: false

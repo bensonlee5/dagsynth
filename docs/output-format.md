@@ -105,7 +105,6 @@ Each dataset's `metadata.json` contains:
 | `filter`                 | object      | Filter results (see below)                                   |
 | `class_structure`        | object      | Present only for classification (see below)                  |
 | `missingness`            | object      | Present only when missingness is enabled                     |
-| `steering`               | object      | Present only when steering is enabled                        |
 
 ### Curriculum sub-object
 
@@ -176,26 +175,6 @@ Present only for classification datasets.
 | `train_test_class_match` | bool        | Whether train and test class sets are identical    |
 | `min_label`              | int or null | Minimum emitted class label                        |
 | `max_label`              | int or null | Maximum emitted class label                        |
-
-### Steering sub-object (optional)
-
-Present only when steering is enabled.
-
-| Key                        | Type        | Description                                 |
-| -------------------------- | ----------- | ------------------------------------------- |
-| `enabled`                  | bool        | Always `true` when present                  |
-| `max_attempts`             | int         | Max candidates per slot                     |
-| `temperature`              | float       | Softmax temperature                         |
-| `candidate_count`          | int         | Candidates actually generated               |
-| `candidate_seeds`          | list[int]   | Seed for each candidate                     |
-| `scores`                   | list[float] | Weighted distance score per candidate       |
-| `probabilities`            | list[float] | Softmax selection probability per candidate |
-| `selected_candidate_index` | int         | Index of chosen candidate                   |
-| `selected_candidate_seed`  | int         | Seed of chosen candidate                    |
-| `selected_score`           | float       | Score of chosen candidate                   |
-| `selected_in_band`         | dict        | Per-metric in-band boolean                  |
-| `selected_metric_values`   | dict        | Per-metric computed value                   |
-| `targets`                  | dict        | Per-metric target spec (min, max, weight)   |
 
 ### Missingness sub-object (optional)
 

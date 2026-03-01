@@ -30,11 +30,18 @@ Inspect detected hardware profile:
 cauchy-gen hardware
 ```
 
+View help and available options for commands:
+
+```bash
+cauchy-gen --help
+cauchy-gen generate --help
+cauchy-gen benchmark --help
+```
+
 ## Features
 
 - Diagnostics: exposes per-dataset artifacts so you can verify coverage, inspect drift, and debug generation outcomes.
 - Missingness (MCAR/MAR/MNAR): injects deterministic null patterns to evaluate models under realistic incomplete-data regimes.
-- Meta-feature steering: biases sampling toward target metric bands when baseline draws under-cover the task characteristics you need.
 - Curriculum staging: lets you scale complexity from easier to harder regimes in a controlled, reproducible way.
 - Many-class workflows: stress-tests classification behavior near the current rollout envelope with stable preset and benchmark paths.
 - Shift/drift controls: introduces interpretable graph/mechanism/noise drift for robustness and distribution-shift evaluation.
@@ -47,40 +54,50 @@ cauchy-gen hardware
 - [docs/output-format.md](docs/output-format.md): Output schema and artifacts.
 - Feature guides:
   [diagnostics](docs/features/diagnostics.md),
-  [steering](docs/features/steering.md),
   [missingness](docs/features/missingness.md),
   [curriculum](docs/features/curriculum.md),
   [many-class](docs/features/many-class.md),
   [shift](docs/features/shift.md),
   [benchmark guardrails](docs/features/benchmark-guardrails.md)
 
-## Codebase Navigation (Contributors)
+## Codebase Navigation
 
-Use this sequence for a comprehensive audit of control flow, generation logic, and reproducibility guarantees.
+The project is organized into functional modules that manage the lifecycle of a synthetic dataset, from configuration and causal graph sampling to node execution and quality filtering.
 
-1. Entry points (orchestration): audit how config and runtime choices flow into generation.
-   - [src/cauchy_generator/cli.py](src/cauchy_generator/cli.py): map CLI flags to `GeneratorConfig` and command dispatch.
-   - [src/cauchy_generator/core/dataset.py](src/cauchy_generator/core/dataset.py): audit `generate_batch_iter` and `_generate_torch` for end-to-end synchronization.
-1. Generative blueprint (structure): audit how dataset skeletons are sampled before value generation.
-   - [src/cauchy_generator/core/curriculum.py](src/cauchy_generator/core/curriculum.py): stagewise complexity scaling.
-   - [src/cauchy_generator/core/layout.py](src/cauchy_generator/core/layout.py): feature/target assignment to DAG nodes.
-   - [src/cauchy_generator/graph/cauchy_graph.py](src/cauchy_generator/graph/cauchy_graph.py): Cauchy-logit graph sampling.
-1. Assembly line (node execution): audit how latent node outputs become observables.
-   - [src/cauchy_generator/core/node_pipeline.py](src/cauchy_generator/core/node_pipeline.py): per-node execution sequence and normalization/scaling flow.
-   - [src/cauchy_generator/functions/random_functions.py](src/cauchy_generator/functions/random_functions.py): mechanism-family implementations and vectorized execution paths.
-   - [src/cauchy_generator/converters/](src/cauchy_generator/converters/): latent-to-observable conversion for numeric/categorical outputs.
-1. Integrity and reproducibility (infrastructure): audit determinism and quality gates.
-   - [src/cauchy_generator/rng.py](src/cauchy_generator/rng.py): `SeedManager` child-seed isolation and determinism.
-   - [src/cauchy_generator/filtering/torch_rf_filter.py](src/cauchy_generator/filtering/torch_rf_filter.py): learnability gate behavior and rejection criteria.
-   - [src/cauchy_generator/core/steering_metrics.py](src/cauchy_generator/core/steering_metrics.py): unified torch-native metrics used in steering and diagnostics.
-1. Key specification references: cross-check implementation against intended contracts.
-   - [docs/how-it-works.md](docs/how-it-works.md): conceptual data flow.
-   - [docs/design-decisions.md](docs/design-decisions.md): rationale for architecture and implementation choices.
-   - [docs/output-format.md](docs/output-format.md): emitted artifact and metadata contract.
+### 1. Entry Points & Orchestration
 
-### Pro Tip: Audit via Verification
+The high-level logic that bridges CLI/API requests to the generation engine.
 
-Run focused integration tests while auditing to verify enforced invariants and determinism:
+- [`src/cauchy_generator/cli.py`](src/cauchy_generator/cli.py): Maps CLI flags to `GeneratorConfig` and handles command dispatch.
+- [`src/cauchy_generator/core/dataset.py`](src/cauchy_generator/core/dataset.py): The main orchestration engine. Manages batch generation and end-to-end synchronization.
+
+### 2. The Generation Pipeline (The "Assembly Line")
+
+Follow this sequence to understand how a latent causal structure becomes a realized dataset.
+
+- **Structure ([`core/curriculum.py`](src/cauchy_generator/core/curriculum.py) & [`graph/`](src/cauchy_generator/graph/)):** Defines the complexity stage and samples the underlying Directed Acyclic Graph (DAG).
+- **Layout ([`core/layout.py`](src/cauchy_generator/core/layout.py)):** Maps features and targets to DAG nodes and assigns data types.
+- **Execution ([`core/node_pipeline.py`](src/cauchy_generator/core/node_pipeline.py)):** Processes nodes in topological order, applying functional relationships.
+- **Mechanisms ([`functions/`](src/cauchy_generator/functions/)):** Contains the mathematical families (linear, non-linear, mixture) that define how nodes interact.
+- **Conversion ([`converters/`](src/cauchy_generator/converters/)):** Transforms latent continuous values into observable numeric or categorical data.
+
+### 3. Control, Integrity & Quality
+
+Infrastructure that ensures reproducibility, deterministic behavior, and data quality.
+
+- [`src/cauchy_generator/rng.py`](src/cauchy_generator/rng.py): The `SeedManager` ensures strictly isolated, deterministic child seeds for every component.
+- [`src/cauchy_generator/filtering/`](src/cauchy_generator/filtering/): Implements the "learnability gate" (via Torch-native Random Forests) to reject invalid or trivial datasets.
+- [`src/cauchy_generator/core/metrics_torch.py`](src/cauchy_generator/core/metrics_torch.py): Unified torch-native metric extraction used by diagnostics and generation telemetry.
+- [`src/cauchy_generator/postprocess/`](src/cauchy_generator/postprocess/): Handles final-stage transformations, including deterministic missingness (MCAR/MAR/MNAR) injection.
+
+### 4. Configuration & Architecture
+
+- [`src/cauchy_generator/config.py`](src/cauchy_generator/config.py): The source of truth for all generator settings, implemented as strongly-typed dataclasses.
+- [`docs/design-decisions.md`](docs/design-decisions.md): Rationale behind the architectural choices and reproducibility guarantees.
+
+### Tip: Audit via Verification
+
+To verify the system's invariants and determinism while exploring the code:
 
 ```bash
 uv run pytest -v tests/test_generate.py tests/test_rng.py
