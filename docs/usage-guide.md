@@ -67,6 +67,10 @@ plan = sample_fixed_layout(cfg, seed=7, device="cpu")
 batch = generate_batch_fixed_layout(cfg, plan=plan, num_datasets=32, seed=101)
 ```
 
+`generate_batch_fixed_layout(_iter)` validates plan/config compatibility before
+generation. If layout-driving config fields drift from the plan snapshot, it
+raises and asks you to resample the plan.
+
 ______________________________________________________________________
 
 ## 4. Missingness workflows
@@ -81,19 +85,7 @@ Detailed guide: [Missingness](features/missingness.md)
 
 ______________________________________________________________________
 
-## 5. Curriculum workflows
-
-Use curriculum workflows for staged complexity progression.
-
-```bash
-cauchy-gen generate --config configs/preset_curriculum_auto_staged.yaml --num-datasets 25 --out data/run_curriculum_auto
-```
-
-Detailed guide: [Curriculum](features/curriculum.md)
-
-______________________________________________________________________
-
-## 6. Many-class workflows
+## 5. Many-class workflows
 
 Use many-class workflows to exercise the rollout envelope (`n_classes_max <= 32`).
 
@@ -112,7 +104,7 @@ Detailed guide: [Many-class](features/many-class.md)
 
 ______________________________________________________________________
 
-## 7. Shift workflows
+## 6. Shift workflows
 
 Use shift profiles for controlled graph/mechanism/noise drift:
 
@@ -124,7 +116,7 @@ Detailed guide: [Shift / Drift](features/shift.md)
 
 ______________________________________________________________________
 
-## 8. Benchmark workflows and guardrails
+## 7. Benchmark workflows and guardrails
 
 Use benchmark workflows for smoke checks, feature guardrails, and regression
 gating.
@@ -142,7 +134,6 @@ ______________________________________________________________________
 - Feature deep dives:
   [diagnostics](features/diagnostics.md),
   [missingness](features/missingness.md),
-  [curriculum](features/curriculum.md),
   [many-class](features/many-class.md),
   [shift](features/shift.md),
   [benchmark guardrails](features/benchmark-guardrails.md)

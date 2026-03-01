@@ -3,9 +3,9 @@ import pytest
 import torch
 import math
 
-from cauchy_generator.config import CurriculumStageConfig, GeneratorConfig
+from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import (
-    _sample_layout,
+    FixedLayoutPlan,
     _stratified_split_indices,
     generate_batch,
     generate_batch_fixed_layout,
@@ -21,7 +21,6 @@ from cauchy_generator.io.lineage_schema import (
     validate_metadata_lineage,
     validate_lineage_payload,
 )
-from cauchy_generator.rng import SeedManager
 from cauchy_generator.types import DatasetBundle
 
 
@@ -67,44 +66,11 @@ def _layout_stub(
 def test_generate_one_shapes() -> None:
     cfg = _tiny_config()
     bundle = generate_one(cfg, seed=7, device="cpu")
-    curriculum = bundle.metadata["curriculum"]
     assert isinstance(bundle.X_train, torch.Tensor)
     assert bundle.X_train.shape[0] == cfg.dataset.n_train
     assert bundle.X_test.shape[0] == cfg.dataset.n_test
-    assert int(curriculum["n_rows_total"]) == bundle.X_train.shape[0] + bundle.X_test.shape[0]
-    assert curriculum["mode"] == "off"
-    assert curriculum["stage"] is None
     assert bundle.X_train.shape[1] == bundle.X_test.shape[1]
     assert len(bundle.feature_types) == bundle.X_train.shape[1]
-
-
-@pytest.mark.parametrize("task", ["classification", "regression"])
-def test_generate_one_curriculum_emits_realized_complexity_metadata(task: str) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = task
-    if task == "classification":
-        cfg.dataset.n_classes_min = 2
-        cfg.dataset.n_classes_max = 2
-
-    bundle = generate_one(cfg, seed=18 if task == "classification" else 19, device="cpu")
-    curriculum = bundle.metadata["curriculum"]
-    realized = curriculum["realized_complexity"]
-
-    assert curriculum["monotonicity_axes"] == [
-        "n_rows_total",
-        "n_features",
-        "graph_nodes",
-        "graph_depth_nodes",
-    ]
-    assert int(realized["n_rows_total"]) == int(curriculum["n_rows_total"])
-    assert int(realized["n_train"]) == int(curriculum["n_train"]) == int(bundle.X_train.shape[0])
-    assert int(realized["n_test"]) == int(curriculum["n_test"]) == int(bundle.X_test.shape[0])
-    assert int(realized["n_features"]) == int(bundle.metadata["n_features"])
-    assert int(realized["graph_nodes"]) == int(bundle.metadata["graph_nodes"])
-    assert int(realized["graph_depth_nodes"]) == int(bundle.metadata["graph_depth_nodes"])
-    assert float(realized["graph_edge_density"]) == pytest.approx(
-        float(bundle.metadata["graph_edge_density"])
-    )
 
 
 def test_generate_one_emits_lineage_metadata_schema_fields() -> None:
@@ -168,7 +134,6 @@ def test_generate_batch_reproducible_metadata() -> None:
     batch_a = generate_batch(cfg, num_datasets=2, seed=123, device="cpu")
     batch_b = generate_batch(cfg, num_datasets=2, seed=123, device="cpu")
     assert batch_a[0].metadata["seed"] == batch_b[0].metadata["seed"]
-    assert batch_a[0].metadata["curriculum"] == batch_b[0].metadata["curriculum"]
     np.testing.assert_allclose(
         np.asarray(batch_a[0].X_train),
         np.asarray(batch_b[0].X_train),
@@ -420,7 +385,6 @@ def test_generate_batch_iter_matches_batch_ordering() -> None:
     for a, b in zip(batch, streamed, strict=True):
         np.testing.assert_allclose(np.asarray(a.X_train), np.asarray(b.X_train), atol=1e-6)
         assert a.metadata["seed"] == b.metadata["seed"]
-        assert a.metadata["curriculum"] == b.metadata["curriculum"]
 
 
 def test_sample_fixed_layout_is_deterministic_for_seed() -> None:
@@ -430,7 +394,6 @@ def test_sample_fixed_layout_is_deterministic_for_seed() -> None:
 
     assert plan_a.layout_signature == plan_b.layout_signature
     assert plan_a.plan_seed == plan_b.plan_seed
-    assert plan_a.auto_stage == plan_b.auto_stage
     assert int(plan_a.layout["n_features"]) == int(plan_b.layout["n_features"])
     assert list(plan_a.layout["feature_types"]) == list(plan_b.layout["feature_types"])
 
@@ -471,6 +434,71 @@ def test_generate_batch_fixed_layout_enforces_layout_reuse() -> None:
         )
     assert int(batch[0].metadata["seed"]) != int(batch[1].metadata["seed"])
     assert not torch.equal(batch[0].X_train, batch[1].X_train)
+
+
+def test_generate_batch_fixed_layout_rejects_plan_config_drift() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=111, device="cpu")
+
+    drifted = _tiny_regression_config()
+    drifted.dataset.n_train = cfg.dataset.n_train + 1
+
+    with pytest.raises(
+        ValueError,
+        match=r"Fixed-layout plan/config mismatch.*dataset\.n_train",
+    ):
+        list(generate_batch_fixed_layout_iter(drifted, plan=plan, num_datasets=1, seed=222))
+
+
+def test_generate_batch_fixed_layout_rejects_legacy_plan_without_compatibility_snapshot() -> None:
+    cfg = _tiny_regression_config()
+    sampled = sample_fixed_layout(cfg, seed=112, device="cpu")
+    legacy_plan = FixedLayoutPlan(
+        layout=sampled.layout,
+        requested_device=sampled.requested_device,
+        resolved_device=sampled.resolved_device,
+        plan_seed=sampled.plan_seed,
+        n_train=sampled.n_train,
+        n_test=sampled.n_test,
+        layout_signature=sampled.layout_signature,
+        compatibility_snapshot=None,
+    )
+
+    with pytest.raises(ValueError, match=r"missing compatibility snapshot"):
+        list(generate_batch_fixed_layout_iter(cfg, plan=legacy_plan, num_datasets=1, seed=223))
+
+
+def test_generate_batch_fixed_layout_allows_non_contract_config_drift() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=113, device="cpu")
+
+    drifted = _tiny_regression_config()
+    drifted.filter.max_attempts = cfg.filter.max_attempts + 1
+    drifted.shift.enabled = True
+    drifted.shift.profile = "noise_drift"
+
+    batch = list(generate_batch_fixed_layout_iter(drifted, plan=plan, num_datasets=2, seed=224))
+    assert len(batch) == 2
+    for bundle in batch:
+        assert bundle.metadata["layout_mode"] == "fixed"
+
+
+def test_generate_batch_fixed_layout_rejects_tampered_plan_layout_signature() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=114, device="cpu")
+    plan.layout["graph_edges"] = int(plan.layout["graph_edges"]) + 1
+
+    with pytest.raises(ValueError, match=r"plan integrity mismatch"):
+        list(generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=1, seed=225))
+
+
+def test_generate_batch_fixed_layout_rejects_tampered_plan_resolved_device() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=115, device="cpu")
+    plan.resolved_device = "cuda"
+
+    with pytest.raises(ValueError, match=r"plan\.resolved_device"):
+        list(generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=1, seed=226))
 
 
 def test_generate_batch_fixed_layout_raises_on_schema_mismatch(
@@ -606,6 +634,24 @@ def test_invalid_device_raises() -> None:
         generate_one(cfg, seed=123, device="cud")
 
 
+def test_generate_one_rejects_inverted_graph_node_bounds() -> None:
+    cfg = _tiny_config()
+    cfg.graph.n_nodes_min = 10
+    cfg.graph.n_nodes_max = 5
+
+    with pytest.raises(ValueError, match=r"graph\.n_nodes_min must be <= n_nodes_max"):
+        generate_one(cfg, seed=123, device="cpu")
+
+
+def test_generate_one_rejects_inverted_feature_bounds() -> None:
+    cfg = _tiny_config()
+    cfg.dataset.n_features_min = 10
+    cfg.dataset.n_features_max = 5
+
+    with pytest.raises(ValueError, match=r"dataset\.n_features_min must be <= n_features_max"):
+        generate_one(cfg, seed=123, device="cpu")
+
+
 def test_negative_num_datasets_raises() -> None:
     cfg = _tiny_config()
     with pytest.raises(ValueError, match="num_datasets must be >= 0"):
@@ -620,593 +666,6 @@ def test_zero_num_datasets_does_not_resolve_device(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr("cauchy_generator.core.dataset._resolve_device", _raise_if_called)
     assert list(generate_batch_iter(cfg, num_datasets=0, seed=5, device="cuda")) == []
-
-
-def test_auto_curriculum_generate_one_defaults_to_stage_one() -> None:
-    cfg = _tiny_config()
-    cfg.curriculum_stage = "auto"
-
-    bundle = generate_one(cfg, seed=17, device="cpu")
-    curriculum = bundle.metadata["curriculum"]
-    assert curriculum["mode"] == "auto"
-    assert curriculum["stage"] == 1
-    assert curriculum["n_rows_total"] == 1024
-    assert 0.30 <= float(curriculum["train_fraction"]) <= 0.90
-
-
-@pytest.mark.parametrize("stage,low,high", [(2, 400, 10_240), (3, 400, 60_000)])
-def test_fixed_curriculum_stage_ranges(stage: int, low: int, high: int) -> None:
-    cfg = _tiny_config()
-    cfg.curriculum_stage = stage
-
-    bundle = generate_one(cfg, seed=31 + stage, device="cpu")
-    curriculum = bundle.metadata["curriculum"]
-    assert curriculum["mode"] == "fixed"
-    assert curriculum["stage"] == stage
-    assert low <= int(curriculum["n_rows_total"]) <= high
-    assert float(curriculum["train_fraction"]) == pytest.approx(0.8)
-    assert int(curriculum["n_train"]) + int(curriculum["n_test"]) == int(curriculum["n_rows_total"])
-
-
-def test_stagewise_structure_bias_increases_density_for_same_rng_stream() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.dataset.n_features_min = 8
-    cfg.dataset.n_features_max = 8
-    cfg.graph.n_nodes_min = 20
-    cfg.graph.n_nodes_max = 20
-
-    layout_stage1 = _sample_layout(
-        cfg,
-        SeedManager(190).torch_rng("layout"),
-        "cpu",
-        curriculum={"stage": 1},
-    )
-    layout_stage3 = _sample_layout(
-        cfg,
-        SeedManager(190).torch_rng("layout"),
-        "cpu",
-        curriculum={"stage": 3},
-    )
-
-    assert int(layout_stage3["graph_edges"]) >= int(layout_stage1["graph_edges"])
-    assert float(layout_stage3["graph_edge_density"]) >= float(layout_stage1["graph_edge_density"])
-
-
-@pytest.mark.parametrize("task", ["classification", "regression"])
-def test_fixed_curriculum_stage_enforces_graph_depth_bounds(task: str) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = task
-    cfg.curriculum_stage = 2
-    cfg.filter.enabled = False
-    cfg.graph.n_nodes_min = 3
-    cfg.graph.n_nodes_max = 3
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            n_nodes_min=3,
-            n_nodes_max=3,
-            depth_min=3,
-            depth_max=3,
-        )
-    }
-
-    if task == "classification":
-        cfg.dataset.n_classes_min = 2
-        cfg.dataset.n_classes_max = 2
-
-    bundle = generate_one(cfg, seed=912 if task == "classification" else 913, device="cpu")
-    assert int(bundle.metadata["curriculum"]["stage"]) == 2
-    assert int(bundle.metadata["graph_nodes"]) == 3
-    assert int(bundle.metadata["graph_depth_nodes"]) == 3
-
-
-def test_stage_depth_min_above_nodes_min_still_generates_valid_graph() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.curriculum_stage = 2
-    cfg.filter.enabled = False
-    cfg.graph.n_nodes_min = 3
-    cfg.graph.n_nodes_max = 6
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            n_nodes_min=3,
-            n_nodes_max=6,
-            depth_min=5,
-        )
-    }
-
-    bundle = generate_one(cfg, seed=931, device="cpu")
-    assert int(bundle.metadata["curriculum"]["stage"]) == 2
-    assert int(bundle.metadata["graph_nodes"]) >= 5
-    assert int(bundle.metadata["graph_depth_nodes"]) >= 5
-    assert bundle.metadata["curriculum"]["stage_bounds"]["n_nodes_min"] == 5
-    assert bundle.metadata["curriculum"]["stage_bounds"]["n_nodes_max"] == 6
-
-
-def test_curriculum_off_ignores_stagewise_depth_bounds() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.curriculum_stage = "off"
-    cfg.filter.enabled = False
-    cfg.graph.n_nodes_min = 3
-    cfg.graph.n_nodes_max = 3
-    cfg.curriculum.stages = {
-        1: CurriculumStageConfig(
-            n_nodes_min=3,
-            n_nodes_max=3,
-            depth_min=4,
-            depth_max=4,
-        )
-    }
-
-    bundle = generate_one(cfg, seed=920, device="cpu")
-    assert bundle.metadata["curriculum"]["stage"] is None
-    assert int(bundle.metadata["graph_nodes"]) == 3
-    assert int(bundle.metadata["graph_depth_nodes"]) <= 3
-
-
-def test_sample_layout_rejects_infeasible_depth_vs_nodes_bounds() -> None:
-    cfg = _tiny_config()
-    cfg.graph.n_nodes_min = 3
-    cfg.graph.n_nodes_max = 5
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            n_nodes_min=3,
-            n_nodes_max=5,
-            depth_min=6,
-        )
-    }
-
-    with pytest.raises(ValueError, match="Invalid effective node/depth bounds"):
-        _sample_layout(
-            cfg,
-            SeedManager(932).torch_rng("layout"),
-            "cpu",
-            curriculum={"stage": 2},
-        )
-
-
-def test_sample_layout_stage_bounds_uses_effective_node_min_with_depth_constraints() -> None:
-    cfg = _tiny_config()
-    cfg.graph.n_nodes_min = 3
-    cfg.graph.n_nodes_max = 6
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            n_nodes_min=3,
-            n_nodes_max=6,
-            depth_min=5,
-        )
-    }
-
-    layout = _sample_layout(
-        cfg,
-        SeedManager(934).torch_rng("layout"),
-        "cpu",
-        curriculum={"stage": 2},
-    )
-
-    stage_bounds = layout["stage_bounds"]
-    assert stage_bounds["n_nodes_min"] == 5
-    assert stage_bounds["n_nodes_max"] == 6
-
-
-def test_generate_one_accepts_depth_bounds_with_global_node_floor() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.curriculum_stage = 2
-    cfg.filter.enabled = False
-    cfg.graph.n_nodes_min = 1
-    cfg.graph.n_nodes_max = 1
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            depth_min=2,
-            depth_max=2,
-        )
-    }
-
-    bundle = generate_one(cfg, seed=935, device="cpu")
-    assert int(bundle.metadata["curriculum"]["stage"]) == 2
-    assert int(bundle.metadata["graph_nodes"]) == 2
-    assert int(bundle.metadata["graph_depth_nodes"]) == 2
-    assert bundle.metadata["curriculum"]["stage_bounds"]["n_nodes_min"] == 2
-    assert bundle.metadata["curriculum"]["stage_bounds"]["n_nodes_max"] == 2
-
-
-def test_fixed_curriculum_stage_enforces_feature_and_node_bounds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.curriculum_stage = 2
-    cfg.filter.enabled = False
-    cfg.dataset.n_features_min = 8
-    cfg.dataset.n_features_max = 64
-    cfg.graph.n_nodes_min = 2
-    cfg.graph.n_nodes_max = 32
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            n_features_min=11,
-            n_features_max=11,
-            n_nodes_min=7,
-            n_nodes_max=7,
-        )
-    }
-
-    def _identity_postprocess(
-        x_train,
-        y_train,
-        x_test,
-        y_test,
-        feature_types,
-        _task,
-        _generator,
-        _device,
-        *,
-        return_feature_index_map=False,
-        preserve_feature_schema=False,
-    ):
-        assert return_feature_index_map is True
-        assert preserve_feature_schema is False
-        index_map = list(range(int(x_train.shape[1])))
-        return x_train, y_train, x_test, y_test, list(feature_types), index_map
-
-    monkeypatch.setattr(
-        "cauchy_generator.core.dataset.postprocess_dataset",
-        _identity_postprocess,
-    )
-
-    bundle = generate_one(cfg, seed=2026, device="cpu")
-    assert int(bundle.metadata["curriculum"]["stage"]) == 2
-    assert int(bundle.metadata["n_features"]) == 11
-    assert int(bundle.metadata["graph_nodes"]) == 7
-    assert int(bundle.X_train.shape[1]) == 11
-    assert int(bundle.X_test.shape[1]) == 11
-    assert bundle.metadata["curriculum"]["stage_bounds"] == {
-        "n_features_min": 11,
-        "n_features_max": 11,
-        "n_nodes_min": 7,
-        "n_nodes_max": 7,
-        "depth_min": None,
-        "depth_max": None,
-    }
-
-
-def test_curriculum_off_ignores_stagewise_feature_and_node_bounds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.curriculum_stage = "off"
-    cfg.filter.enabled = False
-    cfg.dataset.n_features_min = 6
-    cfg.dataset.n_features_max = 6
-    cfg.graph.n_nodes_min = 4
-    cfg.graph.n_nodes_max = 4
-    cfg.curriculum.stages = {
-        1: CurriculumStageConfig(
-            n_features_min=20,
-            n_features_max=20,
-            n_nodes_min=12,
-            n_nodes_max=12,
-        )
-    }
-
-    def _identity_postprocess(
-        x_train,
-        y_train,
-        x_test,
-        y_test,
-        feature_types,
-        _task,
-        _generator,
-        _device,
-        *,
-        return_feature_index_map=False,
-        preserve_feature_schema=False,
-    ):
-        assert return_feature_index_map is True
-        assert preserve_feature_schema is False
-        index_map = list(range(int(x_train.shape[1])))
-        return x_train, y_train, x_test, y_test, list(feature_types), index_map
-
-    monkeypatch.setattr(
-        "cauchy_generator.core.dataset.postprocess_dataset",
-        _identity_postprocess,
-    )
-
-    bundle = generate_one(cfg, seed=2027, device="cpu")
-    assert bundle.metadata["curriculum"]["stage"] is None
-    assert int(bundle.metadata["n_features"]) == 6
-    assert int(bundle.metadata["graph_nodes"]) == 4
-    assert bundle.metadata["curriculum"]["stage_bounds"] == {
-        "n_features_min": 6,
-        "n_features_max": 6,
-        "n_nodes_min": 4,
-        "n_nodes_max": 4,
-        "depth_min": None,
-        "depth_max": None,
-    }
-
-
-def test_curriculum_stage_bounds_clamp_node_limits_to_sampler_floor() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "regression"
-    cfg.curriculum_stage = "off"
-    cfg.filter.enabled = False
-    cfg.graph.n_nodes_min = 1
-    cfg.graph.n_nodes_max = 1
-
-    bundle = generate_one(cfg, seed=2028, device="cpu")
-    assert int(bundle.metadata["graph_nodes"]) == 2
-    assert bundle.metadata["curriculum"]["stage_bounds"]["n_nodes_min"] == 2
-    assert bundle.metadata["curriculum"]["stage_bounds"]["n_nodes_max"] == 2
-
-
-def test_stagewise_layout_sampling_is_seed_reproducible_for_feature_and_node_bounds() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.n_features_min = 8
-    cfg.dataset.n_features_max = 64
-    cfg.graph.n_nodes_min = 2
-    cfg.graph.n_nodes_max = 32
-    cfg.curriculum.stages = {
-        3: CurriculumStageConfig(
-            n_features_min=13,
-            n_features_max=19,
-            n_nodes_min=5,
-            n_nodes_max=9,
-        )
-    }
-    curriculum = {"stage": 3}
-
-    layout_a = _sample_layout(
-        cfg,
-        SeedManager(909).torch_rng("layout"),
-        "cpu",
-        curriculum=curriculum,
-    )
-    layout_b = _sample_layout(
-        cfg,
-        SeedManager(909).torch_rng("layout"),
-        "cpu",
-        curriculum=curriculum,
-    )
-
-    assert layout_a["n_features"] == layout_b["n_features"]
-    assert layout_a["graph_nodes"] == layout_b["graph_nodes"]
-    assert 13 <= int(layout_a["n_features"]) <= 19
-    assert 5 <= int(layout_a["graph_nodes"]) <= 9
-
-
-def test_stagewise_layout_sampling_is_seed_reproducible_with_depth_constraints() -> None:
-    cfg = _tiny_config()
-    cfg.dataset.n_features_min = 8
-    cfg.dataset.n_features_max = 8
-    cfg.graph.n_nodes_min = 3
-    cfg.graph.n_nodes_max = 6
-    cfg.curriculum.stages = {
-        2: CurriculumStageConfig(
-            n_nodes_min=3,
-            n_nodes_max=6,
-            depth_min=5,
-            depth_max=5,
-        )
-    }
-    curriculum = {"stage": 2}
-
-    layout_a = _sample_layout(
-        cfg,
-        SeedManager(933).torch_rng("layout"),
-        "cpu",
-        curriculum=curriculum,
-    )
-    layout_b = _sample_layout(
-        cfg,
-        SeedManager(933).torch_rng("layout"),
-        "cpu",
-        curriculum=curriculum,
-    )
-
-    assert layout_a["graph_nodes"] == layout_b["graph_nodes"]
-    assert layout_a["graph_depth_nodes"] == layout_b["graph_depth_nodes"]
-    assert layout_a["graph_edges"] == layout_b["graph_edges"]
-    torch.testing.assert_close(layout_a["adjacency"], layout_b["adjacency"])
-    assert int(layout_a["graph_depth_nodes"]) == 5
-
-
-@pytest.mark.parametrize("task", ["classification", "regression"])
-def test_curriculum_complexity_metadata_is_monotonic_across_stages(
-    monkeypatch: pytest.MonkeyPatch,
-    task: str,
-) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = task
-    cfg.filter.enabled = False
-    cfg.dataset.n_features_min = 8
-    cfg.dataset.n_features_max = 32
-    cfg.graph.n_nodes_min = 4
-    cfg.graph.n_nodes_max = 8
-    if task == "classification":
-        cfg.dataset.n_classes_min = 3
-        cfg.dataset.n_classes_max = 3
-
-    cfg.curriculum.stages = {
-        1: CurriculumStageConfig(
-            n_features_min=8,
-            n_features_max=8,
-            n_nodes_min=4,
-            n_nodes_max=4,
-            depth_max=2,
-        ),
-        2: CurriculumStageConfig(
-            n_features_min=12,
-            n_features_max=12,
-            n_nodes_min=6,
-            n_nodes_max=6,
-            depth_min=2,
-            depth_max=3,
-        ),
-        3: CurriculumStageConfig(
-            n_features_min=16,
-            n_features_max=16,
-            n_nodes_min=8,
-            n_nodes_max=8,
-            depth_min=3,
-        ),
-    }
-
-    def _fixed_stage_rows(
-        stage: int, _generator: torch.Generator, _device: str
-    ) -> tuple[int, float]:
-        return {
-            1: (512, 0.75),
-            2: (1024, 0.80),
-            3: (2048, 0.80),
-        }[int(stage)]
-
-    monkeypatch.setattr("cauchy_generator.core.curriculum._sample_stage_rows", _fixed_stage_rows)
-
-    realized_by_stage: list[dict[str, int]] = []
-    for stage in (1, 2, 3):
-        cfg.curriculum_stage = stage
-        bundle = generate_one(cfg, seed=2700 + stage, device="cpu")
-        curriculum = bundle.metadata["curriculum"]
-        realized = curriculum["realized_complexity"]
-        assert curriculum["monotonicity_axes"] == [
-            "n_rows_total",
-            "n_features",
-            "graph_nodes",
-            "graph_depth_nodes",
-        ]
-        realized = curriculum["realized_complexity"]
-        realized_by_stage.append(
-            {
-                "n_rows_total": int(realized["n_rows_total"]),
-                "n_features": int(realized["n_features"]),
-                "graph_nodes": int(realized["graph_nodes"]),
-                "graph_depth_nodes": int(realized["graph_depth_nodes"]),
-            }
-        )
-
-    for axis in ("n_rows_total", "n_features", "graph_nodes", "graph_depth_nodes"):
-        axis_values = [values[axis] for values in realized_by_stage]
-        assert axis_values == sorted(axis_values)
-
-
-def test_auto_curriculum_batch_stage_sequence_reproducible() -> None:
-    cfg = _tiny_config()
-    cfg.curriculum_stage = "auto"
-    batch_a = generate_batch(cfg, num_datasets=5, seed=701, device="cpu")
-    batch_b = generate_batch(cfg, num_datasets=5, seed=701, device="cpu")
-    stages_a = [int(bundle.metadata["curriculum"]["stage"]) for bundle in batch_a]
-    stages_b = [int(bundle.metadata["curriculum"]["stage"]) for bundle in batch_b]
-    assert stages_a == stages_b
-    assert set(stages_a).issubset({1, 2, 3})
-
-
-def test_curriculum_respects_configured_split_size_ceiling(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg = _tiny_config()
-    cfg.curriculum_stage = "auto"
-    cfg.dataset.task = "regression"
-    cfg.dataset.n_train = 16
-    cfg.dataset.n_test = 4
-
-    monkeypatch.setattr(
-        "cauchy_generator.core.curriculum._sample_auto_stage",
-        lambda _rng: 3,
-    )
-
-    bundle = generate_batch(cfg, num_datasets=1, seed=41, device="cpu")[0]
-    curriculum = bundle.metadata["curriculum"]
-    assert curriculum["stage"] == 3
-    assert int(curriculum["n_rows_total"]) <= 20
-    assert int(curriculum["n_train"]) + int(curriculum["n_test"]) == int(curriculum["n_rows_total"])
-    assert bundle.X_train.shape[0] == int(curriculum["n_train"])
-    assert bundle.X_test.shape[0] == int(curriculum["n_test"])
-
-
-def test_curriculum_ceiling_applies_when_total_matches_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg = _tiny_config()
-    cfg.curriculum_stage = "auto"
-    cfg.dataset.task = "regression"
-    cfg.dataset.n_train = 900
-    cfg.dataset.n_test = 124
-
-    monkeypatch.setattr(
-        "cauchy_generator.core.curriculum._sample_auto_stage",
-        lambda _rng: 3,
-    )
-    monkeypatch.setattr(
-        "cauchy_generator.core.curriculum._sample_stage_rows",
-        lambda _stage, _gen, _dev: (60_000, 0.8),
-    )
-
-    bundle = generate_batch(cfg, num_datasets=1, seed=42, device="cpu")[0]
-    curriculum = bundle.metadata["curriculum"]
-    assert curriculum["stage"] == 3
-    assert int(curriculum["n_rows_total"]) == 1024
-    assert int(curriculum["n_train"]) + int(curriculum["n_test"]) == 1024
-    assert bundle.X_train.shape[0] == int(curriculum["n_train"])
-    assert bundle.X_test.shape[0] == int(curriculum["n_test"])
-
-
-def test_invalid_curriculum_stage_raises() -> None:
-    cfg = _tiny_config()
-    cfg.curriculum_stage = "stage4"
-    with pytest.raises(ValueError, match="Expected off, auto, 1, 2, or 3"):
-        generate_one(cfg, seed=123, device="cpu")
-
-
-def test_infeasible_curriculum_split_raises_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "classification"
-    cfg.dataset.n_classes_min = 2
-    cfg.dataset.n_classes_max = 2
-    cfg.filter.max_attempts = 2
-
-    def _tiny_split(*_args, **_kwargs):
-        return {
-            "mode": "fixed",
-            "stage": 1,
-            "n_rows_total": 2,
-            "n_train": 1,
-            "n_test": 1,
-            "train_fraction": 0.5,
-        }
-
-    monkeypatch.setattr("cauchy_generator.core.curriculum._sample_curriculum", _tiny_split)
-
-    with pytest.raises(ValueError, match=r"infeasible class/split combination"):
-        generate_one(cfg, seed=99, device="cpu")
-
-
-def test_sampled_curriculum_split_fails_fast_when_classes_exceed_train_or_test(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg = _tiny_config()
-    cfg.dataset.task = "classification"
-    cfg.dataset.n_classes_min = 32
-    cfg.dataset.n_classes_max = 32
-
-    def _infeasible_curriculum(*_args, **_kwargs):
-        return {
-            "mode": "fixed",
-            "stage": 1,
-            "n_rows_total": 128,
-            "n_train": 31,
-            "n_test": 97,
-            "train_fraction": 31 / 128,
-        }
-
-    monkeypatch.setattr(
-        "cauchy_generator.core.curriculum._sample_curriculum", _infeasible_curriculum
-    )
-
-    with pytest.raises(ValueError, match=r"sampled classification split constraints"):
-        generate_one(cfg, seed=99, device="cpu")
 
 
 def test_stratified_split_ensures_valid_class_split_with_many_classes() -> None:

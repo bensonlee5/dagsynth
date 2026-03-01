@@ -99,7 +99,6 @@ Each dataset's `metadata.json` contains:
 | `seed`                   | int         | Base seed for this dataset                                     |
 | `attempt_used`           | int         | Generation attempt index (0-based)                             |
 | `lineage`                | object      | DAG lineage record (see Lineage below)                         |
-| `curriculum`             | object      | Curriculum metadata (see below)                                |
 | `shift`                  | object      | Resolved shift settings and realized observability signals     |
 | `config`                 | object      | Full serialized generator configuration                        |
 | `filter`                 | object      | Filter results (see below)                                     |
@@ -108,28 +107,6 @@ Each dataset's `metadata.json` contains:
 | `layout_mode`            | str         | Optional layout mode metadata (`"fixed"` for fixed-layout API) |
 | `layout_plan_seed`       | int         | Optional fixed-layout plan seed                                |
 | `layout_signature`       | str         | Optional deterministic fixed-layout fingerprint                |
-
-### Curriculum sub-object
-
-| Key                   | Type        | Description                               |
-| --------------------- | ----------- | ----------------------------------------- |
-| `mode`                | str         | `"off"`, `"auto"`, or `"fixed"`           |
-| `stage`               | int or null | Active stage (1, 2, or 3), or null if off |
-| `n_rows_total`        | int         | Total rows (train + test)                 |
-| `n_train`             | int         | Training rows                             |
-| `n_test`              | int         | Test rows                                 |
-| `train_fraction`      | float       | Fraction of rows used for training        |
-| `realized_complexity` | object      | Actual structural parameters achieved     |
-| `stage_bounds`        | object      | Min/max constraints for this stage        |
-| `monotonicity_axes`   | list[str]   | Axes monitored for monotonicity           |
-
-The `realized_complexity` object contains: `n_rows_total`, `n_train`,
-`n_test`, `n_features`, `graph_nodes`, `graph_depth_nodes`,
-`graph_edge_density`.
-
-The `stage_bounds` object contains nullable min/max pairs:
-`n_features_min`, `n_features_max`, `n_nodes_min`, `n_nodes_max`,
-`depth_min`, `depth_max`.
 
 ### Shift sub-object
 
@@ -190,6 +167,10 @@ column order, and lineage feature-to-node mapping).
 | `layout_mode`      | str  | `"fixed"`                                        |
 | `layout_plan_seed` | int  | Seed used to sample the shared fixed-layout plan |
 | `layout_signature` | str  | Stable fingerprint for the shared sampled layout |
+
+Fixed-layout APIs validate that the provided `config` remains compatible with
+the sampled plan before generation. This prevents plan-driven emitted tensors
+from disagreeing with `metadata.config` on layout-driving fields.
 
 ### Missingness sub-object (optional)
 

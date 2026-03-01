@@ -14,9 +14,6 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
   - Uses `configs/preset_many_class_generate_smoke.yaml`.
 - `scripts/generate-smoke.sh [config] [num_datasets] [device]`
   - Runs quick in-memory generation with `--no-write`.
-- `scripts/generate-curriculum.sh [num_datasets] [device] [out_dir] [seed] [curriculum]`
-  - Runs staged generation using `configs/curriculum_tabiclv2.yaml`.
-  - `curriculum` accepts `auto`, `1`, `2`, or `3`.
 - `scripts/generate-missingness.sh [mechanism] [missing_rate] [num_datasets] [device] [out_dir] [seed]`
   - Runs generation with CLI-level missingness overrides (`mcar`, `mar`, `mnar`).
 - `scripts/fetch-additional-references.sh`
@@ -37,9 +34,6 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
 ./scripts/generate-many-class.sh 25 cpu data/run_many_class 123
 ./scripts/generate-from-config.sh configs/benchmark_medium_cuda.yaml 100 cuda data/run_medium 42
 ./scripts/generate-smoke.sh configs/default.yaml 3 cpu
-./scripts/generate-curriculum.sh
-./scripts/generate-curriculum.sh 25 cpu data/run_curriculum 123 auto
-./scripts/generate-curriculum.sh 5 cpu data/run_stage3 123 3
 ./scripts/generate-missingness.sh mcar 0.2 25 cpu data/run_missing_mcar 101
 ./scripts/generate-missingness.sh mar 0.25 25 cpu data/run_missing_mar 102
 ./scripts/fetch-additional-references.sh

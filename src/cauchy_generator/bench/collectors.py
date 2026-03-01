@@ -9,11 +9,7 @@ from typing import Any
 
 from cauchy_generator.types import DatasetBundle
 
-from .constants import (
-    CURRICULUM_STAGE_VALUES,
-    MISSINGNESS_RATE_FAIL_ABS_ERROR,
-    MISSINGNESS_RATE_WARN_ABS_ERROR,
-)
+from .constants import MISSINGNESS_RATE_FAIL_ABS_ERROR, MISSINGNESS_RATE_WARN_ABS_ERROR
 from .guardrails import (
     _severity_from_thresholds,
     _status_from_issues,
@@ -32,73 +28,6 @@ def _matrix_cell_count(matrix: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return n_rows * n_cols
-
-
-@dataclass(slots=True)
-class _CurriculumMetadataCollector:
-    """Collect staged curriculum metadata coverage during benchmark throughput runs."""
-
-    expected_mode: str
-    bundles_seen: int = 0
-    bundles_with_stage_metadata: int = 0
-    mode_mismatch_bundles: int = 0
-
-    def update(self, bundle: DatasetBundle) -> None:
-        """Collect curriculum metadata counters for one generated bundle."""
-
-        self.bundles_seen += 1
-        payload = bundle.metadata.get("curriculum")
-        if not isinstance(payload, dict):
-            return
-        mode_value = payload.get("mode")
-        if mode_value != self.expected_mode:
-            self.mode_mismatch_bundles += 1
-        stage_value = payload.get("stage")
-        if isinstance(stage_value, bool):
-            return
-        if isinstance(stage_value, int) and stage_value in CURRICULUM_STAGE_VALUES:
-            self.bundles_with_stage_metadata += 1
-
-    def build_summary(self) -> dict[str, Any]:
-        """Build curriculum metadata guardrail metrics and issues."""
-
-        coverage_rate = (
-            float(self.bundles_with_stage_metadata) / float(self.bundles_seen)
-            if self.bundles_seen > 0
-            else 0.0
-        )
-
-        issues: list[dict[str, Any]] = []
-        if self.bundles_with_stage_metadata != self.bundles_seen:
-            issues.append(
-                {
-                    "metric": "curriculum_stage_metadata_coverage",
-                    "severity": "fail",
-                    "current": float(coverage_rate),
-                    "baseline": 1.0,
-                    "degradation_pct": float(max(0.0, (1.0 - coverage_rate) * 100.0)),
-                    "detail": "Curriculum stage metadata must be present for all staged bundles.",
-                }
-            )
-        if self.mode_mismatch_bundles > 0:
-            mismatch_rate = float(self.mode_mismatch_bundles) / float(self.bundles_seen)
-            issues.append(
-                {
-                    "metric": "curriculum_mode_metadata_mismatch",
-                    "severity": "fail",
-                    "current": float(mismatch_rate),
-                    "baseline": 0.0,
-                    "degradation_pct": float(mismatch_rate * 100.0),
-                    "detail": "Curriculum metadata mode must match configured staged mode.",
-                }
-            )
-
-        return {
-            "stage_metadata_coverage_rate": float(coverage_rate),
-            "mode_mismatch_bundles": int(self.mode_mismatch_bundles),
-            "issues": issues,
-            "status": _status_from_issues(issues),
-        }
 
 
 @dataclass(slots=True)
@@ -286,7 +215,6 @@ def _compose_bundle_callback(
     *,
     diagnostics_aggregator: Any,
     missingness_acceptance: _MissingnessAcceptanceCollector | None,
-    curriculum_metadata: _CurriculumMetadataCollector | None,
     shift_guardrails: _ShiftGuardrailCollector | None,
 ) -> Callable[[DatasetBundle], None] | None:
     """Compose optional per-bundle collectors into one callback."""
@@ -294,7 +222,6 @@ def _compose_bundle_callback(
     if (
         diagnostics_aggregator is None
         and missingness_acceptance is None
-        and curriculum_metadata is None
         and shift_guardrails is None
     ):
         return None
@@ -304,8 +231,6 @@ def _compose_bundle_callback(
             diagnostics_aggregator.update_bundle(bundle)
         if missingness_acceptance is not None:
             missingness_acceptance.update(bundle)
-        if curriculum_metadata is not None:
-            curriculum_metadata.update(bundle)
         if shift_guardrails is not None:
             shift_guardrails.update(bundle)
 
