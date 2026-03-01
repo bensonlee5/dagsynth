@@ -48,7 +48,6 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
 ./scripts/benchmark-suite.sh standard all benchmarks/results/latest
 ./scripts/benchmark-suite.sh smoke cpu benchmarks/results/smoke_cpu_diag on
 uv run cauchy-gen generate --config configs/preset_diagnostics_on.yaml --num-datasets 25 --diagnostics --out data/run_diag
-uv run cauchy-gen generate --config configs/preset_steering_conservative.yaml --num-datasets 25 --diagnostics --out data/run_steering
 uv run cauchy-gen generate --config configs/preset_missingness_mnar.yaml --num-datasets 25 --out data/run_missing_mnar
 uv run cauchy-gen benchmark --config configs/preset_missingness_mar.yaml --profile custom --suite smoke --no-memory --out-dir benchmarks/results/smoke_missing_mar
 ./scripts/bump-version.sh patch --dry-run
