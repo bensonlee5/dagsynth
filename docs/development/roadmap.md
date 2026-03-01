@@ -11,7 +11,7 @@ It maps the mission and strategic pillars in `README.md` to:
 
 Related docs:
 
-- Decision rubric and go/no-go gates: `docs/backlog_decision_rules.md`
+- Decision rubric and go/no-go gates: `docs/development/backlog_decision_rules.md`
 - Evidence appendix: `reference/literature_evidence_2026.md`
 - System behavior walkthrough: `docs/how-it-works.md`
 - Output contract: `docs/output-format.md`
@@ -25,7 +25,7 @@ Related docs:
 
 ## Canonical Planning Metadata
 
-`docs/roadmap.md` is the single source of truth for planning state. Every active item is tracked here with:
+`docs/development/roadmap.md` is the single source of truth for planning state. Every active item is tracked here with:
 
 - status and milestone lane
 - priority rank
@@ -251,7 +251,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: provide configurable missing-data mechanisms with deterministic seeded behavior and benchmark-time acceptance/runtime guardrails.
 - Delivered scope:
-  - `DatasetConfig` supports missingness controls (`missing_rate`, mechanism, MAR/MNAR scales). See [how-it-works.md](how-it-works.md) for MCAR/MAR/MNAR mechanism definitions.
+  - `DatasetConfig` supports missingness controls (`missing_rate`, mechanism, MAR/MNAR scales). See [docs/how-it-works.md](../how-it-works.md) for MCAR/MAR/MNAR mechanism definitions.
   - `cauchy-gen generate` supports missingness CLI overrides.
   - Generation path injects deterministic missingness masks and emits per-bundle metadata.
   - Benchmark profiles emit `missingness_guardrails` including metadata coverage, realized-rate accuracy, and runtime degradation checks.
@@ -335,7 +335,7 @@ metadata JSON contract, and DAG lineage schema.
 - Milestone: `Now`
 - Mission alignment: foundation model pretraining
 - Pillar alignment: tabular realism
-- Goal: maintain and harden soft steering loop using existing diagnostics coverage targets. See [design-decisions.md](design-decisions.md) ADR 4 for the softmax selection rationale.
+- Goal: maintain and harden soft steering loop using existing diagnostics coverage targets. See [docs/design-decisions.md](../design-decisions.md) ADR 4 for the softmax selection rationale.
 - Repo touchpoints: `src/cauchy_generator/diagnostics/coverage.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`
 - Exit criteria:
   - Steering can be enabled/disabled without breaking existing flows.

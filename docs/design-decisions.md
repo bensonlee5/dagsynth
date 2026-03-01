@@ -306,7 +306,7 @@ ______________________________________________________________________
 ## Evolution Policy
 
 - These ADRs document the current baseline implementation and rationale.
-- Roadmap items may supersede ADR specifics; `docs/roadmap.md` is authoritative
+- Roadmap items may supersede ADR specifics; `development/roadmap.md` is authoritative
   for planned evolution.
 - When roadmap delivery changes a decision detail materially, update this file
   in the same PR and record the rationale.
