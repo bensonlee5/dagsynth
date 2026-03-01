@@ -49,9 +49,6 @@ curriculum:
 diagnostics:
   enabled: false
 
-steering:
-  enabled: false
-
 benchmark:
   profile_name: curriculum_smoke
   suite: smoke

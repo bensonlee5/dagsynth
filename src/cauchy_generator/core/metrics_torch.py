@@ -1,4 +1,4 @@
-"""Torch-native metric extraction for steering candidate scoring."""
+"""Torch-native metric extraction for diagnostics and generation telemetry."""
 
 from __future__ import annotations
 
@@ -22,13 +22,13 @@ from cauchy_generator.filtering import apply_torch_rf_filter
 from cauchy_generator.types import DatasetBundle
 
 
-def extract_steering_metrics(
+def extract_torch_metrics(
     bundle: DatasetBundle,
     *,
     target_metric_names: set[str],
     include_spearman: bool = False,
 ) -> dict[str, Any]:
-    """Extract the metric subset needed for steering without NumPy conversion."""
+    """Extract a metric subset directly from torch tensors without NumPy conversion."""
 
     x_train = _as_2d_float_tensor(bundle.X_train, name="X_train")
     x_test = _as_2d_float_tensor(bundle.X_test, name="X_test")

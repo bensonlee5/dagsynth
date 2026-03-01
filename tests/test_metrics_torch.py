@@ -6,7 +6,7 @@ import pytest
 
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_one
-from cauchy_generator.core.steering_metrics import extract_steering_metrics
+from cauchy_generator.core.metrics_torch import extract_torch_metrics
 from cauchy_generator.diagnostics import extract_dataset_metrics
 from cauchy_generator.diagnostics.types import DatasetMetrics
 
@@ -26,14 +26,14 @@ def _tiny_config(task: str) -> GeneratorConfig:
 
 
 @pytest.mark.parametrize("task", ["classification", "regression"])
-def test_extract_steering_metrics_near_parity_with_diagnostics(task: str) -> None:
+def test_extract_torch_metrics_near_parity_with_diagnostics(task: str) -> None:
     cfg = _tiny_config(task)
     bundle = generate_one(cfg, seed=17, device="cpu")
 
     metric_names = {
         field_info.name for field_info in fields(DatasetMetrics) if field_info.name != "task"
     }
-    steering_metrics = extract_steering_metrics(
+    torch_metrics = extract_torch_metrics(
         bundle,
         target_metric_names=metric_names,
         include_spearman=True,
@@ -42,7 +42,7 @@ def test_extract_steering_metrics_near_parity_with_diagnostics(task: str) -> Non
 
     for metric_name in sorted(metric_names):
         expected = getattr(diagnostics, metric_name)
-        actual = steering_metrics[metric_name]
+        actual = torch_metrics[metric_name]
         if expected is None:
             assert actual is None
             continue
@@ -53,11 +53,11 @@ def test_extract_steering_metrics_near_parity_with_diagnostics(task: str) -> Non
             assert float(actual) == pytest.approx(float(expected), rel=1e-3, abs=1e-3)
 
 
-def test_steering_generation_does_not_call_numpy_diagnostics_extractor(
+def test_generation_does_not_call_numpy_diagnostics_extractor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _fail_extract(*_args, **_kwargs):
-        raise AssertionError("steering should not call diagnostics.extract_dataset_metrics")
+        raise AssertionError("generation should not call diagnostics.extract_dataset_metrics")
 
     monkeypatch.setattr(
         "cauchy_generator.diagnostics.metrics.extract_dataset_metrics", _fail_extract
@@ -65,13 +65,6 @@ def test_steering_generation_does_not_call_numpy_diagnostics_extractor(
     monkeypatch.setattr("cauchy_generator.diagnostics.extract_dataset_metrics", _fail_extract)
 
     cfg = _tiny_config("regression")
-    cfg.meta_feature_targets = {
-        "n_features": [8, 12, 1.0],
-        "pearson_abs_mean": [0.0, 1.0, 0.25],
-    }
-    cfg.steering.enabled = True
-    cfg.steering.max_attempts = 3
-    cfg.steering.temperature = 0.25
 
     bundle = generate_one(cfg, seed=2027, device="cpu")
-    assert bundle.metadata["steering"]["enabled"] is True
+    assert "steering" not in bundle.metadata

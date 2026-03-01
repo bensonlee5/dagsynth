@@ -95,7 +95,7 @@ ______________________________________________________________________
 
 The generator uses a tree of deterministic seeds: one base seed spawns child
 seeds for each component (graph sampling, function selection, data generation,
-steering, missingness, etc.). The derivation function must map
+missingness, curriculum staging, etc.). The derivation function must map
 `(base_seed, component_path)` to a child seed without collisions.
 
 ### Decision
@@ -131,54 +131,7 @@ with an explicit migration plan for compatibility.
 
 ______________________________________________________________________
 
-## 4. Softmax steering instead of hard rejection
-
-### Context
-
-Generated datasets need to cover target distributions of meta-features (e.g.,
-linearity, class balance, feature correlations). One approach is to generate
-candidates and reject those outside the target bands. The alternative is to
-score candidates and select probabilistically.
-
-### Decision
-
-The steering system generates multiple candidates per dataset slot, scores
-each candidate against target meta-feature bands, and selects via softmax
-(temperature-scaled multinomial sampling) with under-coverage reweighting.
-
-This describes the current selection policy and can evolve as long as
-steering remains opt-in and benchmark-guarded.
-
-### Rationale
-
-- **No wasted budget** — hard rejection discards all work on "close but not
-  quite" candidates. With softmax, every candidate has a nonzero selection
-  probability proportional to how well it fits.
-- **Exploration** — even a poor-scoring candidate can be selected, preventing
-  the system from getting stuck in narrow meta-feature corridors.
-- **Tunable greediness** — the temperature parameter controls the tradeoff:
-  low temperature approximates argmin (greedy), high temperature approximates
-  uniform random.
-- **Adaptive reweighting** — metrics with low in-band coverage get
-  progressively higher effective weight in the scoring function. This creates
-  a feedback loop that pushes under-represented regions toward the target
-  without explicit constraint solving.
-
-### Alternatives considered
-
-- **Hard accept/reject** — simple to implement but wasteful. At tight target
-  bands, rejection rates can exceed 90%.
-- **Constrained optimization** — could directly solve for parameters that
-  produce target meta-features, but the generation pipeline is not
-  differentiable end-to-end (discrete graph structure, categorical
-  converters).
-- **Importance sampling** — reweight after generation. This preserves all
-  candidates but requires maintaining and normalizing weights, which is more
-  complex than softmax selection.
-
-______________________________________________________________________
-
-## 5. `slots=True` dataclasses
+## 4. `slots=True` dataclasses
 
 ### Context
 
@@ -214,7 +167,7 @@ This is a codebase-wide convention today, not a protocol contract.
 
 ______________________________________________________________________
 
-## 6. Current function-family baseline
+## 5. Current function-family baseline
 
 ### Context
 
@@ -259,7 +212,7 @@ Family and parameterization expansion is an explicit roadmap direction
 
 ______________________________________________________________________
 
-## 7. Noise family selection for RD-012 phase 1
+## 6. Noise family selection for RD-012 phase 1
 
 ### Context
 

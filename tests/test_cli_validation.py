@@ -607,60 +607,10 @@ def test_generate_cli_rejects_invalid_missingness_scalar(flag: str, value: str) 
     assert int(exc.value.code) == 2
 
 
-def test_generate_cli_applies_meta_target_override_and_enables_steering(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    def _stub_generate_batch_iter(
-        config,
-        *,
-        num_datasets: int,
-        seed: int | None = None,
-        device: str | None = None,
-    ):
-        captured["steering_enabled"] = config.steering.enabled
-        captured["meta_feature_targets"] = config.meta_feature_targets
-        _ = seed
-        _ = device
-        for _ in range(num_datasets):
-            yield object()
-
-    monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
-
-    code = main(
-        [
-            "generate",
-            "--config",
-            "configs/default.yaml",
-            "--num-datasets",
-            "1",
-            "--device",
-            "cpu",
-            "--meta-target",
-            "linearity_proxy=0.2:0.8:2.5",
-            "--no-hardware-aware",
-            "--no-write",
-        ]
-    )
-    assert code == 0
-    assert captured["steering_enabled"] is True
-    assert captured["meta_feature_targets"]["linearity_proxy"] == [0.2, 0.8, 2.5]
-
-
 @pytest.mark.parametrize(
-    "meta_target",
-    [
-        "linearity_proxy",
-        "linearity_proxy=0.2",
-        "linearity_proxy=low:0.8",
-        "linearity_proxy=0.2:0.8:0",
-        "linearity_proxy=0.2:0.8:-1",
-        "linearity_proxy=0.2:0.8:inf",
-        "unknown_metric=0.1:0.9",
-    ],
+    "flag_args", [["--steer-meta"], ["--meta-target", "linearity_proxy=0.2:0.8"]]
 )
-def test_generate_cli_rejects_invalid_meta_target_override(meta_target: str) -> None:
+def test_generate_cli_rejects_removed_steering_flags(flag_args: list[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         main(
             [
@@ -669,23 +619,21 @@ def test_generate_cli_rejects_invalid_meta_target_override(meta_target: str) -> 
                 "configs/default.yaml",
                 "--num-datasets",
                 "1",
-                "--meta-target",
-                meta_target,
+                *flag_args,
                 "--no-write",
             ]
         )
     assert int(exc.value.code) == 2
 
 
-def test_generate_cli_rejects_task_incompatible_meta_target(
-    tmp_path,
-) -> None:
+def test_generate_cli_hard_fails_on_legacy_steering_config_key(tmp_path) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.dataset.task = "regression"
+    cfg_dict = cfg.to_dict()
+    cfg_dict["steering"] = {"enabled": True}
     config_path = tmp_path / "regression.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(cfg_dict), encoding="utf-8")
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(ValueError, match="Config key 'steering' is no longer supported"):
         main(
             [
                 "generate",
@@ -693,29 +641,22 @@ def test_generate_cli_rejects_task_incompatible_meta_target(
                 str(config_path),
                 "--num-datasets",
                 "1",
-                "--meta-target",
-                "class_entropy=0.2:1.0",
                 "--no-write",
             ]
         )
-    assert int(exc.value.code) == 2
 
 
-def test_generate_cli_rejects_unknown_config_target_key_when_steering_enabled(
-    tmp_path,
-) -> None:
+def test_generate_cli_hard_fails_on_legacy_top_level_meta_targets(tmp_path) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.dataset.task = "regression"
-    cfg.runtime.device = "cpu"
-    cfg.steering.enabled = True
-    cfg.meta_feature_targets = {
-        "linearity_proxy": [0.2, 0.8, 1.0],
-        "linarity_proxy": [0.2, 0.8, 1.0],
-    }
+    cfg_dict = cfg.to_dict()
+    cfg_dict["meta_feature_targets"] = {"linearity_proxy": [0.2, 0.8]}
     config_path = tmp_path / "unknown_target.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(cfg_dict), encoding="utf-8")
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(
+        ValueError,
+        match="Top-level config key 'meta_feature_targets' is no longer supported",
+    ):
         main(
             [
                 "generate",
@@ -723,13 +664,9 @@ def test_generate_cli_rejects_unknown_config_target_key_when_steering_enabled(
                 str(config_path),
                 "--num-datasets",
                 "1",
-                "--device",
-                "cpu",
-                "--no-hardware-aware",
                 "--no-write",
             ]
         )
-    assert int(exc.value.code) == 2
 
 
 def test_generate_cli_missingness_no_write_end_to_end(tmp_path) -> None:

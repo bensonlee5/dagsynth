@@ -133,11 +133,9 @@ Interpretation:
   (`edge_odds_multiplier`, `noise_variance_multiplier`,
   `mechanism_nonlinear_mass`) used by diagnostics coverage summaries.
 
-### 5. Optional steering and diagnostics
+### 5. Optional diagnostics
 
-- Steering (if enabled) generates multiple candidates per output slot,
-  scores distance-to-target-band, and selects via temperature-scaled softmax.
-- Diagnostics computes broader reporting metrics over emitted bundles and writes
+- Diagnostics computes reporting metrics over emitted bundles and writes
   run-level summaries.
 
 ## DAG/node data flow
@@ -166,12 +164,9 @@ flowchart TB
     Assemble --> Out["return dataset tensors + filter details"]
 ```
 
-## Steering, diagnostics, and benchmark guardrails
+## Diagnostics and benchmark guardrails
 
-Steering and diagnostics are related but distinct:
-
-- Steering is selection-time logic inside generation.
-- Diagnostics is reporting-time aggregation over emitted bundles.
+Diagnostics is reporting-time aggregation over emitted bundles.
 
 Benchmark mode adds guardrails to detect runtime/metadata regressions and emits
 sections such as `missingness_guardrails`, `lineage_guardrails`, and
@@ -213,16 +208,11 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 - **shift profile**: opt-in distribution-drift control over graph, mechanism,
   and noise sampling axes.
 
-### Steering and metrics
+### Diagnostics
 
-- **steering**: candidate-based selection toward target meta-feature bands.
-- **steering candidate**: one generated candidate competing for a single slot.
-- **target band**: desired `[lo, hi]` interval for a metric plus weight.
-- **softmax selection**: probabilistic candidate choice from scores.
-- **temperature**: softmax sharpness control.
-- **under-coverage reweighting**: increases weight for under-covered metrics.
-- **meta-feature**: scalar dataset statistic used for reporting/steering.
-- **linearity proxy / nonlinearity proxy / SNR proxy**: key steering metrics.
+- **target band**: desired `[lo, hi]` interval for diagnostics coverage checks.
+- **meta-feature**: scalar dataset statistic used for reporting.
+- **linearity proxy / nonlinearity proxy / SNR proxy**: key diagnostics metrics.
 
 ### Missingness
 
@@ -253,7 +243,6 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 - End-user command workflows: [usage-guide.md](usage-guide.md)
 - Feature deep dives:
   [features/diagnostics.md](features/diagnostics.md),
-  [features/steering.md](features/steering.md),
   [features/missingness.md](features/missingness.md),
   [features/curriculum.md](features/curriculum.md),
   [features/many-class.md](features/many-class.md),

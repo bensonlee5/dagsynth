@@ -24,9 +24,6 @@ output:
 diagnostics:
   enabled: false
 
-steering:
-  enabled: false
-
 benchmark:
   profile_name: many_class_smoke
   suite: smoke

@@ -22,8 +22,5 @@ output:
 diagnostics:
   enabled: false
 
-steering:
-  enabled: false
-
 filter:
   enabled: false

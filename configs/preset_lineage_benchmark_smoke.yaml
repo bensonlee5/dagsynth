@@ -20,9 +20,6 @@ output:
 diagnostics:
   enabled: false
 
-steering:
-  enabled: false
-
 benchmark:
   profile_name: lineage_smoke
   suite: smoke

@@ -1,5 +1,4 @@
 seed: 1
-meta_feature_targets: {}
 dataset:
   task: classification
   n_train: 768
@@ -36,10 +35,6 @@ diagnostics:
   max_values_per_metric: 50000
   meta_feature_targets: {}
   out_dir: null
-steering:
-  enabled: false
-  max_attempts: 3
-  temperature: 0.35
 benchmark:
   profile_name: medium_cuda
   suite: standard
