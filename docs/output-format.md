@@ -181,7 +181,9 @@ Present only for classification datasets.
 
 ### Fixed-layout metadata (optional)
 
-Present only for outputs emitted by fixed-layout batch APIs.
+Present only for outputs emitted by fixed-layout batch APIs. These bundles
+share one sampled layout and preserve emitted column alignment (feature count,
+column order, and lineage feature-to-node mapping).
 
 | Key                | Type | Description                                      |
 | ------------------ | ---- | ------------------------------------------------ |

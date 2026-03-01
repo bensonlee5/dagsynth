@@ -52,7 +52,8 @@ ______________________________________________________________________
 
 ## 3. Fixed-layout batch generation (Python API)
 
-Use a fixed layout plan when you want many datasets with consistent structure.
+Use a fixed layout plan when you want many datasets with consistent structure
+and aligned emitted columns across the batch.
 
 ```python
 from cauchy_generator import (

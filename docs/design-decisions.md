@@ -154,6 +154,9 @@ Default `generate_batch(_iter)` behavior remains layout-dynamic.
   of relying on hidden coupling in default generation.
 - **Lower branching complexity** — generation core stays simple; layout reuse is
   isolated in a dedicated path.
+- **Emitted-schema contract** — fixed-layout batches guarantee aligned emitted
+  columns (feature count/order and lineage mapping), so index-based downstream
+  consumers can safely stack bundles.
 - **Deterministic reproducibility** — one plan seed yields one stable layout
   signature, while dataset seeds still vary value realizations.
 

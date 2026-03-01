@@ -205,6 +205,7 @@ def _generate_torch(
     n_test: int,
     curriculum: dict[str, Any],
     shift_params: ShiftRuntimeParams | None = None,
+    preserve_feature_schema: bool = False,
 ) -> DatasetBundle:
     """Generate one dataset in Torch while preserving postprocess/filter contracts."""
 
@@ -261,6 +262,7 @@ def _generate_torch(
             generator,
             device,
             return_feature_index_map=True,
+            preserve_feature_schema=preserve_feature_schema,
         )
         x_train, x_test, missingness_summary = inject_missingness(
             x_train,
@@ -439,6 +441,7 @@ def _generate_one_with_resolved_layout(
     resolved_device: str,
     curriculum: dict[str, Any],
     layout: dict[str, Any],
+    preserve_feature_schema: bool = False,
 ) -> DatasetBundle:
     """Generate one dataset from an already-resolved curriculum/layout context."""
 
@@ -460,6 +463,7 @@ def _generate_one_with_resolved_layout(
                 n_test=n_test,
                 curriculum=curriculum,
                 shift_params=shift_params,
+                preserve_feature_schema=preserve_feature_schema,
             )
         except Exception:
             # Keep auto mode robust on partially supported MPS runtimes by retrying on CPU.
@@ -472,6 +476,7 @@ def _generate_one_with_resolved_layout(
                 n_test=n_test,
                 curriculum=curriculum,
                 shift_params=shift_params,
+                preserve_feature_schema=preserve_feature_schema,
             )
 
     return _generate_torch(
@@ -483,6 +488,7 @@ def _generate_one_with_resolved_layout(
         n_test=n_test,
         curriculum=curriculum,
         shift_params=shift_params,
+        preserve_feature_schema=preserve_feature_schema,
     )
 
 
@@ -629,6 +635,38 @@ def _annotate_fixed_layout_metadata(bundle: DatasetBundle, *, plan: FixedLayoutP
     bundle.metadata["layout_signature"] = str(plan.layout_signature)
 
 
+def _extract_emitted_schema_signature(
+    bundle: DatasetBundle,
+) -> tuple[int, tuple[str, ...], tuple[int, ...]]:
+    """Extract the emitted schema signature for fixed-layout contract checks."""
+
+    n_features = int(bundle.metadata.get("n_features", int(bundle.X_train.shape[1])))
+    feature_types = tuple(str(t) for t in bundle.feature_types)
+    if len(feature_types) != n_features:
+        raise ValueError(
+            "Fixed-layout bundle emitted inconsistent feature schema metadata: "
+            f"n_features={n_features}, feature_types_len={len(feature_types)}."
+        )
+
+    lineage = bundle.metadata.get("lineage")
+    if not isinstance(lineage, dict):
+        raise ValueError("Fixed-layout bundle is missing lineage metadata.")
+    assignments = lineage.get("assignments")
+    if not isinstance(assignments, dict):
+        raise ValueError("Fixed-layout bundle is missing lineage assignments metadata.")
+    raw_feature_to_node = assignments.get("feature_to_node")
+    if not isinstance(raw_feature_to_node, list):
+        raise ValueError("Fixed-layout bundle is missing lineage assignments.feature_to_node.")
+    feature_to_node = tuple(int(value) for value in raw_feature_to_node)
+    if len(feature_to_node) != n_features:
+        raise ValueError(
+            "Fixed-layout bundle emitted inconsistent lineage feature mapping: "
+            f"n_features={n_features}, feature_to_node_len={len(feature_to_node)}."
+        )
+
+    return n_features, feature_types, feature_to_node
+
+
 def generate_batch_fixed_layout_iter(
     config: GeneratorConfig,
     *,
@@ -645,6 +683,7 @@ def generate_batch_fixed_layout_iter(
 
     run_seed = seed if seed is not None else config.seed
     manager = SeedManager(run_seed)
+    expected_schema: tuple[int, tuple[str, ...], tuple[int, ...]] | None = None
     for i in range(num_datasets):
         dataset_seed = manager.child("dataset", i)
         bundle = _generate_one_with_resolved_layout(
@@ -654,8 +693,17 @@ def generate_batch_fixed_layout_iter(
             resolved_device=plan.resolved_device,
             curriculum=plan.curriculum,
             layout=plan.layout,
+            preserve_feature_schema=True,
         )
         _annotate_fixed_layout_metadata(bundle, plan=plan)
+        schema = _extract_emitted_schema_signature(bundle)
+        if expected_schema is None:
+            expected_schema = schema
+        elif schema != expected_schema:
+            raise ValueError(
+                "Fixed-layout schema mismatch: emitted dataset does not match "
+                "the first fixed-layout bundle schema."
+            )
         yield bundle
 
 

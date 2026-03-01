@@ -138,7 +138,8 @@ Interpretation:
 - Diagnostics computes reporting metrics over emitted bundles and writes
   run-level summaries.
 - Fixed-layout API mode samples one reusable curriculum/layout plan and emits
-  many datasets that share structure while preserving per-dataset randomness.
+  many datasets that share structure while preserving per-dataset randomness
+  and emitted column alignment.
 
 ## DAG/node data flow
 
@@ -216,7 +217,7 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 ### Diagnostics and fixed layout
 
 - **fixed layout plan**: reusable sampled curriculum/layout used for many
-  generated datasets.
+  generated datasets with aligned emitted schema.
 - **layout signature**: deterministic fingerprint identifying a fixed layout.
 - **target band**: desired `[lo, hi]` interval for diagnostics coverage checks.
 - **meta-feature**: scalar dataset statistic used for reporting.

@@ -386,8 +386,10 @@ def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
         _device,
         *,
         return_feature_index_map=False,
+        preserve_feature_schema=False,
     ):
         assert return_feature_index_map is True
+        assert preserve_feature_schema is False
         index_map = [2, 0, 3]
         reordered_types = [feature_types[i] for i in index_map]
         return (
@@ -457,14 +459,54 @@ def test_generate_batch_fixed_layout_enforces_layout_reuse() -> None:
     n_features = int(batch[0].metadata["n_features"])
     feature_types = list(batch[0].feature_types)
     layout_signature = str(batch[0].metadata["layout_signature"])
+    feature_to_node = tuple(batch[0].metadata["lineage"]["assignments"]["feature_to_node"])
     for bundle in batch:
         assert bundle.metadata["layout_mode"] == "fixed"
         assert int(bundle.metadata["layout_plan_seed"]) == plan.plan_seed
         assert str(bundle.metadata["layout_signature"]) == layout_signature
         assert int(bundle.metadata["n_features"]) == n_features
         assert list(bundle.feature_types) == feature_types
+        assert (
+            tuple(bundle.metadata["lineage"]["assignments"]["feature_to_node"]) == feature_to_node
+        )
     assert int(batch[0].metadata["seed"]) != int(batch[1].metadata["seed"])
     assert not torch.equal(batch[0].X_train, batch[1].X_train)
+
+
+def test_generate_batch_fixed_layout_raises_on_schema_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=11, device="cpu")
+    calls: dict[str, int] = {"count": 0}
+
+    def _stub_generate_one_with_resolved_layout(*_args, **_kwargs) -> DatasetBundle:
+        calls["count"] += 1
+        n_features = 3 if calls["count"] == 1 else 2
+        return DatasetBundle(
+            X_train=torch.zeros((4, n_features), dtype=torch.float32),
+            y_train=torch.zeros(4, dtype=torch.float32),
+            X_test=torch.zeros((2, n_features), dtype=torch.float32),
+            y_test=torch.zeros(2, dtype=torch.float32),
+            feature_types=["num"] * n_features,
+            metadata={
+                "n_features": n_features,
+                "lineage": {
+                    "assignments": {
+                        "feature_to_node": list(range(n_features)),
+                        "target_to_node": 0,
+                    }
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        "cauchy_generator.core.dataset._generate_one_with_resolved_layout",
+        _stub_generate_one_with_resolved_layout,
+    )
+
+    with pytest.raises(ValueError, match="Fixed-layout schema mismatch"):
+        list(generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=2, seed=123))
 
 
 def test_generate_one_returns_torch_tensors_on_cpu() -> None:
@@ -801,8 +843,10 @@ def test_fixed_curriculum_stage_enforces_feature_and_node_bounds(
         _device,
         *,
         return_feature_index_map=False,
+        preserve_feature_schema=False,
     ):
         assert return_feature_index_map is True
+        assert preserve_feature_schema is False
         index_map = list(range(int(x_train.shape[1])))
         return x_train, y_train, x_test, y_test, list(feature_types), index_map
 
@@ -858,8 +902,10 @@ def test_curriculum_off_ignores_stagewise_feature_and_node_bounds(
         _device,
         *,
         return_feature_index_map=False,
+        preserve_feature_schema=False,
     ):
         assert return_feature_index_map is True
+        assert preserve_feature_schema is False
         index_map = list(range(int(x_train.shape[1])))
         return x_train, y_train, x_test, y_test, list(feature_types), index_map
 
