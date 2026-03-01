@@ -1,4 +1,4 @@
-"""Metadata builders for dataset lineage and curriculum diagnostics."""
+"""Metadata builders for dataset lineage and shift diagnostics."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Any
 
 import torch
 
-from cauchy_generator.core.curriculum import _CURRICULUM_MONOTONICITY_AXES
 from cauchy_generator.core.shift import ShiftRuntimeParams, mechanism_nonlinear_mass
 from cauchy_generator.io.lineage_schema import (
     LINEAGE_SCHEMA_NAME,
@@ -50,45 +49,6 @@ def _build_lineage_metadata(
         },
     }
     validate_lineage_payload(payload)
-    return payload
-
-
-def _build_curriculum_metadata(
-    curriculum: dict[str, Any],
-    *,
-    layout: dict[str, Any],
-    n_train: int,
-    n_test: int,
-    n_features: int,
-) -> dict[str, Any]:
-    """Attach stage complexity diagnostics to emitted curriculum metadata."""
-
-    payload = dict(curriculum)
-    stage_bounds_payload: dict[str, int | None] = {
-        "n_features_min": None,
-        "n_features_max": None,
-        "n_nodes_min": None,
-        "n_nodes_max": None,
-        "depth_min": None,
-        "depth_max": None,
-    }
-    raw_stage_bounds = layout.get("stage_bounds")
-    if isinstance(raw_stage_bounds, dict):
-        for key in stage_bounds_payload:
-            raw_value = raw_stage_bounds.get(key)
-            stage_bounds_payload[key] = int(raw_value) if raw_value is not None else None
-
-    payload["realized_complexity"] = {
-        "n_rows_total": int(n_train + n_test),
-        "n_train": int(n_train),
-        "n_test": int(n_test),
-        "n_features": int(n_features),
-        "graph_nodes": int(layout["graph_nodes"]),
-        "graph_depth_nodes": int(layout["graph_depth_nodes"]),
-        "graph_edge_density": float(layout["graph_edge_density"]),
-    }
-    payload["stage_bounds"] = stage_bounds_payload
-    payload["monotonicity_axes"] = list(_CURRICULUM_MONOTONICITY_AXES)
     return payload
 
 

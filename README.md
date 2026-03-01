@@ -42,8 +42,7 @@ cauchy-gen benchmark --help
 
 - Diagnostics: exposes per-dataset artifacts so you can verify coverage, inspect drift, and debug generation outcomes.
 - Missingness (MCAR/MAR/MNAR): injects deterministic null patterns to evaluate models under realistic incomplete-data regimes.
-- Fixed-layout batch generation: reuse one sampled layout/curriculum across many datasets for easier high-throughput generation and analysis.
-- Curriculum staging: lets you scale complexity from easier to harder regimes in a controlled, reproducible way.
+- Fixed-layout batch generation: reuse one sampled layout across many datasets for easier high-throughput generation and analysis.
 - Many-class workflows: stress-tests classification behavior near the current rollout envelope with stable preset and benchmark paths.
 - Shift/drift controls: introduces interpretable graph/mechanism/noise drift for robustness and distribution-shift evaluation.
 - Benchmark guardrails: provides repeatable runtime and metadata checks for local validation and CI-style regression gating.
@@ -56,7 +55,6 @@ cauchy-gen benchmark --help
 - Feature guides:
   [diagnostics](docs/features/diagnostics.md),
   [missingness](docs/features/missingness.md),
-  [curriculum](docs/features/curriculum.md),
   [many-class](docs/features/many-class.md),
   [shift](docs/features/shift.md),
   [benchmark guardrails](docs/features/benchmark-guardrails.md)
@@ -76,7 +74,7 @@ The high-level logic that bridges CLI/API requests to the generation engine.
 
 Follow this sequence to understand how a latent causal structure becomes a realized dataset.
 
-- **Structure ([`core/curriculum.py`](src/cauchy_generator/core/curriculum.py) & [`graph/`](src/cauchy_generator/graph/)):** Defines the complexity stage and samples the underlying Directed Acyclic Graph (DAG).
+- **Structure ([`graph/`](src/cauchy_generator/graph/)):** Samples the underlying Directed Acyclic Graph (DAG).
 - **Layout ([`core/layout.py`](src/cauchy_generator/core/layout.py)):** Maps features and targets to DAG nodes and assigns data types.
 - **Execution ([`core/node_pipeline.py`](src/cauchy_generator/core/node_pipeline.py)):** Processes nodes in topological order, applying functional relationships.
 - **Mechanisms ([`functions/`](src/cauchy_generator/functions/)):** Contains the mathematical families (linear, non-linear, mixture) that define how nodes interact.

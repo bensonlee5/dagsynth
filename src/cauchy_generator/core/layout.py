@@ -8,14 +8,20 @@ from typing import Any
 import torch
 
 from cauchy_generator.config import GeneratorConfig
-from cauchy_generator.core.curriculum import (
-    _resolve_stagewise_layout_bounds,
-    _sample_log_uniform_int,
-    _sample_stagewise_graph,
-)
+from cauchy_generator.graph import dag_edge_density, dag_longest_path_nodes, sample_cauchy_dag
 from cauchy_generator.core.shift import resolve_shift_runtime_params
 from cauchy_generator.core.node_pipeline import ConverterSpec
 from cauchy_generator.sampling import CorrelatedSampler
+
+
+def _sample_log_uniform_int(generator: torch.Generator, device: str, low: int, high: int) -> int:
+    """Sample an integer from a log-uniform range [low, high]."""
+
+    log_low = math.log(float(low))
+    log_high = math.log(float(high))
+    u = torch.empty(1, device=device).uniform_(log_low, log_high, generator=generator)
+    sampled = int(math.exp(u.item()))
+    return max(low, min(high, sampled))
 
 
 def _sample_node_count(
@@ -48,17 +54,14 @@ def _sample_layout(
     config: GeneratorConfig,
     generator: torch.Generator,
     device: str,
-    *,
-    curriculum: dict[str, Any],
 ) -> dict[str, Any]:
     """Sample dataset layout, graph, and node assignments for one dataset instance."""
 
     shift_params = resolve_shift_runtime_params(config)
-    bounds = _resolve_stagewise_layout_bounds(config, curriculum)
     n_features = int(
         torch.randint(
-            bounds.feature_min,
-            bounds.feature_max + 1,
+            int(config.dataset.n_features_min),
+            int(config.dataset.n_features_max) + 1,
             (1,),
             generator=generator,
         ).item()
@@ -103,19 +106,8 @@ def _sample_layout(
     )
     n_classes = max(2, n_classes)
 
-    effective_node_min_for_sampling = bounds.node_min
-    if bounds.depth_min is not None:
-        effective_node_min_for_sampling = max(
-            effective_node_min_for_sampling, int(bounds.depth_min)
-        )
-    sampled_node_min = max(2, int(effective_node_min_for_sampling))
-    sampled_node_max = max(2, int(bounds.node_max))
-    if sampled_node_min > sampled_node_max:
-        raise ValueError(
-            "Invalid effective node/depth bounds for graph sampling: "
-            f"n_nodes_min={sampled_node_min} > n_nodes_max={sampled_node_max} "
-            f"(stage={bounds.stage}, depth_min={bounds.depth_min})."
-        )
+    sampled_node_min = max(2, int(config.graph.n_nodes_min))
+    sampled_node_max = max(sampled_node_min, int(config.graph.n_nodes_max))
 
     n_nodes = _sample_node_count(
         sampled_node_min,
@@ -123,15 +115,14 @@ def _sample_layout(
         generator,
         device,
     )
-    adjacency, graph_depth_nodes, graph_edge_density = _sample_stagewise_graph(
+    adjacency = sample_cauchy_dag(
         n_nodes,
-        bounds.stage,
-        bounds.depth_min,
-        bounds.depth_max,
         generator,
         device,
-        edge_logit_bias_shift=float(shift_params.edge_logit_bias_shift),
+        edge_logit_bias=float(shift_params.edge_logit_bias_shift),
     )
+    graph_depth_nodes = dag_longest_path_nodes(adjacency)
+    graph_edge_density = dag_edge_density(adjacency)
     feature_node_assignment = _sample_assignments(n_features, n_nodes, generator, device)
     target_node_assignment = _sample_assignments(1, n_nodes, generator, device)[0]
 
@@ -151,15 +142,6 @@ def _sample_layout(
         "graph_edges": int(adjacency.sum().item()),
         "graph_depth_nodes": int(graph_depth_nodes),
         "graph_edge_density": float(graph_edge_density),
-        "stage_bounds": {
-            # Report effective sampling bounds after depth-derived clamping.
-            "n_features_min": int(bounds.feature_min),
-            "n_features_max": int(bounds.feature_max),
-            "n_nodes_min": int(sampled_node_min),
-            "n_nodes_max": int(sampled_node_max),
-            "depth_min": int(bounds.depth_min) if bounds.depth_min is not None else None,
-            "depth_max": int(bounds.depth_max) if bounds.depth_max is not None else None,
-        },
         "adjacency": adjacency,
         "feature_node_assignment": feature_node_assignment,
         "target_node_assignment": target_node_assignment,

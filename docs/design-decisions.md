@@ -37,8 +37,8 @@ future roadmap work while preserving backward-compatible defaults.
 - **Node-level heterogeneity** — separate per-row (B_i) and per-column (C_j)
   terms let individual nodes have distinct connectivity profiles.
 - **Global sparsity control** — the `edge_logit_bias` additive term shifts
-  the entire probability surface up or down, which the curriculum system uses
-  to produce sparser graphs at lower stages and denser ones at higher stages.
+  the entire probability surface up or down, enabling controlled graph-density
+  variation across generated datasets.
 - **Theoretical grounding** — directly implements the mechanism described in
   TabICLv2 Appendix E.4.
 
@@ -136,7 +136,7 @@ ______________________________________________________________________
 ### Context
 
 Some workflows need many datasets with the same sampled structure (feature
-types, DAG shape, node assignments, and curriculum row counts) so downstream
+types, DAG shape, node assignments, and split sizes) so downstream
 analysis can isolate value-level variation from layout-level variation.
 
 ### Decision

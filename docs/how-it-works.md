@@ -20,7 +20,7 @@ features/targets, and applying quality/realism controls.
 
 1. Load config and resolve hardware profile.
 1. Derive deterministic seeds for each dataset and component.
-1. Sample curriculum stage and dataset layout.
+1. Sample dataset layout.
 1. Sample a Cauchy DAG and node assignments.
 1. Execute node pipelines in topological order to produce latent outputs.
 1. Convert node outputs into observable `X` and `y`.
@@ -48,7 +48,7 @@ flowchart LR
         Cfg["Load GeneratorConfig"] --> Tune["detect_hardware + apply_hardware_profile"]
         Tune --> Loop["generate_batch_iter"]
         Loop --> Seed["derive dataset/component seeds"]
-        Seed --> Layout["sample curriculum + layout"]
+        Seed --> Layout["sample layout"]
         Layout --> DAG["sample DAG + assignments"]
         DAG --> Exec["run node pipelines"]
         Exec --> Filter["learnability filter"]
@@ -85,9 +85,7 @@ flowchart LR
 
 ### 2. Layout and structure sampling
 
-- `_sample_curriculum` (current baseline) picks stage constraints (or stage
-  off/auto modes).
-- `_sample_layout` decides row/feature/node/depth structure and feature/target
+- `_sample_layout` decides feature/node/depth structure and feature/target
   assignment surfaces.
 - `sample_cauchy_dag` builds an upper-triangular DAG with Cauchy-based edge
   logits.
@@ -137,7 +135,7 @@ Interpretation:
 
 - Diagnostics computes reporting metrics over emitted bundles and writes
   run-level summaries.
-- Fixed-layout API mode samples one reusable curriculum/layout plan and emits
+- Fixed-layout API mode samples one reusable layout plan and emits
   many datasets that share structure while preserving per-dataset randomness
   and emitted column alignment.
 
@@ -176,7 +174,7 @@ Diagnostics and fixed-layout generation are related but distinct:
 
 Benchmark mode adds guardrails to detect runtime/metadata regressions and emits
 sections such as `missingness_guardrails`, `lineage_guardrails`, and
-`curriculum_guardrails`, and `shift_guardrails` when relevant to the run.
+`shift_guardrails` when relevant to the run.
 
 ## Glossary quick reference
 
@@ -206,9 +204,8 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 
 ### Complexity and quality
 
-- **curriculum**: staged complexity controls over generated datasets.
-- **curriculum stage**: fixed/auto/off mode and stage-specific complexity band.
-- **stage bounds**: min/max constraints for features, nodes, and depth.
+- **stage bounds**: effective min/max constraints for sampled features, nodes,
+  and depth in one layout draw.
 - **learnability filter**: random-forest-based gate for signal quality.
 - **wins ratio**: bootstrap fraction where model beats baseline.
 - **shift profile**: opt-in distribution-drift control over graph, mechanism,
@@ -216,7 +213,7 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 
 ### Diagnostics and fixed layout
 
-- **fixed layout plan**: reusable sampled curriculum/layout used for many
+- **fixed layout plan**: reusable sampled layout used for many
   generated datasets with aligned emitted schema.
 - **layout signature**: deterministic fingerprint identifying a fixed layout.
 - **target band**: desired `[lo, hi]` interval for diagnostics coverage checks.
@@ -253,7 +250,6 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 - Feature deep dives:
   [features/diagnostics.md](features/diagnostics.md),
   [features/missingness.md](features/missingness.md),
-  [features/curriculum.md](features/curriculum.md),
   [features/many-class.md](features/many-class.md),
   [features/shift.md](features/shift.md),
   [features/benchmark-guardrails.md](features/benchmark-guardrails.md)

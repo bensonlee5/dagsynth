@@ -13,7 +13,6 @@ from cauchy_generator.io.lineage_schema import validate_metadata_lineage
 
 def test_load_default_config() -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    assert cfg.curriculum_stage == "off"
     assert cfg.dataset.n_train > 0
     assert cfg.dataset.n_features_min <= cfg.dataset.n_features_max
     assert cfg.output.shard_size > 0
@@ -35,7 +34,6 @@ def test_load_default_config() -> None:
     assert cfg.dataset.missing_mar_observed_fraction == 0.5
     assert cfg.dataset.missing_mar_logit_scale == 1.0
     assert cfg.dataset.missing_mnar_logit_scale == 1.0
-    assert cfg.curriculum.stages == {}
 
 
 def test_default_config_metadata_is_compatible_with_optional_lineage() -> None:
@@ -167,230 +165,9 @@ def test_load_lineage_benchmark_smoke_preset() -> None:
     assert cfg.benchmark.latency_num_samples >= 5
 
 
-def test_load_curriculum_preset() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/curriculum_tabiclv2.yaml")
-    assert cfg.curriculum_stage == "auto"
-    assert cfg.dataset.n_train > 0
-    assert cfg.dataset.n_test > 0
-    assert cfg.curriculum.stages == {}
-
-
-def test_load_curriculum_stage_presets() -> None:
-    cfg_auto = GeneratorConfig.from_yaml("configs/preset_curriculum_auto_staged.yaml")
-    cfg_stage1 = GeneratorConfig.from_yaml("configs/preset_curriculum_stage1.yaml")
-    cfg_stage2 = GeneratorConfig.from_yaml("configs/preset_curriculum_stage2.yaml")
-    cfg_stage3 = GeneratorConfig.from_yaml("configs/preset_curriculum_stage3.yaml")
-    cfg_benchmark = GeneratorConfig.from_yaml("configs/preset_curriculum_benchmark_smoke.yaml")
-
-    assert cfg_auto.curriculum_stage == "auto"
-    assert cfg_stage1.curriculum_stage == 1
-    assert cfg_stage2.curriculum_stage == 2
-    assert cfg_stage3.curriculum_stage == 3
-    assert set(cfg_auto.curriculum.stages) == {1, 2, 3}
-    assert set(cfg_stage1.curriculum.stages) == {1, 2, 3}
-    assert set(cfg_stage2.curriculum.stages) == {1, 2, 3}
-    assert set(cfg_stage3.curriculum.stages) == {1, 2, 3}
-    assert set(cfg_benchmark.curriculum.stages) == {1, 2, 3}
-    assert cfg_benchmark.runtime.device == "cpu"
-    assert cfg_benchmark.benchmark.profile_name == "curriculum_smoke"
-    assert "curriculum_smoke" in cfg_benchmark.benchmark.profiles
-
-
-def test_load_many_class_presets() -> None:
-    cfg_generate = GeneratorConfig.from_yaml("configs/preset_many_class_generate_smoke.yaml")
-    cfg_benchmark = GeneratorConfig.from_yaml("configs/preset_many_class_benchmark_smoke.yaml")
-
-    assert cfg_generate.dataset.task == "classification"
-    assert cfg_generate.dataset.n_classes_min >= 24
-    assert cfg_generate.dataset.n_classes_max <= MAX_SUPPORTED_CLASS_COUNT
-    assert cfg_generate.filter.enabled is False
-
-    assert cfg_benchmark.dataset.task == "classification"
-    assert cfg_benchmark.dataset.n_classes_min >= 24
-    assert cfg_benchmark.dataset.n_classes_max <= MAX_SUPPORTED_CLASS_COUNT
-    assert cfg_benchmark.filter.enabled is False
-    assert cfg_benchmark.benchmark.profile_name == "many_class_smoke"
-    assert "many_class_smoke" in cfg_benchmark.benchmark.profiles
-
-
-def test_curriculum_stage_schema_parses_with_string_stage_keys() -> None:
-    cfg = GeneratorConfig.from_dict(
-        {
-            "dataset": {"n_features_min": 8, "n_features_max": 64},
-            "graph": {"n_nodes_min": 2, "n_nodes_max": 32},
-            "curriculum": {
-                "stages": {
-                    "1": {
-                        "n_features_min": 8,
-                        "n_features_max": 16,
-                        "n_nodes_min": 2,
-                        "n_nodes_max": 6,
-                    },
-                    "2": {
-                        "n_features_min": 16,
-                        "n_features_max": 32,
-                        "depth_min": 2,
-                        "depth_max": 5,
-                    },
-                    "3": {
-                        "n_features_min": 24,
-                        "n_features_max": 64,
-                        "n_nodes_min": 6,
-                        "n_nodes_max": 32,
-                    },
-                }
-            },
-        }
-    )
-    assert set(cfg.curriculum.stages) == {1, 2, 3}
-    stage2 = cfg.curriculum.stages[2]
-    assert stage2.depth_min == 2
-    assert stage2.depth_max == 5
-
-
-def test_curriculum_stage_schema_rejects_invalid_stage_key() -> None:
-    with pytest.raises(ValueError, match="Unsupported curriculum stage key '4'"):
-        GeneratorConfig.from_dict({"curriculum": {"stages": {"4": {"n_features_min": 8}}}})
-
-
-@pytest.mark.parametrize("stage_key", (1.9, "1.9"))
-def test_curriculum_stage_schema_rejects_decimal_stage_key(stage_key: object) -> None:
-    with pytest.raises(ValueError, match="Unsupported curriculum stage key"):
-        GeneratorConfig.from_dict({"curriculum": {"stages": {stage_key: {"n_features_min": 8}}}})
-
-
-def test_curriculum_stage_schema_rejects_non_mapping_stage_payload() -> None:
-    with pytest.raises(ValueError, match=r"curriculum\.stages\['1'\] must be a mapping"):
-        GeneratorConfig.from_dict({"curriculum": {"stages": {"1": 12}}})
-
-
-@pytest.mark.parametrize("bad_curriculum", ([1, 2], "bad"))
-def test_curriculum_schema_rejects_non_mapping_curriculum_payload(
-    bad_curriculum: object,
-) -> None:
-    with pytest.raises(ValueError, match=r"curriculum must be a mapping"):
-        GeneratorConfig.from_dict({"curriculum": bad_curriculum})
-
-
-def test_curriculum_stage_schema_rejects_invalid_stage_bounds() -> None:
-    with pytest.raises(ValueError, match=r"n_features_min must be <= n_features_max"):
-        GeneratorConfig.from_dict(
-            {
-                "curriculum": {"stages": {"1": {"n_features_min": 16, "n_features_max": 8}}},
-            }
-        )
-
-
-@pytest.mark.parametrize(
-    ("field_name", "value"),
-    (("n_features_min", 16.9), ("n_nodes_max", 12.1), ("depth_min", "2.4")),
-)
-def test_curriculum_stage_schema_rejects_non_integral_bounds(
-    field_name: str, value: float | str
-) -> None:
-    with pytest.raises(
-        ValueError, match=rf"curriculum\.stages\.\*\.{field_name} must be an integer"
-    ):
-        GeneratorConfig.from_dict({"curriculum": {"stages": {"1": {field_name: value}}}})
-
-
-def test_curriculum_stage_schema_rejects_stage_bounds_outside_global_ranges() -> None:
-    with pytest.raises(ValueError, match=r"n_nodes_max must be <= graph\.n_nodes_max"):
-        GeneratorConfig.from_dict(
-            {
-                "graph": {"n_nodes_min": 2, "n_nodes_max": 10},
-                "curriculum": {"stages": {"2": {"n_nodes_min": 2, "n_nodes_max": 12}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_rejects_features_min_above_global_max() -> None:
-    with pytest.raises(ValueError, match=r"n_features_min must be <= dataset\.n_features_max"):
-        GeneratorConfig.from_dict(
-            {
-                "dataset": {"n_features_min": 8, "n_features_max": 32},
-                "curriculum": {"stages": {"2": {"n_features_min": 64}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_rejects_features_max_below_global_min() -> None:
-    with pytest.raises(ValueError, match=r"n_features_max must be >= dataset\.n_features_min"):
-        GeneratorConfig.from_dict(
-            {
-                "dataset": {"n_features_min": 16, "n_features_max": 64},
-                "curriculum": {"stages": {"2": {"n_features_max": 8}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_rejects_nodes_min_above_global_max() -> None:
-    with pytest.raises(ValueError, match=r"n_nodes_min must be <= graph\.n_nodes_max"):
-        GeneratorConfig.from_dict(
-            {
-                "graph": {"n_nodes_min": 2, "n_nodes_max": 10},
-                "curriculum": {"stages": {"2": {"n_nodes_min": 12}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_rejects_nodes_max_below_global_min() -> None:
-    with pytest.raises(ValueError, match=r"n_nodes_max must be >= graph\.n_nodes_min"):
-        GeneratorConfig.from_dict(
-            {
-                "graph": {"n_nodes_min": 4, "n_nodes_max": 12},
-                "curriculum": {"stages": {"2": {"n_nodes_max": 2}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_rejects_depth_min_above_effective_nodes_max() -> None:
-    with pytest.raises(ValueError, match=r"depth_min must be <= effective graph\.n_nodes_max"):
-        GeneratorConfig.from_dict(
-            {
-                "graph": {"n_nodes_min": 2, "n_nodes_max": 8},
-                "curriculum": {"stages": {"2": {"n_nodes_max": 6, "depth_min": 7}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_rejects_depth_max_above_effective_nodes_max() -> None:
-    with pytest.raises(ValueError, match=r"depth_max must be <= effective graph\.n_nodes_max"):
-        GeneratorConfig.from_dict(
-            {
-                "graph": {"n_nodes_min": 2, "n_nodes_max": 8},
-                "curriculum": {"stages": {"2": {"n_nodes_max": 5, "depth_max": 6}}},
-            }
-        )
-
-
-def test_curriculum_stage_schema_accepts_depth_bound_with_node_floor() -> None:
-    cfg = GeneratorConfig.from_dict(
-        {
-            "graph": {"n_nodes_min": 1, "n_nodes_max": 1},
-            "curriculum": {"stages": {"2": {"depth_min": 2, "depth_max": 2}}},
-        }
-    )
-
-    stage = cfg.curriculum.stages[2]
-    assert stage.depth_min == 2
-    assert stage.depth_max == 2
-
-
-def test_curriculum_stage_schema_rejects_depth_bound_above_node_floor() -> None:
-    with pytest.raises(ValueError, match=r"depth_min must be <= effective graph\.n_nodes_max"):
-        GeneratorConfig.from_dict(
-            {
-                "graph": {"n_nodes_min": 1, "n_nodes_max": 1},
-                "curriculum": {"stages": {"2": {"depth_min": 3}}},
-            }
-        )
-
-
 def test_runtime_config_from_dict() -> None:
     cfg = GeneratorConfig.from_dict(
         {
-            "curriculum_stage": 2,
             "runtime": {
                 "device": "cpu",
                 "torch_dtype": "float64",
@@ -405,7 +182,6 @@ def test_runtime_config_from_dict() -> None:
             },
         }
     )
-    assert cfg.curriculum_stage == 2
     assert cfg.runtime.device == "cpu"
     assert cfg.runtime.torch_dtype == "float64"
     assert cfg.diagnostics.enabled is True
