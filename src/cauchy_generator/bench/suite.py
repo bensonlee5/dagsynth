@@ -17,7 +17,6 @@ from typing import Any
 import torch
 from cauchy_generator.bench.baseline import compare_summary_to_baseline
 from cauchy_generator.bench.constants import (
-    CURRICULUM_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE,
     DIAGNOSTICS_DUPLICATE_PROFILE_SUFFIX_BASE,
     KIB,
     LATENCY_SEED_OFFSET,
@@ -45,7 +44,6 @@ from cauchy_generator.bench.metrics import (
     summarize_latencies,
 )
 from cauchy_generator.bench.collectors import (
-    _CurriculumMetadataCollector,
     _MissingnessAcceptanceCollector,
     _ShiftGuardrailCollector,
     _compose_bundle_callback,
@@ -55,13 +53,11 @@ from cauchy_generator.bench.guardrails import (
     _collect_lineage_guardrails,
     _collect_guardrail_regression_issues,
     _issue_sort_key,
-    _resolve_curriculum_guardrail_context,
     _severity_from_thresholds,
     _status_from_issues,
 )
 from cauchy_generator.bench.throughput import run_throughput_benchmark
 from cauchy_generator.config import (
-    CURRICULUM_STAGE_OFF,
     GeneratorConfig,
     MISSINGNESS_MECHANISM_NONE,
     SHIFT_PROFILE_OFF,
@@ -386,19 +382,12 @@ def run_profile_benchmark(
         if missingness_enabled
         else None
     )
-    curriculum_enabled, curriculum_mode, curriculum_configured_stage = (
-        _resolve_curriculum_guardrail_context(config)
-    )
-    curriculum_metadata = (
-        _CurriculumMetadataCollector(expected_mode=curriculum_mode) if curriculum_enabled else None
-    )
     shift_enabled = _is_shift_enabled(config)
     shift_guardrails = _ShiftGuardrailCollector() if shift_enabled else None
 
     on_bundle_callback = _compose_bundle_callback(
         diagnostics_aggregator=diagnostics_aggregator,
         missingness_acceptance=missingness_acceptance,
-        curriculum_metadata=curriculum_metadata,
         shift_guardrails=shift_guardrails,
     )
 
@@ -419,7 +408,6 @@ def run_profile_benchmark(
     result["hardware_profile"] = hw.profile
     result["diagnostics_enabled"] = diagnostics_enabled
     result["diagnostics_artifacts"] = None
-    result["curriculum_guardrails"] = {"enabled": False}
     result["missingness_guardrails"] = {"enabled": False}
     result["lineage_guardrails"] = {"enabled": False}
     result["shift_guardrails"] = {"enabled": False}
@@ -456,91 +444,6 @@ def run_profile_benchmark(
             run_microbenchmarks(config, device=requested_device, repeats=MICROBENCH_REPEATS)
         )
 
-    if curriculum_enabled and curriculum_metadata is not None:
-        # Control-run configs are derived from an already tuned runtime config;
-        # use deep-copy to avoid re-validating smoke-mutated curriculum bounds.
-        baseline_config = _copy_runtime_config(config)
-        baseline_config.curriculum_stage = CURRICULUM_STAGE_OFF
-        curriculum_baseline_diagnostics_aggregator: CoverageAggregator | None = None
-        if diagnostics_aggregator is not None:
-            curriculum_baseline_diagnostics_aggregator = _build_diagnostics_aggregator(
-                baseline_config
-            )
-        curriculum_baseline_missingness_acceptance = (
-            _MissingnessAcceptanceCollector(target_rate=float(config.dataset.missing_rate))
-            if missingness_acceptance is not None
-            else None
-        )
-        curriculum_baseline_metadata = _CurriculumMetadataCollector(expected_mode="off")
-        baseline_curriculum_on_bundle = _compose_bundle_callback(
-            diagnostics_aggregator=curriculum_baseline_diagnostics_aggregator,
-            missingness_acceptance=curriculum_baseline_missingness_acceptance,
-            curriculum_metadata=curriculum_baseline_metadata,
-            shift_guardrails=_ShiftGuardrailCollector() if shift_enabled else None,
-        )
-
-        baseline_throughput = run_throughput_benchmark(
-            baseline_config,
-            num_datasets=num_datasets,
-            warmup_datasets=warmup,
-            device=requested_device,
-            on_bundle=baseline_curriculum_on_bundle,
-        )
-        baseline_dpm = float(baseline_throughput.get("datasets_per_minute", 0.0))
-        current_dpm = float(result.get("datasets_per_minute", 0.0))
-        runtime_degradation = degradation_percent("datasets_per_minute", current_dpm, baseline_dpm)
-        runtime_degradation_value = (
-            float(runtime_degradation) if runtime_degradation is not None else 0.0
-        )
-        runtime_severity = _severity_from_thresholds(
-            runtime_degradation_value,
-            warn=float(warn_threshold_pct),
-            fail=float(fail_threshold_pct),
-        )
-        runtime_gating_enabled = num_datasets >= CURRICULUM_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE
-
-        metadata_summary = curriculum_metadata.build_summary()
-        issues = list(metadata_summary["issues"])
-        if runtime_gating_enabled and runtime_severity != "pass":
-            issues.append(
-                _build_guardrail_issue(
-                    metric="curriculum_runtime_degradation_pct",
-                    severity=runtime_severity,
-                    current=current_dpm,
-                    baseline=baseline_dpm,
-                    degradation_pct=runtime_degradation_value,
-                    detail=(
-                        "Staged curriculum throughput regressed versus an equivalent "
-                        "curriculum-disabled control run."
-                    ),
-                )
-            )
-
-        result["curriculum_guardrails"] = {
-            "enabled": True,
-            "mode": curriculum_mode,
-            "configured_stage": curriculum_configured_stage,
-            "sample_datasets": int(num_datasets),
-            "runtime_gating_enabled": bool(runtime_gating_enabled),
-            "runtime_gating_min_sample_datasets": int(
-                CURRICULUM_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE
-            ),
-            "runtime_gating_suppressed_reason": (
-                None if runtime_gating_enabled else "insufficient_sample_size"
-            ),
-            "stage_metadata_coverage_rate": float(metadata_summary["stage_metadata_coverage_rate"]),
-            "mode_mismatch_bundles": int(metadata_summary["mode_mismatch_bundles"]),
-            "runtime_baseline_datasets_per_minute": baseline_dpm,
-            "runtime_with_curriculum_datasets_per_minute": current_dpm,
-            "runtime_degradation_pct": (
-                float(runtime_degradation) if runtime_degradation is not None else None
-            ),
-            "runtime_warn_threshold_pct": float(warn_threshold_pct),
-            "runtime_fail_threshold_pct": float(fail_threshold_pct),
-            "issues": issues,
-            "status": _status_from_issues(issues),
-        }
-
     if missingness_enabled and missingness_acceptance is not None:
         baseline_config = _copy_runtime_config(config)
         baseline_config.dataset.missing_rate = 0.0
@@ -553,17 +456,11 @@ def run_profile_benchmark(
         baseline_missingness_acceptance = _MissingnessAcceptanceCollector(
             target_rate=float(config.dataset.missing_rate)
         )
-        baseline_curriculum_metadata = (
-            _CurriculumMetadataCollector(expected_mode=curriculum_mode)
-            if curriculum_metadata is not None
-            else None
-        )
         # Keep control-run callback instrumentation equivalent so runtime delta
         # reflects missingness overhead instead of callback overhead skew.
         baseline_on_bundle_callback = _compose_bundle_callback(
             diagnostics_aggregator=missingness_baseline_diagnostics_aggregator,
             missingness_acceptance=baseline_missingness_acceptance,
-            curriculum_metadata=baseline_curriculum_metadata,
             shift_guardrails=_ShiftGuardrailCollector() if shift_enabled else None,
         )
 
@@ -638,16 +535,10 @@ def run_profile_benchmark(
             if missingness_acceptance is not None
             else None
         )
-        baseline_curriculum_metadata = (
-            _CurriculumMetadataCollector(expected_mode=curriculum_mode)
-            if curriculum_metadata is not None
-            else None
-        )
         baseline_shift_guardrails = _ShiftGuardrailCollector()
         baseline_on_bundle_callback = _compose_bundle_callback(
             diagnostics_aggregator=shift_baseline_diagnostics_aggregator,
             missingness_acceptance=shift_baseline_missingness_acceptance,
-            curriculum_metadata=baseline_curriculum_metadata,
             shift_guardrails=baseline_shift_guardrails,
         )
 
@@ -962,13 +853,10 @@ def run_benchmark_suite(
     lineage_issues = _collect_guardrail_regression_issues(
         profile_results, guardrail_key="lineage_guardrails"
     )
-    curriculum_issues = _collect_guardrail_regression_issues(
-        profile_results, guardrail_key="curriculum_guardrails"
-    )
     shift_issues = _collect_guardrail_regression_issues(
         profile_results, guardrail_key="shift_guardrails"
     )
-    additional_issues = [*missingness_issues, *lineage_issues, *curriculum_issues, *shift_issues]
+    additional_issues = [*missingness_issues, *lineage_issues, *shift_issues]
     if additional_issues:
         existing_issues = regression.get("issues", [])
         if not isinstance(existing_issues, list):

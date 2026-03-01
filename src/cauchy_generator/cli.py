@@ -19,8 +19,6 @@ from cauchy_generator.bench.baseline import (
 from cauchy_generator.bench.report import write_suite_json, write_suite_markdown
 from cauchy_generator.bench.suite import resolve_profile_run_specs, run_benchmark_suite
 from cauchy_generator.config import (
-    CURRICULUM_STAGE_AUTO,
-    CURRICULUM_STAGE_CLI_CHOICES,
     DatasetConfig,
     GeneratorConfig,
     MISSINGNESS_MECHANISM_MAR,
@@ -261,12 +259,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override MNAR logit scale (> 0).",
     )
-    g.add_argument(
-        "--curriculum",
-        default=None,
-        choices=CURRICULUM_STAGE_CLI_CHOICES,
-        help="Optional staged curriculum override (auto/1/2/3) for this run.",
-    )
     b = sub.add_parser("benchmark", help="Run benchmark suite across one or more profiles.")
     b.add_argument("--config", default=None, help="Optional YAML config for profile 'custom'.")
     b.add_argument(
@@ -422,12 +414,6 @@ def _run_generate(args: argparse.Namespace) -> int:
         device=args.device,
         no_hardware_aware=bool(args.no_hardware_aware),
     )
-    if args.curriculum is not None:
-        config.curriculum_stage = (
-            CURRICULUM_STAGE_AUTO
-            if args.curriculum == CURRICULUM_STAGE_AUTO
-            else int(args.curriculum)
-        )
     _apply_missingness_cli_overrides(config, args)
     resolved_target_bands = _resolve_diagnostics_target_bands(config)
     if args.diagnostics:
@@ -573,11 +559,6 @@ def _print_profile_result_line(result: dict[str, Any]) -> None:
     if isinstance(lineage_guardrails, dict) and bool(lineage_guardrails.get("enabled")):
         lineage_hint = f" lineage={lineage_guardrails.get('status', 'pass')}"
 
-    curriculum_hint = ""
-    curriculum_guardrails = result.get("curriculum_guardrails")
-    if isinstance(curriculum_guardrails, dict) and bool(curriculum_guardrails.get("enabled")):
-        curriculum_hint = f" curriculum={curriculum_guardrails.get('status', 'pass')}"
-
     shift_hint = ""
     shift_guardrails = result.get("shift_guardrails")
     if isinstance(shift_guardrails, dict) and bool(shift_guardrails.get("enabled")):
@@ -588,7 +569,7 @@ def _print_profile_result_line(result: dict[str, Any]) -> None:
         f"backend={result.get('hardware_backend')} "
         f"datasets/min={float(result.get('datasets_per_minute', 0.0)):.2f} "
         f"latency_p95_ms={float(result.get('latency_p95_ms', 0.0)):.2f}"
-        f"{diagnostics_hint}{missingness_hint}{lineage_hint}{curriculum_hint}{shift_hint}"
+        f"{diagnostics_hint}{missingness_hint}{lineage_hint}{shift_hint}"
     )
 
 

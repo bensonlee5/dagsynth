@@ -1,4 +1,4 @@
-"""Benchmark guardrail helpers for lineage, missingness, and curriculum checks."""
+"""Benchmark guardrail helpers for lineage and missingness checks."""
 
 from __future__ import annotations
 
@@ -19,12 +19,7 @@ from cauchy_generator.bench.constants import (
     SECONDS_PER_MINUTE,
 )
 from cauchy_generator.bench.metrics import degradation_percent
-from cauchy_generator.config import (
-    CURRICULUM_STAGE_AUTO,
-    CURRICULUM_STAGE_OFF,
-    GeneratorConfig,
-    normalize_curriculum_stage,
-)
+from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_batch_iter
 from cauchy_generator.io.parquet_writer import write_parquet_shards_stream
 from cauchy_generator.math_utils import to_numpy as _to_numpy
@@ -242,17 +237,6 @@ def _status_from_issues(issues: list[dict[str, Any]]) -> str:
     if "warn" in severities:
         return "warn"
     return "pass"
-
-
-def _resolve_curriculum_guardrail_context(config: GeneratorConfig) -> tuple[bool, str, int | None]:
-    """Resolve curriculum guardrail mode from config."""
-
-    normalized_mode = normalize_curriculum_stage(config.curriculum_stage)
-    if normalized_mode == CURRICULUM_STAGE_OFF:
-        return (False, "off", None)
-    if normalized_mode == CURRICULUM_STAGE_AUTO:
-        return (True, CURRICULUM_STAGE_AUTO, None)
-    return (True, "fixed", int(normalized_mode))
 
 
 def _issue_sort_key(issue: dict[str, Any]) -> tuple[int, float]:

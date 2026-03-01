@@ -45,13 +45,6 @@ cauchy-gen benchmark \
   --out-dir benchmarks/results/smoke_missing_mar
 
 cauchy-gen benchmark \
-  --config configs/preset_curriculum_benchmark_smoke.yaml \
-  --profile custom \
-  --suite smoke \
-  --no-memory \
-  --out-dir benchmarks/results/smoke_curriculum_guardrails
-
-cauchy-gen benchmark \
   --config configs/preset_shift_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \
@@ -67,7 +60,7 @@ For CI-like checks:
 
 ```bash
 cauchy-gen benchmark \
-  --config configs/preset_curriculum_benchmark_smoke.yaml \
+  --config configs/preset_shift_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \
   --warn-threshold-pct 10 \
@@ -75,7 +68,7 @@ cauchy-gen benchmark \
   --fail-on-regression \
   --no-hardware-aware \
   --no-memory \
-  --out-dir benchmarks/results/ci_smoke_curriculum_local
+  --out-dir benchmarks/results/ci_smoke_shift_local
 ```
 
 ______________________________________________________________________
@@ -86,7 +79,6 @@ When present in a run summary, inspect:
 
 - `missingness_guardrails`
 - `lineage_guardrails`
-- `curriculum_guardrails`
 - `shift_guardrails`
 
 Also review throughput/latency aggregates for profile/suite trends.

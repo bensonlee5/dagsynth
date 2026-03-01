@@ -75,6 +75,7 @@ def postprocess_dataset(
     device: str,
     *,
     return_feature_index_map: Literal[False] = False,
+    preserve_feature_schema: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str]]: ...
 
 
@@ -90,6 +91,7 @@ def postprocess_dataset(
     device: str,
     *,
     return_feature_index_map: Literal[True],
+    preserve_feature_schema: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str], list[int]]: ...
 
 
@@ -104,6 +106,7 @@ def postprocess_dataset(
     device: str,
     *,
     return_feature_index_map: bool = False,
+    preserve_feature_schema: bool = False,
 ) -> (
     tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str]]
     | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str], list[int]]
@@ -118,14 +121,19 @@ def postprocess_dataset(
     """
 
     x_all = torch.cat([x_train, x_test], dim=0).to(torch.float32)
-    x_all, feature_types, feature_index_map = _remove_constant_columns(x_all, feature_types)
+    if preserve_feature_schema:
+        feature_types = list(feature_types)
+        feature_index_map = [int(i) for i in range(x_all.shape[1])]
+    else:
+        x_all, feature_types, feature_index_map = _remove_constant_columns(x_all, feature_types)
     x_all = _clip_and_standardize(x_all, feature_types)
 
-    perm = torch.randperm(x_all.shape[1], generator=generator, device=device)
-    perm_list = [int(i) for i in perm.tolist()]
-    x_all = x_all[:, perm]
-    feature_types = [feature_types[i] for i in perm_list]
-    feature_index_map = [feature_index_map[i] for i in perm_list]
+    if not preserve_feature_schema:
+        perm = torch.randperm(x_all.shape[1], generator=generator, device=device)
+        perm_list = [int(i) for i in perm.tolist()]
+        x_all = x_all[:, perm]
+        feature_types = [feature_types[i] for i in perm_list]
+        feature_index_map = [feature_index_map[i] for i in perm_list]
 
     n_train = x_train.shape[0]
     x_train_p = x_all[:n_train]

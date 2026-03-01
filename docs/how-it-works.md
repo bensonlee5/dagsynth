@@ -20,7 +20,7 @@ features/targets, and applying quality/realism controls.
 
 1. Load config and resolve hardware profile.
 1. Derive deterministic seeds for each dataset and component.
-1. Sample curriculum stage and dataset layout.
+1. Sample dataset layout.
 1. Sample a Cauchy DAG and node assignments.
 1. Execute node pipelines in topological order to produce latent outputs.
 1. Convert node outputs into observable `X` and `y`.
@@ -48,7 +48,7 @@ flowchart LR
         Cfg["Load GeneratorConfig"] --> Tune["detect_hardware + apply_hardware_profile"]
         Tune --> Loop["generate_batch_iter"]
         Loop --> Seed["derive dataset/component seeds"]
-        Seed --> Layout["sample curriculum + layout"]
+        Seed --> Layout["sample layout"]
         Layout --> DAG["sample DAG + assignments"]
         DAG --> Exec["run node pipelines"]
         Exec --> Filter["learnability filter"]
@@ -85,9 +85,7 @@ flowchart LR
 
 ### 2. Layout and structure sampling
 
-- `_sample_curriculum` (current baseline) picks stage constraints (or stage
-  off/auto modes).
-- `_sample_layout` decides row/feature/node/depth structure and feature/target
+- `_sample_layout` decides feature/node/depth structure and feature/target
   assignment surfaces.
 - `sample_cauchy_dag` builds an upper-triangular DAG with Cauchy-based edge
   logits.
@@ -133,10 +131,13 @@ Interpretation:
   (`edge_odds_multiplier`, `noise_variance_multiplier`,
   `mechanism_nonlinear_mass`) used by diagnostics coverage summaries.
 
-### 5. Optional diagnostics
+### 5. Optional diagnostics and fixed-layout generation
 
 - Diagnostics computes reporting metrics over emitted bundles and writes
   run-level summaries.
+- Fixed-layout API mode samples one reusable layout plan and emits
+  many datasets that share structure while preserving per-dataset randomness
+  and emitted column alignment.
 
 ## DAG/node data flow
 
@@ -164,13 +165,16 @@ flowchart TB
     Assemble --> Out["return dataset tensors + filter details"]
 ```
 
-## Diagnostics and benchmark guardrails
+## Diagnostics, fixed layout, and benchmark guardrails
 
-Diagnostics is reporting-time aggregation over emitted bundles.
+Diagnostics and fixed-layout generation are related but distinct:
+
+- Fixed-layout generation is a structure-control mode for dataset emission.
+- Diagnostics is reporting-time aggregation over emitted bundles.
 
 Benchmark mode adds guardrails to detect runtime/metadata regressions and emits
 sections such as `missingness_guardrails`, `lineage_guardrails`, and
-`curriculum_guardrails`, and `shift_guardrails` when relevant to the run.
+`shift_guardrails` when relevant to the run.
 
 ## Glossary quick reference
 
@@ -200,16 +204,18 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 
 ### Complexity and quality
 
-- **curriculum**: staged complexity controls over generated datasets.
-- **curriculum stage**: fixed/auto/off mode and stage-specific complexity band.
-- **stage bounds**: min/max constraints for features, nodes, and depth.
+- **stage bounds**: effective min/max constraints for sampled features, nodes,
+  and depth in one layout draw.
 - **learnability filter**: random-forest-based gate for signal quality.
 - **wins ratio**: bootstrap fraction where model beats baseline.
 - **shift profile**: opt-in distribution-drift control over graph, mechanism,
   and noise sampling axes.
 
-### Diagnostics
+### Diagnostics and fixed layout
 
+- **fixed layout plan**: reusable sampled layout used for many
+  generated datasets with aligned emitted schema.
+- **layout signature**: deterministic fingerprint identifying a fixed layout.
 - **target band**: desired `[lo, hi]` interval for diagnostics coverage checks.
 - **meta-feature**: scalar dataset statistic used for reporting.
 - **linearity proxy / nonlinearity proxy / SNR proxy**: key diagnostics metrics.
@@ -244,7 +250,6 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
 - Feature deep dives:
   [features/diagnostics.md](features/diagnostics.md),
   [features/missingness.md](features/missingness.md),
-  [features/curriculum.md](features/curriculum.md),
   [features/many-class.md](features/many-class.md),
   [features/shift.md](features/shift.md),
   [features/benchmark-guardrails.md](features/benchmark-guardrails.md)

@@ -70,9 +70,9 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 | Causal discovery with ground-truth DAGs and interventional datasets | `partial`     | DAG lineage metadata is emitted per dataset and persisted as compact shard-level artifacts with schema validation and benchmark guardrails                                 | Interventional/counterfactual generation semantics are not implemented                                                                                               | RD-002                                         |
 | Robustness testing with hard tasks, shifts, adversarial regimes     | `partial`     | Basic filtering and diagnostics proxies exist; missingness mechanisms and shift/drift controls are implemented with deterministic controls and benchmark guardrails        | No explicit hard-task/adversarial profile suite and no explicit noise-family diversification controls                                                                | RD-004, RD-005, RD-012                         |
 | Causal structural integrity (hierarchical dependencies)             | `implemented` | Graph-driven node pipeline and multi-family function composition                                                                                                           | Deeper mechanism-family controls are not user-configurable                                                                                                           | RD-007, RD-011                                 |
-| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, and staged curriculum controls are implemented                                   | High-cardinality/many-class limits and noise-family diversity remain conservative                                                                                    | RD-007, RD-012                                 |
+| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, and fixed-layout generation are implemented                                      | High-cardinality/many-class limits and noise-family diversity remain conservative                                                                                    | RD-007, RD-012                                 |
 | PFN task coverage (classification, regression, time-series)         | `partial`     | Classification and regression generation pipelines are fully supported with deterministic seeds and diagnostics/benchmark workflows                                        | No time-series generation mode, temporal metadata contract, or temporal diagnostics/guardrails                                                                       | RD-013                                         |
-| Complexity curriculum scales features/nodes/samples                 | `implemented` | Curriculum stages now cover row/feature/node/depth controls with staged presets, integration tests, and benchmark guardrails                                               | -                                                                                                                                                                    | -                                              |
+| Staged complexity scaling (features/nodes/samples)                  | `retired`     | Historical staged-complexity implementation (RD-006) has been retired in favor of explicit split sizing and fixed-layout generation                                        | Not active                                                                                                                                                           | RD-006                                         |
 | Hardware-native performance (Torch + hardware-aware tuning)         | `partial`     | Torch CPU/CUDA/MPS path, hardware detection, coarse profile-based tuning, and benchmark suite                                                                              | Stage-level bottleneck attribution/telemetry is not implemented; hardware-adaptive autotuning is not implemented; parallel/distributed generation is not implemented | RD-014, RD-010, RD-009                         |
 | Parallel streaming Parquet sharding                                 | `partial`     | Streaming Parquet writing exists                                                                                                                                           | Writing is currently single-process sequential                                                                                                                       | RD-009                                         |
 
@@ -123,13 +123,6 @@ metadata JSON contract, and DAG lineage schema.
 - `configs/preset_missingness_mcar.yaml`: MCAR missingness preset.
 - `configs/preset_missingness_mar.yaml`: MAR missingness preset.
 - `configs/preset_missingness_mnar.yaml`: MNAR missingness preset.
-- `configs/preset_curriculum_stage1.yaml`: fixed stage-1 curriculum preset.
-- `configs/preset_curriculum_stage2.yaml`: fixed stage-2 curriculum preset.
-- `configs/preset_curriculum_stage3.yaml`: fixed stage-3 curriculum preset.
-- `configs/preset_curriculum_auto_staged.yaml`: auto-sampled staged curriculum
-  preset.
-- `configs/preset_curriculum_benchmark_smoke.yaml`: CPU smoke benchmark preset
-  for staged curriculum guardrail checks.
 - `configs/preset_lineage_benchmark_smoke.yaml`: CPU smoke benchmark preset for
   lineage export guardrail checks.
 - Runtime currently applies coarse profile-tier overrides from GPU FLOPS lookup
@@ -139,7 +132,6 @@ metadata JSON contract, and DAG lineage schema.
 
 - `sampling/correlated.py`: correlated scalar sampler (`E.2`)
 - `core/dataset.py`: dataset orchestration entrypoint (`E.3`)
-- `core/curriculum.py`: curriculum and stagewise row sampling (`E.3`)
 - `core/layout.py`: dataset layout, graph sampling, and node assignments
   (`E.3`, `E.4`)
 - `graph/cauchy_graph.py`: random Cauchy DAG (`E.4`)
@@ -169,8 +161,6 @@ metadata JSON contract, and DAG lineage schema.
    preset.
 1. Missingness-enabled benchmark runs include acceptance/runtime guardrails
    against missingness-off controls.
-1. Staged-curriculum benchmark runs include metadata/runtime guardrails
-   (`curriculum_guardrails`) against curriculum-off controls.
 1. Benchmark profile summaries include lineage-export persistence overhead
    guardrails (`lineage_guardrails`) against lineage-stripped control
    persistence runs.
@@ -295,24 +285,17 @@ metadata JSON contract, and DAG lineage schema.
   - Benchmarks and diagnostics confirm regimes differ from baseline in intended directions.
   - Reproducibility tests pass for fixed seed runs.
 
-### RD-006: Curriculum Complexity Scaling (Features + Graph)
+### RD-006: Staged Complexity Scaling (Features + Graph)
 
-- Status: `implemented`
+- Status: `retired`
 - Milestone: `Now` (completed via epics/issues `#50`, `#51`, `#90`, `#52`, `#53`)
 - Mission alignment: foundation model pretraining
 - Pillar alignment: tabular realism
-- Goal: extend curriculum stages beyond row count to feature/node/depth complexity.
+- Goal: historical; staged complexity controls have been removed in favor of
+  explicit split sizing and fixed-layout generation.
 - GitHub tracking: epic `#49`; dependency chain `#50 -> #51 -> #90 -> #52 -> #53`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/curriculum.py`, `configs/curriculum_tabiclv2.yaml`
-- Delivered scope:
-  - Stage definitions include row, feature, node, and graph-depth controls.
-  - Monotonicity diagnostics/metadata validate non-decreasing stage complexity axes.
-  - Discoverable staged presets and end-to-end CLI integration tests are available.
-  - Benchmark summaries include `curriculum_guardrails` runtime/metadata checks.
-- Completion evidence:
-  - Staged curriculum workflows are discoverable in `README.md` and config presets.
-  - Integration tests cover fixed-stage and auto-stage CLI generation paths.
-  - Performance impact is measured via benchmark guardrail thresholds.
+- Repo touchpoints (historical): `src/cauchy_generator/config.py`,
+  `src/cauchy_generator/core/dataset.py`
 
 ### RD-007: Many-Class and High-Cardinality Expansion
 
@@ -443,7 +426,7 @@ metadata JSON contract, and DAG lineage schema.
 - RD-001 ground-truth DAG artifact export, completed via `#44`, `#45`, `#46`, `#47`, and `#48`
 - RD-003 missingness generation (MCAR/MAR/MNAR), completed via `#17` and `#18`
 - RD-008 meta-feature coverage steering (retired)
-- RD-006 curriculum complexity scaling, completed via `#49`, `#50`, `#51`, `#90`, `#52`, and `#53`
+- RD-006 staged complexity scaling (retired), completed via `#49`, `#50`, `#51`, `#90`, `#52`, and `#53`
 - RD-004 shift-aware SCM generation, completed via `#64`, `#72`, `#73`, `#74`, and `#75`
 
 ### Now

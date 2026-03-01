@@ -37,8 +37,8 @@ future roadmap work while preserving backward-compatible defaults.
 - **Node-level heterogeneity** — separate per-row (B_i) and per-column (C_j)
   terms let individual nodes have distinct connectivity profiles.
 - **Global sparsity control** — the `edge_logit_bias` additive term shifts
-  the entire probability surface up or down, which the curriculum system uses
-  to produce sparser graphs at lower stages and denser ones at higher stages.
+  the entire probability surface up or down, enabling controlled graph-density
+  variation across generated datasets.
 - **Theoretical grounding** — directly implements the mechanism described in
   TabICLv2 Appendix E.4.
 
@@ -95,7 +95,7 @@ ______________________________________________________________________
 
 The generator uses a tree of deterministic seeds: one base seed spawns child
 seeds for each component (graph sampling, function selection, data generation,
-missingness, curriculum staging, etc.). The derivation function must map
+missingness, fixed-layout planning, etc.). The derivation function must map
 `(base_seed, component_path)` to a child seed without collisions.
 
 ### Decision
@@ -131,7 +131,45 @@ with an explicit migration plan for compatibility.
 
 ______________________________________________________________________
 
-## 4. `slots=True` dataclasses
+## 4. Fixed-layout batch API as explicit opt-in
+
+### Context
+
+Some workflows need many datasets with the same sampled structure (feature
+types, DAG shape, node assignments, and split sizes) so downstream
+analysis can isolate value-level variation from layout-level variation.
+
+### Decision
+
+Expose a dedicated fixed-layout API:
+
+- `sample_fixed_layout(...)` to sample one reusable plan.
+- `generate_batch_fixed_layout(_iter)(...)` to emit many datasets from that plan.
+
+Default `generate_batch(_iter)` behavior remains layout-dynamic.
+
+### Rationale
+
+- **Clear semantics** — callers choose fixed-layout behavior explicitly instead
+  of relying on hidden coupling in default generation.
+- **Lower branching complexity** — generation core stays simple; layout reuse is
+  isolated in a dedicated path.
+- **Emitted-schema contract** — fixed-layout batches guarantee aligned emitted
+  columns (feature count/order and lineage mapping), so index-based downstream
+  consumers can safely stack bundles.
+- **Deterministic reproducibility** — one plan seed yields one stable layout
+  signature, while dataset seeds still vary value realizations.
+
+### Alternatives considered
+
+- **Replace default generation behavior** — simpler surface area, but would
+  change longstanding semantics for users expecting dynamic layout sampling.
+- **Config-only fixed-layout mode** — convenient for CLI parity, but less clear
+  than an explicit Python API and adds global mode branching.
+
+______________________________________________________________________
+
+## 5. `slots=True` dataclasses
 
 ### Context
 
@@ -167,7 +205,7 @@ This is a codebase-wide convention today, not a protocol contract.
 
 ______________________________________________________________________
 
-## 5. Current function-family baseline
+## 6. Current function-family baseline
 
 ### Context
 
@@ -212,7 +250,7 @@ Family and parameterization expansion is an explicit roadmap direction
 
 ______________________________________________________________________
 
-## 6. Noise family selection for RD-012 phase 1
+## 7. Noise family selection for RD-012 phase 1
 
 ### Context
 

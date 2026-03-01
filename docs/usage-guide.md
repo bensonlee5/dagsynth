@@ -50,7 +50,30 @@ Detailed guides:
 
 ______________________________________________________________________
 
-## 3. Missingness workflows
+## 3. Fixed-layout batch generation (Python API)
+
+Use a fixed layout plan when you want many datasets with consistent structure
+and aligned emitted columns across the batch.
+
+```python
+from cauchy_generator import (
+    GeneratorConfig,
+    generate_batch_fixed_layout,
+    sample_fixed_layout,
+)
+
+cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+plan = sample_fixed_layout(cfg, seed=7, device="cpu")
+batch = generate_batch_fixed_layout(cfg, plan=plan, num_datasets=32, seed=101)
+```
+
+`generate_batch_fixed_layout(_iter)` validates plan/config compatibility before
+generation. If layout-driving config fields drift from the plan snapshot, it
+raises and asks you to resample the plan.
+
+______________________________________________________________________
+
+## 4. Missingness workflows
 
 Use missingness workflows for MCAR/MAR/MNAR robustness regimes:
 
@@ -59,18 +82,6 @@ cauchy-gen generate --config configs/preset_missingness_mar.yaml --num-datasets 
 ```
 
 Detailed guide: [Missingness](features/missingness.md)
-
-______________________________________________________________________
-
-## 4. Curriculum workflows
-
-Use curriculum workflows for staged complexity progression.
-
-```bash
-cauchy-gen generate --config configs/preset_curriculum_auto_staged.yaml --num-datasets 25 --out data/run_curriculum_auto
-```
-
-Detailed guide: [Curriculum](features/curriculum.md)
 
 ______________________________________________________________________
 
@@ -123,7 +134,6 @@ ______________________________________________________________________
 - Feature deep dives:
   [diagnostics](features/diagnostics.md),
   [missingness](features/missingness.md),
-  [curriculum](features/curriculum.md),
   [many-class](features/many-class.md),
   [shift](features/shift.md),
   [benchmark guardrails](features/benchmark-guardrails.md)

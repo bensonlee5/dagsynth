@@ -3,25 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+import hashlib
+import json
 from typing import Any
 
 import torch
 
 from cauchy_generator.config import (
-    CURRICULUM_STAGE_AUTO,
     GeneratorConfig,
-    normalize_curriculum_stage,
     validate_class_split_feasibility,
 )
-from cauchy_generator.core import curriculum as curriculum_core
 from cauchy_generator.core.constants import (
     NODE_SPEC_SEED_OFFSET,
     SPLIT_PERMUTATION_SEED_OFFSET,
 )
 from cauchy_generator.core.layout import _build_node_specs, _sample_layout
 from cauchy_generator.core.metadata import (
-    _build_curriculum_metadata,
     _build_lineage_metadata,
     _build_shift_metadata,
 )
@@ -32,6 +30,44 @@ from cauchy_generator.core.node_pipeline import apply_node_pipeline
 from cauchy_generator.postprocess import inject_missingness, postprocess_dataset
 from cauchy_generator.rng import SeedManager
 from cauchy_generator.types import DatasetBundle
+
+
+@dataclass(slots=True)
+class FixedLayoutPlan:
+    """Pre-sampled layout bundle for fixed-layout batch generation."""
+
+    layout: dict[str, Any]
+    requested_device: str
+    resolved_device: str
+    plan_seed: int
+    n_train: int
+    n_test: int
+    layout_signature: str
+    compatibility_snapshot: dict[str, Any] | None = None
+
+
+_FIXED_LAYOUT_COMPAT_KEYS: tuple[str, ...] = (
+    "dataset.task",
+    "dataset.n_train",
+    "dataset.n_test",
+    "dataset.n_features_min",
+    "dataset.n_features_max",
+    "dataset.categorical_ratio_min",
+    "dataset.categorical_ratio_max",
+    "dataset.max_categorical_cardinality",
+    "dataset.n_classes_min",
+    "dataset.n_classes_max",
+    "graph.n_nodes_min",
+    "graph.n_nodes_max",
+    "shift.edge_logit_bias_shift",
+    "runtime.resolved_device",
+)
+
+
+def _resolve_split_sizes(config: GeneratorConfig) -> tuple[int, int]:
+    """Resolve explicit train/test split sizes from config."""
+
+    return int(config.dataset.n_train), int(config.dataset.n_test)
 
 
 def _resolve_device(config: GeneratorConfig, device_override: str | None) -> str:
@@ -187,8 +223,8 @@ def _generate_torch(
     *,
     n_train: int,
     n_test: int,
-    curriculum: dict[str, Any],
     shift_params: ShiftRuntimeParams | None = None,
+    preserve_feature_schema: bool = False,
 ) -> DatasetBundle:
     """Generate one dataset in Torch while preserving postprocess/filter contracts."""
 
@@ -245,6 +281,7 @@ def _generate_torch(
             generator,
             device,
             return_feature_index_map=True,
+            preserve_feature_schema=preserve_feature_schema,
         )
         x_train, x_test, missingness_summary = inject_missingness(
             x_train,
@@ -275,13 +312,6 @@ def _generate_torch(
                 n_classes_sampled=int(layout["n_classes"]),
             )
             n_classes = int(class_structure["n_classes_realized"])
-        curriculum_metadata = _build_curriculum_metadata(
-            curriculum,
-            layout=layout,
-            n_train=int(x_train.shape[0]),
-            n_test=int(x_test.shape[0]),
-            n_features=int(x_train.shape[1]),
-        )
         shift_metadata = _build_shift_metadata(shift_params=shift_params)
 
         metadata = {
@@ -299,7 +329,6 @@ def _generate_torch(
             "seed": seed,
             "attempt_used": attempt,
             "filter": aux_meta.get("filter", {}),
-            "curriculum": curriculum_metadata,
             "shift": shift_metadata,
             "config": asdict(config),
         }
@@ -359,58 +388,42 @@ def _generate_one_seeded(
     seed: int,
     requested_device: str,
     resolved_device: str,
-    auto_stage: int,
 ) -> DatasetBundle:
-    """Generate one dataset for a fully resolved seed/device/stage context."""
+    """Generate one dataset for a fully resolved seed/device context."""
 
     manager = SeedManager(seed)
-    curriculum = curriculum_core._sample_curriculum(
-        config,
-        manager,
-        auto_stage=auto_stage,
-        sample_stage_rows_fn=curriculum_core._sample_stage_rows,
-        split_counts_fn=curriculum_core._split_counts,
-    )
     layout_gen = manager.torch_rng("layout")
-    layout = _sample_layout(config, layout_gen, "cpu", curriculum=curriculum)
+    layout = _sample_layout(config, layout_gen, "cpu")
+    n_train, n_test = _resolve_split_sizes(config)
     return _generate_one_with_resolved_layout(
         config,
         seed=seed,
         requested_device=requested_device,
         resolved_device=resolved_device,
-        curriculum=curriculum,
+        n_train=n_train,
+        n_test=n_test,
         layout=layout,
     )
-
-
-def _resolve_auto_stage(mode: str | int, *, seed: int) -> int:
-    """Resolve curriculum auto stage for a deterministic dataset seed."""
-
-    if mode == CURRICULUM_STAGE_AUTO:
-        stage_gen = SeedManager(seed).torch_rng("curriculum", "stage")
-        return curriculum_core._sample_auto_stage(stage_gen)
-    if isinstance(mode, int):
-        return mode
-    return 1
 
 
 def _validate_class_split_for_layout(
     config: GeneratorConfig,
     *,
     layout: dict[str, Any],
-    curriculum: dict[str, Any],
+    n_train: int,
+    n_test: int,
 ) -> None:
-    """Validate class/split feasibility for one sampled layout/curriculum pair."""
+    """Validate class/split feasibility for one sampled layout/split pair."""
 
     if config.dataset.task != "classification":
         return
     validate_class_split_feasibility(
         n_classes=int(layout["n_classes"]),
-        n_train=int(curriculum["n_train"]),
-        n_test=int(curriculum["n_test"]),
+        n_train=int(n_train),
+        n_test=int(n_test),
         context=(
             "sampled classification split constraints "
-            f"(curriculum_mode={curriculum.get('mode')}, stage={curriculum.get('stage')})"
+            f"(n_train={int(n_train)}, n_test={int(n_test)})"
         ),
     )
 
@@ -421,17 +434,17 @@ def _generate_one_with_resolved_layout(
     seed: int,
     requested_device: str,
     resolved_device: str,
-    curriculum: dict[str, Any],
+    n_train: int,
+    n_test: int,
     layout: dict[str, Any],
+    preserve_feature_schema: bool = False,
 ) -> DatasetBundle:
-    """Generate one dataset from an already-resolved curriculum/layout context."""
+    """Generate one dataset from an already-resolved split/layout context."""
 
-    _validate_class_split_for_layout(config, layout=layout, curriculum=curriculum)
+    _validate_class_split_for_layout(config, layout=layout, n_train=n_train, n_test=n_test)
     manager = SeedManager(seed)
     data_seed = manager.child("data")
     shift_params = resolve_shift_runtime_params(config)
-    n_train = int(curriculum["n_train"])
-    n_test = int(curriculum["n_test"])
 
     if requested_device == "auto" and resolved_device == "mps":
         try:
@@ -442,8 +455,8 @@ def _generate_one_with_resolved_layout(
                 resolved_device,
                 n_train=n_train,
                 n_test=n_test,
-                curriculum=curriculum,
                 shift_params=shift_params,
+                preserve_feature_schema=preserve_feature_schema,
             )
         except Exception:
             # Keep auto mode robust on partially supported MPS runtimes by retrying on CPU.
@@ -454,8 +467,8 @@ def _generate_one_with_resolved_layout(
                 "cpu",
                 n_train=n_train,
                 n_test=n_test,
-                curriculum=curriculum,
                 shift_params=shift_params,
+                preserve_feature_schema=preserve_feature_schema,
             )
 
     return _generate_torch(
@@ -465,8 +478,93 @@ def _generate_one_with_resolved_layout(
         resolved_device,
         n_train=n_train,
         n_test=n_test,
-        curriculum=curriculum,
         shift_params=shift_params,
+        preserve_feature_schema=preserve_feature_schema,
+    )
+
+
+def _layout_signature(layout: dict[str, Any]) -> str:
+    """Return a deterministic, stable signature for a sampled layout payload."""
+
+    adjacency = layout.get("adjacency")
+    adjacency_payload: list[list[int]]
+    if isinstance(adjacency, torch.Tensor):
+        adjacency_payload = adjacency.to(device="cpu", dtype=torch.int64).tolist()
+    else:
+        adjacency_payload = torch.as_tensor(adjacency, dtype=torch.int64, device="cpu").tolist()
+
+    signature_payload = {
+        "n_features": int(layout["n_features"]),
+        "n_classes": int(layout["n_classes"]),
+        "feature_types": list(layout["feature_types"]),
+        "card_by_feature": {
+            str(int(k)): int(v) for k, v in sorted(dict(layout["card_by_feature"]).items())
+        },
+        "graph_nodes": int(layout["graph_nodes"]),
+        "graph_edges": int(layout["graph_edges"]),
+        "graph_depth_nodes": int(layout["graph_depth_nodes"]),
+        "feature_node_assignment": [int(v) for v in list(layout["feature_node_assignment"])],
+        "target_node_assignment": int(layout["target_node_assignment"]),
+        "adjacency": adjacency_payload,
+    }
+    encoded = json.dumps(signature_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.blake2s(encoded, digest_size=16).hexdigest()
+
+
+def _build_fixed_layout_compatibility_snapshot(
+    config: GeneratorConfig,
+    *,
+    resolved_device: str,
+) -> dict[str, Any]:
+    """Build a fixed-layout compatibility snapshot from effective generation inputs."""
+
+    shift_params = resolve_shift_runtime_params(config)
+    return {
+        "dataset.task": str(config.dataset.task),
+        "dataset.n_train": int(config.dataset.n_train),
+        "dataset.n_test": int(config.dataset.n_test),
+        "dataset.n_features_min": int(config.dataset.n_features_min),
+        "dataset.n_features_max": int(config.dataset.n_features_max),
+        "dataset.categorical_ratio_min": float(config.dataset.categorical_ratio_min),
+        "dataset.categorical_ratio_max": float(config.dataset.categorical_ratio_max),
+        "dataset.max_categorical_cardinality": int(config.dataset.max_categorical_cardinality),
+        "dataset.n_classes_min": int(config.dataset.n_classes_min),
+        "dataset.n_classes_max": int(config.dataset.n_classes_max),
+        "graph.n_nodes_min": int(config.graph.n_nodes_min),
+        "graph.n_nodes_max": int(config.graph.n_nodes_max),
+        "shift.edge_logit_bias_shift": float(shift_params.edge_logit_bias_shift),
+        "runtime.resolved_device": str(resolved_device),
+    }
+
+
+def sample_fixed_layout(
+    config: GeneratorConfig,
+    *,
+    seed: int | None = None,
+    device: str | None = None,
+) -> FixedLayoutPlan:
+    """Sample one reusable layout plan for fixed-layout batch generation."""
+
+    run_seed = seed if seed is not None else config.seed
+    requested_device = (device or config.runtime.device or "auto").lower()
+    resolved_device = _resolve_device(config, device)
+    manager = SeedManager(run_seed)
+    layout_gen = manager.torch_rng("layout")
+    layout = _sample_layout(config, layout_gen, "cpu")
+    n_train, n_test = _resolve_split_sizes(config)
+    _validate_class_split_for_layout(config, layout=layout, n_train=n_train, n_test=n_test)
+    return FixedLayoutPlan(
+        layout=layout,
+        requested_device=requested_device,
+        resolved_device=resolved_device,
+        plan_seed=int(run_seed),
+        n_train=int(n_train),
+        n_test=int(n_test),
+        layout_signature=_layout_signature(layout),
+        compatibility_snapshot=_build_fixed_layout_compatibility_snapshot(
+            config,
+            resolved_device=resolved_device,
+        ),
     )
 
 
@@ -479,16 +577,13 @@ def generate_one(
     """Generate one dataset bundle with deterministic per-dataset randomness."""
 
     run_seed = seed if seed is not None else config.seed
-    mode = normalize_curriculum_stage(config.curriculum_stage)
     requested_device = (device or config.runtime.device or "auto").lower()
     resolved_device = _resolve_device(config, device)
-    auto_stage = 1 if mode == CURRICULUM_STAGE_AUTO else _resolve_auto_stage(mode, seed=run_seed)
     return _generate_one_seeded(
         config,
         seed=run_seed,
         requested_device=requested_device,
         resolved_device=resolved_device,
-        auto_stage=auto_stage,
     )
 
 
@@ -525,7 +620,6 @@ def generate_batch_iter(
     if num_datasets == 0:
         return
 
-    mode = normalize_curriculum_stage(config.curriculum_stage)
     requested_device = (device or config.runtime.device or "auto").lower()
     resolved_device = _resolve_device(config, device)
     run_seed = seed if seed is not None else config.seed
@@ -537,5 +631,178 @@ def generate_batch_iter(
             seed=dataset_seed,
             requested_device=requested_device,
             resolved_device=resolved_device,
-            auto_stage=_resolve_auto_stage(mode, seed=dataset_seed),
         )
+
+
+def _annotate_fixed_layout_metadata(bundle: DatasetBundle, *, plan: FixedLayoutPlan) -> None:
+    """Attach fixed-layout provenance metadata to an emitted bundle."""
+
+    bundle.metadata["layout_mode"] = "fixed"
+    bundle.metadata["layout_plan_seed"] = int(plan.plan_seed)
+    bundle.metadata["layout_signature"] = str(plan.layout_signature)
+
+
+def _extract_emitted_schema_signature(
+    bundle: DatasetBundle,
+) -> tuple[int, tuple[str, ...], tuple[int, ...]]:
+    """Extract the emitted schema signature for fixed-layout contract checks."""
+
+    n_features = int(bundle.metadata.get("n_features", int(bundle.X_train.shape[1])))
+    feature_types = tuple(str(t) for t in bundle.feature_types)
+    if len(feature_types) != n_features:
+        raise ValueError(
+            "Fixed-layout bundle emitted inconsistent feature schema metadata: "
+            f"n_features={n_features}, feature_types_len={len(feature_types)}."
+        )
+
+    lineage = bundle.metadata.get("lineage")
+    if not isinstance(lineage, dict):
+        raise ValueError("Fixed-layout bundle is missing lineage metadata.")
+    assignments = lineage.get("assignments")
+    if not isinstance(assignments, dict):
+        raise ValueError("Fixed-layout bundle is missing lineage assignments metadata.")
+    raw_feature_to_node = assignments.get("feature_to_node")
+    if not isinstance(raw_feature_to_node, list):
+        raise ValueError("Fixed-layout bundle is missing lineage assignments.feature_to_node.")
+    feature_to_node = tuple(int(value) for value in raw_feature_to_node)
+    if len(feature_to_node) != n_features:
+        raise ValueError(
+            "Fixed-layout bundle emitted inconsistent lineage feature mapping: "
+            f"n_features={n_features}, feature_to_node_len={len(feature_to_node)}."
+        )
+
+    return n_features, feature_types, feature_to_node
+
+
+def _validate_fixed_layout_plan_compatibility(
+    config: GeneratorConfig,
+    *,
+    plan: FixedLayoutPlan,
+) -> str:
+    """Validate that a fixed-layout plan is compatible with the active config."""
+
+    snapshot = plan.compatibility_snapshot
+    if snapshot is None:
+        raise ValueError(
+            "Fixed-layout plan is missing compatibility snapshot. "
+            "Resample with sample_fixed_layout(...) before generation."
+        )
+
+    computed_layout_signature = _layout_signature(plan.layout)
+    if str(plan.layout_signature) != computed_layout_signature:
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: layout_signature does not match plan.layout."
+        )
+
+    missing_keys = [key for key in _FIXED_LAYOUT_COMPAT_KEYS if key not in snapshot]
+    if missing_keys:
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: compatibility snapshot is missing keys: "
+            f"{', '.join(missing_keys)}."
+        )
+
+    if int(plan.n_train) != int(snapshot["dataset.n_train"]):
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: plan.n_train does not match "
+            "compatibility snapshot."
+        )
+    if int(plan.n_test) != int(snapshot["dataset.n_test"]):
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: plan.n_test does not match "
+            "compatibility snapshot."
+        )
+    if str(plan.resolved_device) != str(snapshot["runtime.resolved_device"]):
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: plan.resolved_device does not match "
+            "compatibility snapshot."
+        )
+
+    try:
+        resolved_device = _resolve_device(config, plan.requested_device)
+    except (RuntimeError, ValueError) as exc:
+        raise ValueError(
+            "Fixed-layout plan/config mismatch: unable to resolve the plan-requested "
+            f"device '{plan.requested_device}' for the current environment."
+        ) from exc
+    if str(plan.resolved_device) != str(resolved_device):
+        raise ValueError(
+            "Fixed-layout plan/config mismatch: plan.resolved_device does not match "
+            f"the currently resolved backend ({plan.resolved_device!r} != {resolved_device!r})."
+        )
+
+    current_snapshot = _build_fixed_layout_compatibility_snapshot(
+        config,
+        resolved_device=resolved_device,
+    )
+    mismatches: list[str] = []
+    for key in _FIXED_LAYOUT_COMPAT_KEYS:
+        plan_value = snapshot[key]
+        config_value = current_snapshot[key]
+        if plan_value != config_value:
+            mismatches.append(f"{key} (plan={plan_value!r}, config={config_value!r})")
+    if mismatches:
+        raise ValueError(
+            "Fixed-layout plan/config mismatch for compatibility fields: " + "; ".join(mismatches)
+        )
+    return str(resolved_device)
+
+
+def generate_batch_fixed_layout_iter(
+    config: GeneratorConfig,
+    *,
+    plan: FixedLayoutPlan,
+    num_datasets: int,
+    seed: int | None = None,
+) -> Iterator[DatasetBundle]:
+    """Yield datasets that share one pre-sampled fixed layout and split shape."""
+
+    if num_datasets < 0:
+        raise ValueError(f"num_datasets must be >= 0, got {num_datasets}")
+    if num_datasets == 0:
+        return
+
+    validated_resolved_device = _validate_fixed_layout_plan_compatibility(config, plan=plan)
+    run_seed = seed if seed is not None else config.seed
+    manager = SeedManager(run_seed)
+    expected_schema: tuple[int, tuple[str, ...], tuple[int, ...]] | None = None
+    for i in range(num_datasets):
+        dataset_seed = manager.child("dataset", i)
+        bundle = _generate_one_with_resolved_layout(
+            config,
+            seed=dataset_seed,
+            requested_device=plan.requested_device,
+            resolved_device=validated_resolved_device,
+            n_train=int(plan.n_train),
+            n_test=int(plan.n_test),
+            layout=plan.layout,
+            preserve_feature_schema=True,
+        )
+        _annotate_fixed_layout_metadata(bundle, plan=plan)
+        schema = _extract_emitted_schema_signature(bundle)
+        if expected_schema is None:
+            expected_schema = schema
+        elif schema != expected_schema:
+            raise ValueError(
+                "Fixed-layout schema mismatch: emitted dataset does not match "
+                "the first fixed-layout bundle schema."
+            )
+        yield bundle
+
+
+def generate_batch_fixed_layout(
+    config: GeneratorConfig,
+    *,
+    plan: FixedLayoutPlan,
+    num_datasets: int,
+    seed: int | None = None,
+) -> list[DatasetBundle]:
+    """Generate a materialized fixed-layout batch using a reusable plan."""
+
+    return list(
+        generate_batch_fixed_layout_iter(
+            config,
+            plan=plan,
+            num_datasets=num_datasets,
+            seed=seed,
+        )
+    )
