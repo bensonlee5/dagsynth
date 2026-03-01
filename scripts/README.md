@@ -1,6 +1,6 @@
 # Generation Scripts
 
-These wrappers call `uv run cauchy-gen ...` from the repo root.
+These wrappers run `cauchy-gen` from the repo root (typically via `uv run`).
 
 ## Scripts
 
@@ -14,6 +14,10 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
   - Uses `configs/preset_many_class_generate_smoke.yaml`.
 - `scripts/generate-smoke.sh [config] [num_datasets] [device]`
   - Runs quick in-memory generation with `--no-write`.
+- `scripts/generate-curriculum.sh --base-config ... --out-root ... --datasets-per-stage ... --n-test ... (--train-start/--train-stop/--train-step | --train-values)`
+  - Runs a curriculum as repeated `cauchy-gen generate` calls over stage row counts.
+  - Stage rows are required; columns are optional (`--n-features` or `--stage-columns`).
+  - `--chunk-size` controls sequential datasets per call.
 - `scripts/generate-missingness.sh [mechanism] [missing_rate] [num_datasets] [device] [out_dir] [seed]`
   - Runs generation with CLI-level missingness overrides (`mcar`, `mar`, `mnar`).
 - `scripts/fetch-additional-references.sh`
@@ -34,6 +38,8 @@ These wrappers call `uv run cauchy-gen ...` from the repo root.
 ./scripts/generate-many-class.sh 25 cpu data/run_many_class 123
 ./scripts/generate-from-config.sh configs/benchmark_medium_cuda.yaml 100 cuda data/run_medium 42
 ./scripts/generate-smoke.sh configs/default.yaml 3 cpu
+./scripts/generate-curriculum.sh --base-config configs/default.yaml --out-root data/run_curriculum --datasets-per-stage 4 --n-test 256 --train-start 1024 --train-stop 1026 --train-step 1 --chunk-size 2 --device cpu
+./scripts/generate-curriculum.sh --base-config configs/default.yaml --out-root data/run_curriculum_cols --datasets-per-stage 2 --n-test 128 --train-values 512,768,1024 --stage-columns 16,24,32 --no-write
 ./scripts/generate-missingness.sh mcar 0.2 25 cpu data/run_missing_mcar 101
 ./scripts/generate-missingness.sh mar 0.25 25 cpu data/run_missing_mar 102
 ./scripts/fetch-additional-references.sh
