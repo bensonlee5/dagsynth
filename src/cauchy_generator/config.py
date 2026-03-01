@@ -715,8 +715,16 @@ class BenchmarkConfig:
     profiles: dict[str, dict[str, int | str]] = field(
         default_factory=lambda: {
             "cpu": {"num_datasets": 200, "warmup_datasets": 10, "device": "cpu"},
-            "cuda_desktop": {"num_datasets": 2000, "warmup_datasets": 25, "device": "cuda"},
-            "cuda_h100": {"num_datasets": 5000, "warmup_datasets": 50, "device": "cuda"},
+            "cuda_desktop": {
+                "num_datasets": 2000,
+                "warmup_datasets": 25,
+                "device": "cuda",
+            },
+            "cuda_h100": {
+                "num_datasets": 5000,
+                "warmup_datasets": 50,
+                "device": "cuda",
+            },
         }
     )
 
@@ -768,18 +776,8 @@ class GeneratorConfig:
         runtime = RuntimeConfig(**(data.get("runtime") or {}))
         output = OutputConfig(**(data.get("output") or {}))
         diagnostics = DiagnosticsConfig(**(data.get("diagnostics") or {}))
-        if "steering" in data:
-            raise ValueError(
-                "Config key 'steering' is no longer supported. "
-                "Remove it and use diagnostics target bands only."
-            )
         benchmark = BenchmarkConfig(**(data.get("benchmark") or {}))
         filter_cfg = FilterConfig(**(data.get("filter") or {}))
-        if "meta_feature_targets" in data:
-            raise ValueError(
-                "Top-level config key 'meta_feature_targets' is no longer supported. "
-                "Move targets under diagnostics.meta_feature_targets."
-            )
         seed = int(data.get("seed", 1))
         curriculum_stage: str | int = data.get("curriculum_stage", CURRICULUM_STAGE_DEFAULT)
         return cls(
