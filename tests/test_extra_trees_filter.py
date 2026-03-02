@@ -130,6 +130,7 @@ def test_extra_trees_filter_can_report_insufficient_oob_predictions() -> None:
 
     assert accepted is False
     assert details["reason"] == "insufficient_oob_predictions"
+    assert 0 <= int(details["n_valid_oob"]) < 16
     assert details["backend"] == "extra_trees_cpu"
     assert details["threshold_requested"] == pytest.approx(0.5)
     assert details["threshold_effective"] == pytest.approx(0.5)
@@ -137,6 +138,26 @@ def test_extra_trees_filter_can_report_insufficient_oob_predictions() -> None:
     assert details["class_count"] is None
     assert details["class_bucket"] == "not_applicable"
     assert details["threshold_delta"] == pytest.approx(0.0)
+
+
+def test_extra_trees_filter_excludes_rows_with_no_oob_votes() -> None:
+    n_rows = 64
+    x, y = _make_regression_data(seed=13, n_rows=n_rows, n_features=8)
+    accepted, details = apply_extra_trees_filter(
+        x,
+        y,
+        task="regression",
+        seed=115,
+        n_estimators=1,
+        max_depth=6,
+        min_samples_leaf=1,
+        n_bootstrap=8,
+        threshold=0.0,
+    )
+
+    assert accepted is False
+    assert details["reason"] == "insufficient_oob_predictions"
+    assert 0 <= int(details["n_valid_oob"]) < n_rows
 
 
 def test_extra_trees_filter_classification_smoke() -> None:

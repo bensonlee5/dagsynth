@@ -120,6 +120,22 @@ def _bootstrap_wins_ratio(
     return float(wins / float(n_bootstrap))
 
 
+def _oob_valid_mask_from_samples(estimators_samples: Any, *, n_rows: int) -> np.ndarray:
+    """Return rows that received at least one OOB vote across fitted trees."""
+
+    if not isinstance(estimators_samples, list) or len(estimators_samples) == 0:
+        return np.zeros(n_rows, dtype=bool)
+
+    oob_vote_counts = np.zeros(n_rows, dtype=np.int32)
+    for sampled in estimators_samples:
+        sampled_idx = np.asarray(sampled, dtype=np.int64).reshape(-1)
+        inbag = np.zeros(n_rows, dtype=bool)
+        if sampled_idx.size > 0:
+            inbag[sampled_idx] = True
+        oob_vote_counts += (~inbag).astype(np.int32)
+    return oob_vote_counts > 0
+
+
 def apply_extra_trees_filter(
     x: torch.Tensor,
     y: torch.Tensor,
@@ -224,7 +240,11 @@ def apply_extra_trees_filter(
     oob_pred = np.asarray(model.oob_prediction_, dtype=np.float32)
     if oob_pred.ndim == 1:
         oob_pred = oob_pred.reshape(-1, 1)
-    valid_oob = np.isfinite(oob_pred).all(axis=1)
+    valid_oob = _oob_valid_mask_from_samples(
+        getattr(model, "estimators_samples_", None),
+        n_rows=n_rows,
+    )
+    valid_oob &= np.isfinite(oob_pred).all(axis=1)
     n_valid = int(valid_oob.sum())
     if n_valid < max(32, int(0.25 * n_rows)):
         return False, {
