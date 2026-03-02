@@ -53,7 +53,7 @@ ______________________________________________________________________
 
 ## What to inspect
 
-- `metadata.json` for resolved missingness configuration.
+- `metadata.ndjson` dataset records for resolved missingness configuration.
 - Benchmark summaries for `missingness_guardrails` (when present).
 
 For output details, see

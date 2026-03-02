@@ -42,12 +42,9 @@ ______________________________________________________________________
 ```
 out_dir/
   shard_00000/
-    dataset_000000/
-      train.parquet
-      test.parquet
-      metadata.json
-    dataset_000001/
-      ...
+    train.parquet
+    test.parquet
+    metadata.ndjson
     lineage/
       adjacency.bitpack.bin
       adjacency.index.json
@@ -58,29 +55,43 @@ out_dir/
 **Shard naming**: `shard_{id:05d}` — five-digit zero-padded shard ID.
 Default: 128 datasets per shard.
 
-**Dataset naming**: `dataset_{index:06d}` — six-digit zero-padded global
-dataset index.
-
 **Shard ID calculation**: `dataset_index // shard_size`.
 
 ______________________________________________________________________
 
 ## Parquet column schema
 
-**Feature columns**: `f_0000`, `f_0001`, ..., `f_{n-1:04d}` — four-digit
-zero-padded indices.
+Shard-level `train.parquet` and `test.parquet` both use packed row-wise
+records:
 
-**Target column**: `y`.
+| Column          | Type                  | Description                                |
+| --------------- | --------------------- | ------------------------------------------ |
+| `dataset_index` | int64                 | Global dataset index for this row          |
+| `row_index`     | int64                 | Row index within the dataset split         |
+| `x`             | list[float32/float64] | Full feature vector for this row           |
+| `y`             | int64 or float        | Target value for this row (task-dependent) |
 
 **Compression**: zstd (default).
 
-Column `f_{i:04d}` corresponds to `feature_types[i]`.
+Feature typing metadata remains per-dataset in `metadata.ndjson` records.
 
 ______________________________________________________________________
 
-## Metadata JSON structure
+## Metadata NDJSON structure
 
-Each dataset's `metadata.json` contains:
+Each shard writes one `metadata.ndjson` file with one JSON record per dataset.
+Each line contains:
+
+| Key             | Type      | Description                                  |
+| --------------- | --------- | -------------------------------------------- |
+| `dataset_index` | int       | Global dataset index                         |
+| `n_train`       | int       | Train row count for the dataset              |
+| `n_test`        | int       | Test row count for the dataset               |
+| `n_features`    | int       | Feature count for the dataset                |
+| `feature_types` | list[str] | Per-feature type annotations (`num`/`cat`)   |
+| `metadata`      | object    | The dataset metadata payload described below |
+
+`metadata` contains the same object fields as before.
 
 ### Top-level keys
 
@@ -222,7 +233,7 @@ lineage is persisted to disk, payloads are rewritten to compact version
 
 ### Version 1.1.0 (compact, on-disk)
 
-Used in `metadata.json` when lineage artifacts are written to disk.
+Used in `metadata.ndjson` dataset records when lineage artifacts are written to disk.
 Replaces the dense adjacency matrix with a reference to bitpacked binary
 data.
 
@@ -235,8 +246,8 @@ data.
     "edge_count": 12,
     "adjacency_ref": {
       "encoding": "upper_triangle_bitpack_v1",
-      "blob_path": "../lineage/adjacency.bitpack.bin",
-      "index_path": "../lineage/adjacency.index.json",
+      "blob_path": "lineage/adjacency.bitpack.bin",
+      "index_path": "lineage/adjacency.index.json",
       "dataset_index": 0,
       "bit_offset": 0,
       "bit_length": 28,
@@ -276,8 +287,9 @@ configuration, runs are expected to reproduce metadata and numerical outputs
 within tolerance. Strict byte-identical tensors/files are not guaranteed
 across all backends.
 
-**Feature alignment** — `feature_types[i]` describes parquet column
-`f_{i:04d}` and tensor column index `i` in `X_train` / `X_test`.
+**Feature alignment** — `feature_types[i]` in each metadata record describes
+feature index `i` inside packed `x` row vectors and tensor column index `i`
+in `X_train` / `X_test`.
 
 **Lineage integrity** — each dataset's bitpacked adjacency data is
 protected by a SHA-256 checksum recorded in the metadata.

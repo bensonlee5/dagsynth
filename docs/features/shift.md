@@ -86,7 +86,7 @@ ______________________________________________________________________
 
 ## What to inspect
 
-- Per-dataset `metadata.json` includes resolved profile/scales and derived
+- Per-dataset `metadata.ndjson` records include resolved profile/scales and derived
   multipliers (`edge_odds_multiplier`, `noise_variance_multiplier`,
   `mechanism_nonlinear_mass`).
 - Diagnostics coverage summaries include shift observability metrics such as

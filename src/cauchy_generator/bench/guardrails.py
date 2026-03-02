@@ -21,7 +21,7 @@ from cauchy_generator.bench.constants import (
 from cauchy_generator.bench.metrics import degradation_percent
 from cauchy_generator.config import GeneratorConfig
 from cauchy_generator.core.dataset import generate_batch_iter
-from cauchy_generator.io.parquet_writer import write_parquet_shards_stream
+from cauchy_generator.io.parquet_writer import write_packed_parquet_shards_stream
 from cauchy_generator.math_utils import to_numpy as _to_numpy
 from cauchy_generator.rng import offset_seed32
 from cauchy_generator.types import DatasetBundle
@@ -65,7 +65,7 @@ def _measure_persistence_datasets_per_minute(
     start = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="cauchy_lineage_guardrail_") as tmp_dir:
         out_dir = Path(tmp_dir) / "shards"
-        _ = write_parquet_shards_stream(
+        _ = write_packed_parquet_shards_stream(
             bundles,
             out_dir=out_dir,
             shard_size=max(1, int(config.output.shard_size)),
