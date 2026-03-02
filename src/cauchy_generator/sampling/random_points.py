@@ -12,16 +12,11 @@ def _sample_unit_ball(
     d: int,
     generator: torch.Generator,
     device: str,
-    *,
-    noise_spec: NoiseSamplingSpec | None = None,
 ) -> torch.Tensor:
     """Sample points uniformly from the d-dimensional unit ball in torch."""
-    v = sample_noise_from_spec(
-        (n, d),
-        generator=generator,
-        device=device,
-        noise_spec=noise_spec,
-    )
+    # Uniform sphere directions require normalized Gaussian draws.
+    # Using non-Gaussian draws here breaks rotational invariance.
+    v = torch.randn(n, d, generator=generator, device=device)
     v /= torch.clamp(torch.norm(v, dim=1, keepdim=True), min=1e-6)
     u = torch.empty(n, 1, device=device).uniform_(0.0, 1.0, generator=generator)
     r = torch.pow(u, 1.0 / d)
@@ -88,7 +83,7 @@ def sample_random_points(
     elif base_kind == "uniform":
         base = torch.empty(n_rows, dim, device=device).uniform_(-1.0, 1.0, generator=generator)
     elif base_kind == "unit_ball":
-        base = _sample_unit_ball(n_rows, dim, generator, device, noise_spec=noise_spec)
+        base = _sample_unit_ball(n_rows, dim, generator, device)
     else:
         base = _sample_random_covariance_normal(
             n_rows,
