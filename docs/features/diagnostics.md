@@ -7,7 +7,7 @@ ______________________________________________________________________
 
 ## When to use
 
-- You need per-dataset `metadata.json` and summary-level metric coverage.
+- You need per-dataset records in shard `metadata.ndjson` and summary-level metric coverage.
 - You are validating whether presets or CLI overrides hit expected ranges.
 - You want benchmark runs to include richer context for guardrail triage.
 
@@ -56,7 +56,7 @@ ______________________________________________________________________
 
 ## What to inspect
 
-- Per-dataset `metadata.json` values for realized generation parameters.
+- Per-dataset `metadata.ndjson` records for realized generation parameters.
 - Coverage summaries for meta-features and enabled observability metrics.
 - Benchmark summary guardrail sections that include diagnostics context.
 

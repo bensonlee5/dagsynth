@@ -17,7 +17,7 @@ from .lineage_schema import (
     validate_lineage_payload,
     validate_metadata_lineage,
 )
-from .parquet_writer import write_parquet_shards, write_parquet_shards_stream
+from .parquet_writer import write_packed_parquet_shards_stream
 
 __all__ = [
     "LINEAGE_ADJACENCY_ENCODING",
@@ -33,6 +33,5 @@ __all__ = [
     "upper_triangle_bit_length",
     "validate_lineage_payload",
     "validate_metadata_lineage",
-    "write_parquet_shards",
-    "write_parquet_shards_stream",
+    "write_packed_parquet_shards_stream",
 ]

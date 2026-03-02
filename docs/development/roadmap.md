@@ -94,7 +94,7 @@ walkthroughs, see `docs/how-it-works.md`.
 
 - `generate_one(config: GeneratorConfig, *, seed: int | None = None, device: str | None = None) -> DatasetBundle`
 - `generate_batch(config: GeneratorConfig, *, num_datasets: int, seed: int | None = None, device: str | None = None) -> list[DatasetBundle]`
-- `write_parquet_shards(bundles, out_dir, shard_size, compression="zstd")`
+- `write_packed_parquet_shards_stream(bundles, out_dir, shard_size, compression="zstd")`
 - `DatasetConfig` missingness controls:
   - `missing_rate`
   - `missing_mechanism` (`none|mcar|mar|mnar`)

@@ -39,7 +39,7 @@ from cauchy_generator.hardware import (
     apply_hardware_profile,
     detect_hardware,
 )
-from cauchy_generator.io.parquet_writer import write_parquet_shards_stream
+from cauchy_generator.io.parquet_writer import write_packed_parquet_shards_stream
 from cauchy_generator.meta_targets import (
     coerce_quantiles,
     merge_target_bands,
@@ -492,7 +492,7 @@ def _run_generate(args: argparse.Namespace) -> int:
         print(f"Generated {generated} datasets (no-write mode).")
         return 0
 
-    written = write_parquet_shards_stream(
+    written = write_packed_parquet_shards_stream(
         stream,
         out_dir=out_dir,
         shard_size=config.output.shard_size,

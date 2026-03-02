@@ -16,8 +16,7 @@ from cauchy_generator.io.lineage_schema import (
     LINEAGE_SCHEMA_VERSION_COMPACT,
     validate_lineage_payload,
 )
-from cauchy_generator.io.parquet_writer import write_parquet_shards, write_parquet_shards_stream
-from cauchy_generator.io.parquet_writer import _sanitize_json
+from cauchy_generator.io.parquet_writer import _sanitize_json, write_packed_parquet_shards_stream
 from cauchy_generator.types import DatasetBundle
 
 
@@ -90,18 +89,34 @@ def _generate_one_with_retries(
     raise AssertionError("unreachable")
 
 
+def _stub_write_packed_split(*, state, split, dataset_index, x, y, compression) -> None:
+    _ = x
+    _ = y
+    _ = compression
+    split_path = state.train_path if split == "train" else state.test_path
+    with split_path.open("a", encoding="utf-8") as f:
+        f.write(f"{dataset_index}\n")
+
+
+def _load_metadata_records(path: Path) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        records.append(json.loads(line))
+    return records
+
+
 def test_io_exports_resolve_lineage_path(tmp_path) -> None:
-    resolved = resolve_lineage_path(tmp_path, "../lineage/adjacency.bitpack.bin")
-    assert resolved == tmp_path / "../lineage/adjacency.bitpack.bin"
+    resolved = resolve_lineage_path(tmp_path, "lineage/adjacency.bitpack.bin")
+    assert resolved == tmp_path / "lineage/adjacency.bitpack.bin"
 
 
-def test_write_parquet_shards_stream_writes_iterable(tmp_path, monkeypatch) -> None:
-    def _stub_write_split(path, _x, _y, _compression):
-        path.write_text("ok", encoding="utf-8")
-
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
+def test_write_packed_parquet_shards_stream_writes_iterable(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _stub_write_packed_split,
+    )
     bundles = (_bundle(i) for i in range(3))
-    written = write_parquet_shards_stream(
+    written = write_packed_parquet_shards_stream(
         bundles,
         tmp_path,
         shard_size=2,
@@ -109,45 +124,103 @@ def test_write_parquet_shards_stream_writes_iterable(tmp_path, monkeypatch) -> N
     )
 
     assert written == 3
-    assert (tmp_path / "shard_00000" / "dataset_000000" / "train.parquet").exists()
-    assert (tmp_path / "shard_00000" / "dataset_000001" / "test.parquet").exists()
-    assert (tmp_path / "shard_00001" / "dataset_000002" / "metadata.json").exists()
-    metadata = json.loads(
-        (tmp_path / "shard_00001" / "dataset_000002" / "metadata.json").read_text(encoding="utf-8")
+    assert (tmp_path / "shard_00000" / "train.parquet").exists()
+    assert (tmp_path / "shard_00000" / "test.parquet").exists()
+    assert (tmp_path / "shard_00001" / "metadata.ndjson").exists()
+    records = _load_metadata_records(tmp_path / "shard_00001" / "metadata.ndjson")
+    assert records[0]["dataset_index"] == 2
+    assert records[0]["metadata"]["peak_flops"] is None
+
+
+def test_write_packed_parquet_shards_stream_writes_real_parquet_tables(tmp_path) -> None:
+    pyarrow_parquet = pytest.importorskip("pyarrow.parquet")
+    written = write_packed_parquet_shards_stream(
+        [_bundle(1), _bundle(2)],
+        tmp_path,
+        shard_size=8,
+        compression="zstd",
     )
-    assert metadata["peak_flops"] is None
+    assert written == 2
+
+    train_table = pyarrow_parquet.read_table(tmp_path / "shard_00000" / "train.parquet")
+    test_table = pyarrow_parquet.read_table(tmp_path / "shard_00000" / "test.parquet")
+    assert train_table.num_rows == 4
+    assert test_table.num_rows == 2
+    assert train_table.column("dataset_index").to_pylist() == [0, 0, 1, 1]
+    train_x = train_table.column("x").to_pylist()
+    assert len(train_x[0]) == 2
+    assert train_x[0] == [1.0, 1.0]
 
 
-def test_write_parquet_shards_returns_paths(tmp_path, monkeypatch) -> None:
-    def _stub_write_split(path, _x, _y, _compression):
-        path.write_text("ok", encoding="utf-8")
+def test_write_packed_parquet_shards_stream_preserves_float_targets(tmp_path) -> None:
+    pyarrow_parquet = pytest.importorskip("pyarrow.parquet")
 
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
-    paths = write_parquet_shards([_bundle(1), _bundle(2)], tmp_path, shard_size=1)
-    assert len(paths) == 2
-    assert paths[0].name == "dataset_000000"
-    assert paths[1].name == "dataset_000001"
+    bundle = DatasetBundle(
+        X_train=np.full((2, 2), 2.0, dtype=np.float32),
+        y_train=np.array([0.5, 1.5], dtype=np.float32),
+        X_test=np.full((1, 2), 2.0, dtype=np.float32),
+        y_test=np.array([2.5], dtype=np.float32),
+        feature_types=["num", "num"],
+        metadata={"seed": 7},
+    )
+
+    written = write_packed_parquet_shards_stream(
+        [bundle], tmp_path, shard_size=8, compression="zstd"
+    )
+    assert written == 1
+
+    train_table = pyarrow_parquet.read_table(tmp_path / "shard_00000" / "train.parquet")
+    test_table = pyarrow_parquet.read_table(tmp_path / "shard_00000" / "test.parquet")
+
+    assert str(train_table.schema.field("y").type) == "float"
+    assert train_table.column("y").to_pylist() == pytest.approx([0.5, 1.5])
+    assert test_table.column("y").to_pylist() == pytest.approx([2.5])
 
 
-def test_write_parquet_shards_stream_rejects_stale_output(tmp_path) -> None:
+def test_write_packed_parquet_shards_stream_rejects_incompatible_split_schema(tmp_path) -> None:
+    pytest.importorskip("pyarrow.parquet")
+
+    int_bundle = _bundle(1)
+    float_bundle = DatasetBundle(
+        X_train=np.full((2, 2), 2.0, dtype=np.float32),
+        y_train=np.array([0.5, 1.5], dtype=np.float32),
+        X_test=np.full((1, 2), 2.0, dtype=np.float32),
+        y_test=np.array([1.5], dtype=np.float32),
+        feature_types=["num", "num"],
+        metadata={"seed": 2},
+    )
+
+    with pytest.raises(ValueError, match="Incompatible packed train schema"):
+        write_packed_parquet_shards_stream(
+            [int_bundle, float_bundle],
+            tmp_path,
+            shard_size=8,
+            compression="zstd",
+        )
+
+
+def test_write_packed_parquet_shards_stream_rejects_stale_output(tmp_path) -> None:
     stale_dir = tmp_path / "shard_00000"
     stale_dir.mkdir(parents=True, exist_ok=True)
     with pytest.raises(RuntimeError, match="already contains shard data"):
-        write_parquet_shards_stream([_bundle(1)], tmp_path, shard_size=1)
+        write_packed_parquet_shards_stream([_bundle(1)], tmp_path, shard_size=1)
 
 
-def test_write_parquet_shards_stream_writes_lineage_metadata(tmp_path, monkeypatch) -> None:
-    def _stub_write_split(path, _x, _y, _compression):
-        path.write_text("ok", encoding="utf-8")
-
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
+def test_write_packed_parquet_shards_stream_writes_lineage_metadata(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _stub_write_packed_split,
+    )
     bundle = _bundle_with_dense_lineage(7)
 
-    written = write_parquet_shards_stream([bundle], tmp_path, shard_size=1, compression="zstd")
-    assert written == 1
-    metadata = json.loads(
-        (tmp_path / "shard_00000" / "dataset_000000" / "metadata.json").read_text(encoding="utf-8")
+    written = write_packed_parquet_shards_stream(
+        [bundle], tmp_path, shard_size=1, compression="zstd"
     )
+    assert written == 1
+
+    shard_dir = tmp_path / "shard_00000"
+    records = _load_metadata_records(shard_dir / "metadata.ndjson")
+    metadata = records[0]["metadata"]
     lineage = metadata["lineage"]
     assert lineage["schema_name"] == LINEAGE_SCHEMA_NAME
     assert lineage["schema_version"] == LINEAGE_SCHEMA_VERSION_COMPACT
@@ -162,9 +235,8 @@ def test_write_parquet_shards_stream_writes_lineage_metadata(tmp_path, monkeypat
     assert isinstance(adjacency_ref["sha256"], str)
     assert len(adjacency_ref["sha256"]) == 64
 
-    dataset_dir = tmp_path / "shard_00000" / "dataset_000000"
-    blob_path = resolve_lineage_path(dataset_dir, adjacency_ref["blob_path"])
-    index_path = resolve_lineage_path(dataset_dir, adjacency_ref["index_path"])
+    blob_path = resolve_lineage_path(shard_dir, adjacency_ref["blob_path"])
+    index_path = resolve_lineage_path(shard_dir, adjacency_ref["index_path"])
     assert blob_path.exists()
     assert index_path.exists()
 
@@ -207,23 +279,26 @@ def test_generate_and_persist_compact_lineage_for_task(
 
     bundle = _generate_one_with_retries(cfg, seed=919, device="cpu")
 
-    def _stub_write_split(path, _x, _y, _compression):
-        path.write_text("ok", encoding="utf-8")
-
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
-    written = write_parquet_shards_stream([bundle], tmp_path, shard_size=1, compression="zstd")
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _stub_write_packed_split,
+    )
+    written = write_packed_parquet_shards_stream(
+        [bundle], tmp_path, shard_size=1, compression="zstd"
+    )
     assert written == 1
 
-    dataset_dir = tmp_path / "shard_00000" / "dataset_000000"
-    metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+    shard_dir = tmp_path / "shard_00000"
+    records = _load_metadata_records(shard_dir / "metadata.ndjson")
+    metadata = records[0]["metadata"]
     lineage = metadata["lineage"]
     assert lineage["schema_version"] == LINEAGE_SCHEMA_VERSION_COMPACT
     validate_lineage_payload(lineage)
 
     graph = lineage["graph"]
     adjacency_ref = graph["adjacency_ref"]
-    blob_path = resolve_lineage_path(dataset_dir, adjacency_ref["blob_path"])
-    index_path = resolve_lineage_path(dataset_dir, adjacency_ref["index_path"])
+    blob_path = resolve_lineage_path(shard_dir, adjacency_ref["blob_path"])
+    index_path = resolve_lineage_path(shard_dir, adjacency_ref["index_path"])
 
     n_nodes = int(graph["n_nodes"])
     with blob_path.open("rb") as f:
@@ -240,13 +315,13 @@ def test_generate_and_persist_compact_lineage_for_task(
     assert index_payload["records"][0]["dataset_index"] == 0
 
 
-def test_write_parquet_shards_stream_opens_lineage_blob_once_per_shard(
+def test_write_packed_parquet_shards_stream_opens_lineage_blob_once_per_shard(
     tmp_path, monkeypatch
 ) -> None:
-    def _stub_write_split(path, _x, _y, _compression):
-        path.write_text("ok", encoding="utf-8")
-
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _stub_write_packed_split,
+    )
 
     original_open = Path.open
     counters = {"open": 0, "close": 0}
@@ -273,20 +348,22 @@ def test_write_parquet_shards_stream_opens_lineage_blob_once_per_shard(
     monkeypatch.setattr(Path, "open", _patched_open)
 
     bundles = [_bundle_with_dense_lineage(1), _bundle_with_dense_lineage(2)]
-    written = write_parquet_shards_stream(bundles, tmp_path, shard_size=8, compression="zstd")
+    written = write_packed_parquet_shards_stream(
+        bundles, tmp_path, shard_size=8, compression="zstd"
+    )
 
     assert written == 2
     assert counters["open"] == 1
     assert counters["close"] == 1
 
 
-def test_write_parquet_shards_stream_limits_open_lineage_blob_descriptors(
+def test_write_packed_parquet_shards_stream_limits_open_lineage_blob_descriptors(
     tmp_path, monkeypatch
 ) -> None:
-    def _stub_write_split(path, _x, _y, _compression):
-        path.write_text("ok", encoding="utf-8")
-
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _stub_write_split)
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _stub_write_packed_split,
+    )
 
     original_open = Path.open
     counters = {"max_open": 0}
@@ -319,23 +396,35 @@ def test_write_parquet_shards_stream_limits_open_lineage_blob_descriptors(
     monkeypatch.setattr(Path, "open", _patched_open)
 
     bundles = [_bundle_with_dense_lineage(i) for i in range(12)]
-    written = write_parquet_shards_stream(bundles, tmp_path, shard_size=1, compression="zstd")
+    written = write_packed_parquet_shards_stream(
+        bundles, tmp_path, shard_size=1, compression="zstd"
+    )
 
     assert written == 12
     assert counters["max_open"] <= 1
     assert open_count["value"] == 0
 
 
-def test_write_parquet_shards_stream_closes_lineage_blob_on_failure(tmp_path, monkeypatch) -> None:
+def test_write_packed_parquet_shards_stream_closes_lineage_blob_on_failure(
+    tmp_path, monkeypatch
+) -> None:
     split_calls = {"count": 0}
 
-    def _failing_write_split(path, _x, _y, _compression):
+    def _failing_write_packed_split(*, state, split, dataset_index, x, y, compression):
+        _ = state
+        _ = split
+        _ = dataset_index
+        _ = x
+        _ = y
+        _ = compression
         split_calls["count"] += 1
         if split_calls["count"] >= 3:
             raise RuntimeError("forced split failure")
-        path.write_text("ok", encoding="utf-8")
 
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _failing_write_split)
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _failing_write_packed_split,
+    )
 
     original_open = Path.open
     counters = {"open": 0, "close": 0}
@@ -363,57 +452,41 @@ def test_write_parquet_shards_stream_closes_lineage_blob_on_failure(tmp_path, mo
 
     bundles = [_bundle_with_dense_lineage(1), _bundle_with_dense_lineage(2)]
     with pytest.raises(RuntimeError, match="forced split failure"):
-        write_parquet_shards_stream(bundles, tmp_path, shard_size=8, compression="zstd")
+        write_packed_parquet_shards_stream(bundles, tmp_path, shard_size=8, compression="zstd")
 
     assert counters["open"] == 1
     assert counters["close"] == 1
 
 
-def test_write_parquet_shards_stream_writes_lineage_index_on_failure(tmp_path, monkeypatch) -> None:
+def test_write_packed_parquet_shards_stream_writes_lineage_index_on_failure(
+    tmp_path, monkeypatch
+) -> None:
     split_calls = {"count": 0}
 
-    def _failing_write_split(path, _x, _y, _compression):
+    def _failing_write_packed_split(*, state, split, dataset_index, x, y, compression):
+        _ = state
+        _ = split
+        _ = dataset_index
+        _ = x
+        _ = y
+        _ = compression
         split_calls["count"] += 1
         if split_calls["count"] >= 3:
             raise RuntimeError("forced split failure")
-        path.write_text("ok", encoding="utf-8")
 
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _failing_write_split)
-
-    bundles = [_bundle_with_dense_lineage(1), _bundle_with_dense_lineage(2)]
-    with pytest.raises(RuntimeError, match="forced split failure"):
-        write_parquet_shards_stream(bundles, tmp_path, shard_size=8, compression="zstd")
-
-    dataset_dir = tmp_path / "shard_00000" / "dataset_000000"
-    metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
-    adjacency_ref = metadata["lineage"]["graph"]["adjacency_ref"]
-    index_path = resolve_lineage_path(dataset_dir, adjacency_ref["index_path"])
-    assert index_path.exists()
-
-    index_payload = json.loads(index_path.read_text(encoding="utf-8"))
-    records = index_payload["records"]
-    assert any(int(record["dataset_index"]) == 0 for record in records)
-
-
-def test_write_parquet_shards_writes_lineage_index_on_failure(tmp_path, monkeypatch) -> None:
-    split_calls = {"count": 0}
-
-    def _failing_write_split(path, _x, _y, _compression):
-        split_calls["count"] += 1
-        if split_calls["count"] >= 3:
-            raise RuntimeError("forced split failure")
-        path.write_text("ok", encoding="utf-8")
-
-    monkeypatch.setattr("cauchy_generator.io.parquet_writer._write_split", _failing_write_split)
+    monkeypatch.setattr(
+        "cauchy_generator.io.parquet_writer._write_packed_split",
+        _failing_write_packed_split,
+    )
 
     bundles = [_bundle_with_dense_lineage(1), _bundle_with_dense_lineage(2)]
     with pytest.raises(RuntimeError, match="forced split failure"):
-        write_parquet_shards(bundles, tmp_path, shard_size=8, compression="zstd")
+        write_packed_parquet_shards_stream(bundles, tmp_path, shard_size=8, compression="zstd")
 
-    dataset_dir = tmp_path / "shard_00000" / "dataset_000000"
-    metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
-    adjacency_ref = metadata["lineage"]["graph"]["adjacency_ref"]
-    index_path = resolve_lineage_path(dataset_dir, adjacency_ref["index_path"])
+    shard_dir = tmp_path / "shard_00000"
+    records = _load_metadata_records(shard_dir / "metadata.ndjson")
+    adjacency_ref = records[0]["metadata"]["lineage"]["graph"]["adjacency_ref"]
+    index_path = resolve_lineage_path(shard_dir, adjacency_ref["index_path"])
     assert index_path.exists()
 
     index_payload = json.loads(index_path.read_text(encoding="utf-8"))

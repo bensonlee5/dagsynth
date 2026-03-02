@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, BinaryIO, Iterable, Sequence, cast
+from typing import Any, BinaryIO, Iterable, TextIO, cast
 
 import numpy as np
 
@@ -34,29 +34,10 @@ except Exception:  # pragma: no cover - optional dependency
     pq = None
 
 
-def _array_to_columns(x: np.ndarray) -> dict[str, np.ndarray]:
-    """Convert a 2D feature matrix into Parquet column mapping."""
-
-    return {f"f_{i:04d}": x[:, i] for i in range(x.shape[1])}
-
-
 def _shard_id_for_dataset(*, dataset_index: int, shard_size: int) -> int:
     """Return shard id for a dataset index under configured shard size."""
 
     return dataset_index // max(1, shard_size)
-
-
-def _write_split(path: Path, x: np.ndarray, y: np.ndarray, compression: str) -> None:
-    """Write one train/test split to a Parquet file."""
-
-    if pa is None or pq is None:
-        raise RuntimeError(
-            "pyarrow is required for Parquet output. Install project dependencies with uv."
-        )
-    data = _array_to_columns(x)
-    data["y"] = y
-    table = pa.table(data)
-    pq.write_table(table, path, compression=compression)
 
 
 def _ensure_output_dir_safe(out_dir: Path) -> None:
@@ -75,6 +56,19 @@ def _ensure_output_dir_safe(out_dir: Path) -> None:
 
 
 @dataclass(slots=True)
+class _PackedShardState:
+    """Mutable packed-output state for one shard."""
+
+    shard_dir: Path
+    train_path: Path
+    test_path: Path
+    metadata_path: Path
+    train_writer: Any | None = None
+    test_writer: Any | None = None
+    metadata_file: TextIO | None = None
+
+
+@dataclass(slots=True)
 class _ShardLineageState:
     """Mutable lineage artifact state for one output shard."""
 
@@ -83,6 +77,30 @@ class _ShardLineageState:
     blob_file: BinaryIO | None = None
     byte_offset: int = 0
     records: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _packed_state_for_shard(
+    *,
+    shard_id: int,
+    out_dir: Path,
+    shard_states: dict[int, _PackedShardState],
+) -> _PackedShardState:
+    """Get or initialize packed output state for one shard."""
+
+    state = shard_states.get(shard_id)
+    if state is not None:
+        return state
+
+    shard_dir = out_dir / f"shard_{shard_id:05d}"
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    state = _PackedShardState(
+        shard_dir=shard_dir,
+        train_path=shard_dir / "train.parquet",
+        test_path=shard_dir / "test.parquet",
+        metadata_path=shard_dir / "metadata.ndjson",
+    )
+    shard_states[shard_id] = state
+    return state
 
 
 def _lineage_state_for_shard(
@@ -159,6 +177,17 @@ def _ensure_shard_blob_open(state: _ShardLineageState) -> BinaryIO:
     return opened
 
 
+def _ensure_metadata_file_open(state: _PackedShardState) -> TextIO:
+    """Return an append-ready metadata handle, opening it once per shard."""
+
+    metadata_file = state.metadata_file
+    if metadata_file is not None and not metadata_file.closed:
+        return metadata_file
+    opened = state.metadata_path.open("a", encoding="utf-8")
+    state.metadata_file = opened
+    return opened
+
+
 def _close_shard_blob(state: _ShardLineageState) -> None:
     """Close a single shard blob handle if open."""
 
@@ -171,11 +200,37 @@ def _close_shard_blob(state: _ShardLineageState) -> None:
         state.blob_file = None
 
 
+def _close_packed_shard_handles(state: _PackedShardState) -> None:
+    """Close open parquet and metadata handles for one shard."""
+
+    train_writer = state.train_writer
+    if train_writer is not None:
+        train_writer.close()
+        state.train_writer = None
+
+    test_writer = state.test_writer
+    if test_writer is not None:
+        test_writer.close()
+        state.test_writer = None
+
+    metadata_file = state.metadata_file
+    if metadata_file is not None:
+        metadata_file.close()
+        state.metadata_file = None
+
+
 def _close_shard_lineage_files(lineage_states: Mapping[int, _ShardLineageState]) -> None:
     """Close open shard blob handles."""
 
     for state in lineage_states.values():
         _close_shard_blob(state)
+
+
+def _close_packed_shard_files(shard_states: Mapping[int, _PackedShardState]) -> None:
+    """Close open packed shard handles."""
+
+    for state in shard_states.values():
+        _close_packed_shard_handles(state)
 
 
 def _persist_lineage_artifact_for_dataset(
@@ -215,8 +270,8 @@ def _persist_lineage_artifact_for_dataset(
     blob_file.write(packed)
     checksum = sha256_hex(packed)
 
-    blob_path = str(Path("..") / "lineage" / state.blob_path.name)
-    index_path = str(Path("..") / "lineage" / state.index_path.name)
+    blob_path = str(Path("lineage") / state.blob_path.name)
+    index_path = str(Path("lineage") / state.index_path.name)
     compact_lineage = _build_compact_lineage_payload(
         lineage,
         dataset_index=dataset_index,
@@ -287,124 +342,240 @@ def _finalize_lineage_states(
         return
 
 
-def _write_bundle_dataset(
+def _build_split_table(*, dataset_index: int, x: np.ndarray, y: np.ndarray) -> Any:
+    """Build packed row-wise table for one split of one dataset."""
+
+    if pa is None:
+        raise RuntimeError(
+            "pyarrow is required for Parquet output. Install project dependencies with uv."
+        )
+
+    if x.ndim != 2:
+        raise ValueError(f"Expected 2D features, got shape={x.shape}.")
+    if y.ndim != 1:
+        raise ValueError(f"Expected 1D targets, got shape={y.shape}.")
+
+    n_rows, n_features = x.shape
+    if y.shape[0] != n_rows:
+        raise ValueError(
+            f"Mismatched split sizes: features rows={n_rows} targets rows={y.shape[0]}."
+        )
+
+    x_item_type = pa.float64() if x.dtype == np.float64 else pa.float32()
+    x_contig = np.ascontiguousarray(x)
+    y_contig = np.ascontiguousarray(y)
+
+    x_values = pa.array(x_contig.reshape(-1), type=x_item_type)
+    if n_features > 0:
+        offsets_np = np.arange(0, (n_rows + 1) * n_features, n_features, dtype=np.int64)
+    else:
+        offsets_np = np.zeros(n_rows + 1, dtype=np.int64)
+    x_column = pa.ListArray.from_arrays(
+        pa.array(offsets_np),
+        x_values,
+        type=pa.list_(x_item_type),
+    )
+    data = {
+        "dataset_index": pa.array(np.full(n_rows, dataset_index, dtype=np.int64)),
+        "row_index": pa.array(np.arange(n_rows, dtype=np.int64)),
+        "x": x_column,
+        "y": pa.array(y_contig),
+    }
+    return pa.table(data)
+
+
+def _ensure_split_writer(
+    *,
+    state: _PackedShardState,
+    split: str,
+    schema: Any,
+    compression: str,
+) -> Any:
+    """Get or initialize a split writer for one shard."""
+
+    if pq is None:
+        raise RuntimeError(
+            "pyarrow is required for Parquet output. Install project dependencies with uv."
+        )
+
+    if split == "train":
+        writer = state.train_writer
+        path = state.train_path
+    else:
+        writer = state.test_writer
+        path = state.test_path
+
+    if writer is None:
+        writer = pq.ParquetWriter(path, schema=schema, compression=compression)
+        if split == "train":
+            state.train_writer = writer
+        else:
+            state.test_writer = writer
+    return writer
+
+
+def _write_packed_split(
+    *,
+    state: _PackedShardState,
+    split: str,
+    dataset_index: int,
+    x: np.ndarray,
+    y: np.ndarray,
+    compression: str,
+) -> None:
+    """Append one dataset split into shard-level packed parquet."""
+
+    table = _build_split_table(dataset_index=dataset_index, x=x, y=y)
+    writer = _ensure_split_writer(
+        state=state,
+        split=split,
+        schema=table.schema,
+        compression=compression,
+    )
+    if not table.schema.equals(writer.schema, check_metadata=False):
+        split_path = state.train_path if split == "train" else state.test_path
+        raise ValueError(
+            "Incompatible packed "
+            f"{split} schema in shard output '{split_path}': "
+            f"expected {writer.schema}, got {table.schema} "
+            f"(dataset_index={dataset_index}). "
+            "Mixed feature/target dtypes within one shard are not supported."
+        )
+    writer.write_table(table)
+
+
+def _write_metadata_record(
+    *,
+    state: _PackedShardState,
+    dataset_index: int,
+    feature_types: list[str],
+    metadata: Mapping[str, Any],
+    n_train: int,
+    n_test: int,
+    n_features: int,
+) -> None:
+    """Append one dataset metadata record to shard metadata stream."""
+
+    metadata_file = _ensure_metadata_file_open(state)
+    payload = {
+        "dataset_index": int(dataset_index),
+        "n_train": int(n_train),
+        "n_test": int(n_test),
+        "n_features": int(n_features),
+        "feature_types": list(feature_types),
+        "metadata": dict(metadata),
+    }
+    metadata_file.write(
+        json.dumps(
+            _sanitize_json(payload),
+            sort_keys=True,
+            allow_nan=False,
+        )
+    )
+    metadata_file.write("\n")
+
+
+def _write_bundle_to_shard(
     bundle: DatasetBundle,
     *,
     out_dir: Path,
     dataset_index: int,
     shard_size: int,
     compression: str,
+    shard_states: dict[int, _PackedShardState],
     lineage_states: dict[int, _ShardLineageState],
-) -> Path:
-    """Write a single dataset bundle under its shard/dataset directory."""
+) -> None:
+    """Write one dataset bundle into packed shard artifacts."""
 
     shard_id = _shard_id_for_dataset(dataset_index=dataset_index, shard_size=shard_size)
-    shard_dir = out_dir / f"shard_{shard_id:05d}"
-    shard_dir.mkdir(parents=True, exist_ok=True)
-
-    dataset_dir = shard_dir / f"dataset_{dataset_index:06d}"
-    dataset_dir.mkdir(parents=True, exist_ok=True)
+    shard_state = _packed_state_for_shard(
+        shard_id=shard_id,
+        out_dir=out_dir,
+        shard_states=shard_states,
+    )
 
     x_train = _to_numpy(bundle.X_train)
     y_train = _to_numpy(bundle.y_train)
     x_test = _to_numpy(bundle.X_test)
     y_test = _to_numpy(bundle.y_test)
 
-    _write_split(dataset_dir / "train.parquet", x_train, y_train, compression)
-    _write_split(dataset_dir / "test.parquet", x_test, y_test, compression)
+    _write_packed_split(
+        state=shard_state,
+        split="train",
+        dataset_index=dataset_index,
+        x=x_train,
+        y=y_train,
+        compression=compression,
+    )
+    _write_packed_split(
+        state=shard_state,
+        split="test",
+        dataset_index=dataset_index,
+        x=x_test,
+        y=y_test,
+        compression=compression,
+    )
 
     metadata = deepcopy(bundle.metadata)
     metadata = _persist_lineage_artifact_for_dataset(
         metadata,
         dataset_index=dataset_index,
         shard_id=shard_id,
-        shard_dir=shard_dir,
+        shard_dir=shard_state.shard_dir,
         lineage_states=lineage_states,
     )
-    with (dataset_dir / "metadata.json").open("w", encoding="utf-8") as f:
-        json.dump(
-            _sanitize_json(metadata),
-            f,
-            indent=2,
-            sort_keys=True,
-            allow_nan=False,
-        )
-    return dataset_dir
+    _write_metadata_record(
+        state=shard_state,
+        dataset_index=dataset_index,
+        feature_types=list(bundle.feature_types),
+        metadata=metadata,
+        n_train=int(x_train.shape[0]),
+        n_test=int(x_test.shape[0]),
+        n_features=int(x_train.shape[1]),
+    )
 
 
-def write_parquet_shards_stream(
+def write_packed_parquet_shards_stream(
     bundles: Iterable[DatasetBundle],
     out_dir: str | Path,
     *,
     shard_size: int = 128,
     compression: str = "zstd",
 ) -> int:
-    """Write bundles from an iterable stream, returning number of datasets written."""
+    """Write bundles into packed shard outputs and return dataset count."""
 
     out = Path(out_dir)
     _ensure_output_dir_safe(out)
 
+    shard_states: dict[int, _PackedShardState] = {}
     lineage_states: dict[int, _ShardLineageState] = {}
     active_shard_id: int | None = None
     written = 0
     success = False
+
     try:
         for idx, bundle in enumerate(bundles):
             shard_id = _shard_id_for_dataset(dataset_index=idx, shard_size=shard_size)
             if active_shard_id is not None and shard_id != active_shard_id:
-                previous_state = lineage_states.get(active_shard_id)
-                if previous_state is not None:
-                    _close_shard_blob(previous_state)
+                previous_shard = shard_states.get(active_shard_id)
+                if previous_shard is not None:
+                    _close_packed_shard_handles(previous_shard)
+                previous_lineage = lineage_states.get(active_shard_id)
+                if previous_lineage is not None:
+                    _close_shard_blob(previous_lineage)
             active_shard_id = shard_id
-            _write_bundle_dataset(
+            _write_bundle_to_shard(
                 bundle,
                 out_dir=out,
                 dataset_index=idx,
                 shard_size=shard_size,
                 compression=compression,
+                shard_states=shard_states,
                 lineage_states=lineage_states,
             )
             written = idx + 1
         success = True
         return written
     finally:
-        _finalize_lineage_states(lineage_states, strict_index_write=success)
-
-
-def write_parquet_shards(
-    bundles: Sequence[DatasetBundle],
-    out_dir: str | Path,
-    *,
-    shard_size: int = 128,
-    compression: str = "zstd",
-) -> list[Path]:
-    """Write dataset bundles as partitioned Parquet shards with metadata."""
-
-    out = Path(out_dir)
-    _ensure_output_dir_safe(out)
-    lineage_states: dict[int, _ShardLineageState] = {}
-    active_shard_id: int | None = None
-    shard_paths: list[Path] = []
-    success = False
-
-    try:
-        for idx, bundle in enumerate(bundles):
-            shard_id = _shard_id_for_dataset(dataset_index=idx, shard_size=shard_size)
-            if active_shard_id is not None and shard_id != active_shard_id:
-                previous_state = lineage_states.get(active_shard_id)
-                if previous_state is not None:
-                    _close_shard_blob(previous_state)
-            active_shard_id = shard_id
-            dataset_dir = _write_bundle_dataset(
-                bundle,
-                out_dir=out,
-                dataset_index=idx,
-                shard_size=shard_size,
-                compression=compression,
-                lineage_states=lineage_states,
-            )
-            shard_paths.append(dataset_dir)
-        success = True
-        return shard_paths
-    finally:
+        _close_packed_shard_files(shard_states)
         _finalize_lineage_states(lineage_states, strict_index_write=success)
