@@ -152,6 +152,31 @@ def test_write_packed_parquet_shards_stream_writes_real_parquet_tables(tmp_path)
     assert train_x[0] == [1.0, 1.0]
 
 
+def test_write_packed_parquet_shards_stream_preserves_float_targets(tmp_path) -> None:
+    pyarrow_parquet = pytest.importorskip("pyarrow.parquet")
+
+    bundle = DatasetBundle(
+        X_train=np.full((2, 2), 2.0, dtype=np.float32),
+        y_train=np.array([0.5, 1.5], dtype=np.float32),
+        X_test=np.full((1, 2), 2.0, dtype=np.float32),
+        y_test=np.array([2.5], dtype=np.float32),
+        feature_types=["num", "num"],
+        metadata={"seed": 7},
+    )
+
+    written = write_packed_parquet_shards_stream(
+        [bundle], tmp_path, shard_size=8, compression="zstd"
+    )
+    assert written == 1
+
+    train_table = pyarrow_parquet.read_table(tmp_path / "shard_00000" / "train.parquet")
+    test_table = pyarrow_parquet.read_table(tmp_path / "shard_00000" / "test.parquet")
+
+    assert str(train_table.schema.field("y").type) == "float"
+    assert train_table.column("y").to_pylist() == pytest.approx([0.5, 1.5])
+    assert test_table.column("y").to_pylist() == pytest.approx([2.5])
+
+
 def test_write_packed_parquet_shards_stream_rejects_incompatible_split_schema(tmp_path) -> None:
     pytest.importorskip("pyarrow.parquet")
 

@@ -355,18 +355,31 @@ def _build_split_table(*, dataset_index: int, x: np.ndarray, y: np.ndarray) -> A
     if y.ndim != 1:
         raise ValueError(f"Expected 1D targets, got shape={y.shape}.")
 
-    n_rows, _ = x.shape
+    n_rows, n_features = x.shape
     if y.shape[0] != n_rows:
         raise ValueError(
             f"Mismatched split sizes: features rows={n_rows} targets rows={y.shape[0]}."
         )
 
     x_item_type = pa.float64() if x.dtype == np.float64 else pa.float32()
+    x_contig = np.ascontiguousarray(x)
+    y_contig = np.ascontiguousarray(y)
+
+    x_values = pa.array(x_contig.reshape(-1), type=x_item_type)
+    if n_features > 0:
+        offsets_np = np.arange(0, (n_rows + 1) * n_features, n_features, dtype=np.int64)
+    else:
+        offsets_np = np.zeros(n_rows + 1, dtype=np.int64)
+    x_column = pa.ListArray.from_arrays(
+        pa.array(offsets_np),
+        x_values,
+        type=pa.list_(x_item_type),
+    )
     data = {
         "dataset_index": pa.array(np.full(n_rows, dataset_index, dtype=np.int64)),
         "row_index": pa.array(np.arange(n_rows, dtype=np.int64)),
-        "x": pa.array(x.tolist(), type=pa.list_(x_item_type)),
-        "y": pa.array(y.tolist()),
+        "x": x_column,
+        "y": pa.array(y_contig),
     }
     return pa.table(data)
 
