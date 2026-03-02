@@ -32,35 +32,32 @@ def _clip_and_standardize(x: torch.Tensor, feature_types: list[str]) -> torch.Te
     """Clip numeric outliers and standardize numeric columns."""
 
     out = x.clone()
-    for i, t in enumerate(feature_types):
-        if t == "cat":
-            continue
-        col = out[:, i]
-        q = torch.quantile(col.float(), torch.tensor([0.01, 0.99], device=col.device))
-        lo, hi = q[0], q[1]
-        col = torch.clamp(col, lo.item(), hi.item())
-        mu = float(torch.mean(col))
-        sd = float(torch.std(col, correction=0))
-        out[:, i] = (col - mu) / max(sd, 1e-6)
+    numeric_indices = [i for i, t in enumerate(feature_types) if t != "cat"]
+    if not numeric_indices:
+        return out
+
+    # Standardize all numeric columns in one batched pass.
+    numeric_index = torch.tensor(numeric_indices, device=out.device, dtype=torch.long)
+    numeric = out.index_select(dim=1, index=numeric_index)
+    quantiles = torch.quantile(
+        numeric.float(),
+        torch.tensor([0.01, 0.99], device=numeric.device),
+        dim=0,
+    )
+    lo = quantiles[0].unsqueeze(0)
+    hi = quantiles[1].unsqueeze(0)
+    numeric = torch.clamp(numeric, lo, hi)
+    mu = torch.mean(numeric, dim=0, keepdim=True)
+    sd = torch.std(numeric, dim=0, correction=0, keepdim=True).clamp_min(1e-6)
+    out[:, numeric_index] = (numeric - mu) / sd
     return out
 
 
-def _permute_classes(y: torch.Tensor, generator: torch.Generator, device: str) -> torch.Tensor:
-    """Permute class indices while preserving class counts."""
+def _has_at_least_two_classes(y: torch.Tensor) -> bool:
+    """Return whether a non-empty label tensor contains at least two classes."""
 
-    classes = torch.unique(y)
-    perm = classes[torch.randperm(classes.numel(), generator=generator, device=device)]
-    remapped = torch.empty_like(y)
-    for src, dst in zip(classes.tolist(), perm.tolist(), strict=True):
-        remapped[y == src] = int(dst)
-    return remapped
-
-
-def _remap_classes_to_contiguous(y: torch.Tensor) -> torch.Tensor:
-    """Map arbitrary class ids to contiguous 0..K-1 labels (sorted by original id)."""
-
-    _, inverse = torch.unique(y.to(torch.int64), sorted=True, return_inverse=True)
-    return inverse.to(torch.int64)
+    y_i64 = y.to(torch.int64)
+    return bool(torch.min(y_i64) != torch.max(y_i64))
 
 
 @overload
@@ -129,8 +126,10 @@ def postprocess_dataset(
     x_all = _clip_and_standardize(x_all, feature_types)
 
     if not preserve_feature_schema:
-        perm = torch.randperm(x_all.shape[1], generator=generator, device=device)
-        perm_list = [int(i) for i in perm.tolist()]
+        # Keep permutation RNG on CPU while applying it on the feature tensor device.
+        perm_cpu = torch.randperm(x_all.shape[1], generator=generator, device="cpu")
+        perm_list = [int(i) for i in perm_cpu.tolist()]
+        perm = perm_cpu.to(device=x_all.device)
         x_all = x_all[:, perm]
         feature_types = [feature_types[i] for i in perm_list]
         feature_index_map = [feature_index_map[i] for i in perm_list]
@@ -143,10 +142,10 @@ def postprocess_dataset(
         y_all = torch.cat([y_train, y_test], dim=0).to(torch.float32)
         q = torch.quantile(y_all.float(), torch.tensor([0.01, 0.99], device=y_all.device))
         lo, hi = q[0], q[1]
-        y_all = torch.clamp(y_all, lo.item(), hi.item())
-        mu = float(torch.mean(y_all))
-        sd = float(torch.std(y_all, correction=0))
-        y_all = (y_all - mu) / max(sd, 1e-6)
+        y_all = torch.clamp(y_all, lo, hi)
+        mu = torch.mean(y_all)
+        sd = torch.std(y_all, correction=0).clamp_min(1e-6)
+        y_all = (y_all - mu) / sd
         if return_feature_index_map:
             return (
                 x_train_p,
@@ -159,18 +158,25 @@ def postprocess_dataset(
         return x_train_p, y_all[:n_train], x_test_p, y_all[n_train:], feature_types
 
     y_all_original = torch.cat([y_train, y_test], dim=0).to(torch.int64)
-    y_all_permuted = _permute_classes(y_all_original, generator, device)
-    y_train_candidate = y_all_permuted[:n_train]
-    y_test_candidate = y_all_permuted[n_train:]
+    classes, inverse = torch.unique(y_all_original, sorted=True, return_inverse=True)
+    y_all_original_dense = inverse.to(torch.int64)
 
-    if torch.unique(y_train_candidate).numel() < 2 or torch.unique(y_test_candidate).numel() < 2:
+    # Apply a class-id permutation directly in dense label space.
+    perm_dense_cpu = torch.randperm(classes.numel(), generator=generator, device="cpu")
+    perm_dense = perm_dense_cpu.to(device=inverse.device)
+    y_all_permuted_dense = perm_dense[inverse].to(torch.int64)
+    y_train_candidate = y_all_permuted_dense[:n_train]
+    y_test_candidate = y_all_permuted_dense[n_train:]
+
+    if not _has_at_least_two_classes(y_train_candidate) or not _has_at_least_two_classes(
+        y_test_candidate
+    ):
         # Fall back to original labels if permutation collapses effective class diversity.
-        y_all = y_all_original
+        y_all_dense = y_all_original_dense
     else:
-        y_all = y_all_permuted
-    y_all = _remap_classes_to_contiguous(y_all)
-    y_train_p = y_all[:n_train]
-    y_test_p = y_all[n_train:]
+        y_all_dense = y_all_permuted_dense
+    y_train_p = y_all_dense[:n_train]
+    y_test_p = y_all_dense[n_train:]
 
     if return_feature_index_map:
         return x_train_p, y_train_p, x_test_p, y_test_p, feature_types, feature_index_map

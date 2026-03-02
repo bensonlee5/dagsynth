@@ -294,19 +294,15 @@ def _generate_torch(
             x_train_t, x_test_t = x[:n_train], x[n_train:]
             y_train_t, y_test_t = y[:n_train], y[n_train:]
 
-        x_train_cpu = x_train_t.to(device="cpu")
-        y_train_cpu = y_train_t.to(device="cpu")
-        x_test_cpu = x_test_t.to(device="cpu")
-        y_test_cpu = y_test_t.to(device="cpu")
         x_train, y_train, x_test, y_test, feature_types, feature_index_map = postprocess_dataset(
-            x_train_cpu,
-            y_train_cpu,
-            x_test_cpu,
-            y_test_cpu,
+            x_train_t,
+            y_train_t,
+            x_test_t,
+            y_test_t,
             list(layout["feature_types"]),
             config.dataset.task,
             split_postprocess_generator,
-            "cpu",
+            device,
             return_feature_index_map=True,
             preserve_feature_schema=preserve_feature_schema,
         )
@@ -316,7 +312,7 @@ def _generate_torch(
             dataset_cfg=config.dataset,
             seed=seed,
             attempt=attempt,
-            device="cpu",
+            device=device,
         )
 
         if config.dataset.task == "classification" and not _classification_split_valid(

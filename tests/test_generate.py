@@ -437,7 +437,7 @@ def test_generate_torch_forces_cpu_for_stratified_split(
     assert captured["split_rng_device"] == "cpu"
 
 
-def test_generate_torch_calls_postprocess_on_cpu(
+def test_generate_torch_routes_postprocess_to_runtime_device(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = _tiny_regression_config()
@@ -501,13 +501,13 @@ def test_generate_torch_calls_postprocess_on_cpu(
             n_test=4,
         )
 
-    assert captured["postprocess_device_arg"] == "cpu"
+    assert captured["postprocess_device_arg"] == "cuda"
     assert captured["postprocess_x_train_device"] == "cpu"
     assert captured["postprocess_x_test_device"] == "cpu"
     assert captured["postprocess_rng_device"] == "cpu"
 
 
-def test_generate_torch_calls_missingness_on_cpu(
+def test_generate_torch_routes_missingness_to_runtime_device(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = _tiny_regression_config()
@@ -587,7 +587,7 @@ def test_generate_torch_calls_missingness_on_cpu(
             n_test=4,
         )
 
-    assert captured["missingness_device_arg"] == "cpu"
+    assert captured["missingness_device_arg"] == "cuda"
     assert captured["missingness_x_train_device"] == "cpu"
     assert captured["missingness_x_test_device"] == "cpu"
 
