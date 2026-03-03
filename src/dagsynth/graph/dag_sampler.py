@@ -14,17 +14,17 @@ def sample_dag(
     edge_logit_bias: float = 0.0,
 ) -> torch.Tensor:
     """
-    Sample a DAG adjacency matrix using Cauchy-style probabilities on the CPU.
+    Sample a DAG adjacency matrix using latent variable edge sampling on the CPU.
 
     For i < j:
       p_ij = sigmoid(A + B_i + C_j + edge_logit_bias)
-    where A, B_i, C_j ~ standard Cauchy.
+    where A, B_i, C_j are latent variables drawn from a standard Cauchy distribution.
     """
 
     if n_nodes < 2:
         return torch.zeros((n_nodes, n_nodes), dtype=torch.bool, device="cpu")
 
-    # Standard Cauchy: tan(pi * (U - 0.5)) where U ~ Uniform(0, 1)
+    # Latent variables from standard Cauchy: tan(pi * (U - 0.5)) where U ~ Uniform(0, 1)
     u_a = torch.empty(1, device="cpu").uniform_(0, 1, generator=generator)
     a = torch.tan(math.pi * (u_a - 0.5)).item()
 

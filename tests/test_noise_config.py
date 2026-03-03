@@ -3,7 +3,6 @@ import pytest
 from dagsynth.config import (
     NOISE_FAMILY_GAUSSIAN,
     NOISE_FAMILY_LAPLACE,
-    NOISE_FAMILY_LEGACY,
     NOISE_FAMILY_MIXTURE,
     NOISE_FAMILY_STUDENT_T,
     GeneratorConfig,
@@ -12,7 +11,7 @@ from dagsynth.config import (
 
 def test_noise_config_defaults_from_default_yaml() -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    assert cfg.noise.family == NOISE_FAMILY_LEGACY
+    assert cfg.noise.family == NOISE_FAMILY_GAUSSIAN
     assert cfg.noise.scale == pytest.approx(1.0)
     assert cfg.noise.student_t_df == pytest.approx(5.0)
     assert cfg.noise.mixture_weights is None
@@ -21,7 +20,6 @@ def test_noise_config_defaults_from_default_yaml() -> None:
 @pytest.mark.parametrize(
     "family",
     [
-        NOISE_FAMILY_LEGACY,
         NOISE_FAMILY_GAUSSIAN,
         NOISE_FAMILY_LAPLACE,
         NOISE_FAMILY_STUDENT_T,
@@ -35,7 +33,12 @@ def test_noise_config_accepts_supported_families(family: str) -> None:
 
 def test_noise_config_rejects_unknown_family() -> None:
     with pytest.raises(ValueError, match="Unsupported noise.family"):
-        GeneratorConfig.from_dict({"noise": {"family": "cauchy"}})
+        GeneratorConfig.from_dict({"noise": {"family": "exponential"}})
+
+
+def test_noise_config_rejects_removed_legacy_family() -> None:
+    with pytest.raises(ValueError, match="Unsupported noise.family"):
+        GeneratorConfig.from_dict({"noise": {"family": "legacy"}})
 
 
 def test_noise_config_rejects_student_t_df_at_or_below_two() -> None:
@@ -78,7 +81,7 @@ def test_noise_config_rejects_mixture_weights_with_unknown_key() -> None:
             {
                 "noise": {
                     "family": "mixture",
-                    "mixture_weights": {"gaussian": 1.0, "cauchy": 1.0},
+                    "mixture_weights": {"gaussian": 1.0, "exponential": 1.0},
                 }
             }
         )

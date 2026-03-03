@@ -143,14 +143,14 @@ multipliers are `1.0`.
 
 Present for all generated bundles.
 
-| Key                 | Type           | Description                                                          |
-| ------------------- | -------------- | -------------------------------------------------------------------- |
-| `family_requested`  | str            | Configured noise family (`legacy`, `gaussian`, `laplace`, etc.)      |
-| `family_sampled`    | str            | Effective family used by the dataset generation runtime              |
-| `sampling_strategy` | str            | Runtime selection strategy (`dataset_level`)                         |
-| `scale`             | float          | Base noise scale from config                                         |
-| `student_t_df`      | float          | Student-t degrees of freedom parameter used by the runtime           |
-| `mixture_weights`   | object or null | Effective normalized mixture weights when `family_requested=mixture` |
+| Key                 | Type           | Description                                                             |
+| ------------------- | -------------- | ----------------------------------------------------------------------- |
+| `family_requested`  | str            | Configured noise family (`gaussian`, `laplace`, `student_t`, `mixture`) |
+| `family_sampled`    | str            | Effective family used by the dataset generation runtime                 |
+| `sampling_strategy` | str            | Runtime selection strategy (`dataset_level`)                            |
+| `scale`             | float          | Base noise scale from config                                            |
+| `student_t_df`      | float          | Student-t degrees of freedom parameter used by the runtime              |
+| `mixture_weights`   | object or null | Effective normalized mixture weights when `family_requested=mixture`    |
 
 ### Filter sub-object
 

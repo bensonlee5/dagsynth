@@ -1,8 +1,9 @@
 import math
+import pytest
 
 from dagsynth.config import GeneratorConfig
-from dagsynth.hardware import HardwareInfo, apply_hardware_profile
-from dagsynth.hardware import detect_hardware, get_peak_flops
+from dagsynth.hardware import HardwareInfo, detect_hardware, get_peak_flops
+from dagsynth.hardware_policy import apply_hardware_policy, list_hardware_policies
 
 
 def test_peak_flops_lookup() -> None:
@@ -16,11 +17,9 @@ def test_peak_flops_fallback() -> None:
     assert math.isinf(val)
 
 
-def test_hardware_profile_not_applied_on_cpu_backend() -> None:
+def test_hardware_policy_none_is_immutable_and_noop() -> None:
     cfg = GeneratorConfig()
-    cfg.runtime.device = "auto"
-    original_train = cfg.dataset.n_train
-    original_profile = cfg.benchmark.profile_name
+    original = cfg.to_dict()
 
     hw = HardwareInfo(
         backend="cpu",
@@ -30,15 +29,17 @@ def test_hardware_profile_not_applied_on_cpu_backend() -> None:
         peak_flops=float("inf"),
         profile="cpu",
     )
-    apply_hardware_profile(cfg, hw)
+    effective = apply_hardware_policy(cfg, hw, policy_name="none")
 
-    assert cfg.dataset.n_train == original_train
-    assert cfg.benchmark.profile_name == original_profile
+    assert cfg.to_dict() == original
+    assert effective.to_dict() == original
+    assert effective is not cfg
 
 
-def test_hardware_profile_applied_when_cuda_explicit() -> None:
+def test_hardware_policy_cuda_tiered_applied_when_h100_profile() -> None:
     cfg = GeneratorConfig()
     cfg.runtime.device = "cuda"
+    original_train = cfg.dataset.n_train
 
     hw = HardwareInfo(
         backend="cuda",
@@ -48,10 +49,31 @@ def test_hardware_profile_applied_when_cuda_explicit() -> None:
         peak_flops=989e12,
         profile="cuda_h100",
     )
-    apply_hardware_profile(cfg, hw)
+    effective = apply_hardware_policy(cfg, hw, policy_name="cuda_tiered_v1")
 
-    assert cfg.dataset.n_train >= 4096
-    assert cfg.benchmark.profile_name == "cuda_h100_auto"
+    assert cfg.dataset.n_train == original_train
+    assert effective.dataset.n_train >= 4096
+    assert effective.benchmark.profile_name == "cuda_h100_auto"
+
+
+def test_hardware_policy_unknown_name_raises() -> None:
+    cfg = GeneratorConfig()
+    hw = HardwareInfo(
+        backend="cpu",
+        requested_device="cpu",
+        device_name="cpu",
+        total_memory_gb=None,
+        peak_flops=float("inf"),
+        profile="cpu",
+    )
+    with pytest.raises(ValueError, match="Unknown hardware policy"):
+        _ = apply_hardware_policy(cfg, hw, policy_name="missing")
+
+
+def test_hardware_policy_registry_includes_builtins() -> None:
+    names = list_hardware_policies()
+    assert "none" in names
+    assert "cuda_tiered_v1" in names
 
 
 def test_detect_hardware_cpu_backend_label() -> None:

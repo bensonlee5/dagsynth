@@ -49,15 +49,13 @@ _SHIFT_PROFILE_VALUE_MAP: dict[str, ShiftProfile] = {
     SHIFT_PROFILE_CUSTOM: SHIFT_PROFILE_CUSTOM,
 }
 
-NoiseFamily = Literal["legacy", "gaussian", "laplace", "student_t", "mixture"]
-NOISE_FAMILY_LEGACY: Literal["legacy"] = "legacy"
+NoiseFamily = Literal["gaussian", "laplace", "student_t", "mixture"]
 NOISE_FAMILY_GAUSSIAN: Literal["gaussian"] = "gaussian"
 NOISE_FAMILY_LAPLACE: Literal["laplace"] = "laplace"
 NOISE_FAMILY_STUDENT_T: Literal["student_t"] = "student_t"
 NOISE_FAMILY_MIXTURE: Literal["mixture"] = "mixture"
 
 _NOISE_FAMILY_VALUE_MAP: dict[str, NoiseFamily] = {
-    NOISE_FAMILY_LEGACY: NOISE_FAMILY_LEGACY,
     NOISE_FAMILY_GAUSSIAN: NOISE_FAMILY_GAUSSIAN,
     NOISE_FAMILY_LAPLACE: NOISE_FAMILY_LAPLACE,
     NOISE_FAMILY_STUDENT_T: NOISE_FAMILY_STUDENT_T,
@@ -97,8 +95,6 @@ def normalize_missing_mechanism(value: str) -> MissingnessMechanism:
 def normalize_shift_profile(value: object) -> ShiftProfile:
     """Normalize shift profile into a validated internal value."""
 
-    if value is False:
-        return SHIFT_PROFILE_OFF
     if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError(
             "Unsupported shift.profile "
@@ -120,14 +116,14 @@ def normalize_noise_family(value: object) -> NoiseFamily:
     if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError(
             "Unsupported noise.family "
-            f"'{value}'. Expected legacy, gaussian, laplace, student_t, or mixture."
+            f"'{value}'. Expected gaussian, laplace, student_t, or mixture."
         )
     normalized = value.strip().lower()
     result = _NOISE_FAMILY_VALUE_MAP.get(normalized)
     if result is None:
         raise ValueError(
             "Unsupported noise.family "
-            f"'{value}'. Expected legacy, gaussian, laplace, student_t, or mixture."
+            f"'{value}'. Expected gaussian, laplace, student_t, or mixture."
         )
     return result
 
@@ -313,6 +309,13 @@ class DatasetConfig:
     missing_mnar_logit_scale: float = 1.0
 
     def __post_init__(self) -> None:
+        normalized_task = str(self.task).strip().lower()
+        if normalized_task not in {"classification", "regression"}:
+            raise ValueError(
+                f"dataset.task must be 'classification' or 'regression', got {self.task!r}."
+            )
+        self.task = normalized_task
+
         self.n_train = _validate_int_field(
             field_name="dataset.n_train",
             value=self.n_train,
@@ -323,6 +326,51 @@ class DatasetConfig:
             value=self.n_test,
             minimum=1,
         )
+        self.n_features_min = _validate_int_field(
+            field_name="dataset.n_features_min",
+            value=self.n_features_min,
+            minimum=1,
+        )
+        self.n_features_max = _validate_int_field(
+            field_name="dataset.n_features_max",
+            value=self.n_features_max,
+            minimum=1,
+        )
+        _validate_min_max_pair(
+            name="dataset.n_features_min",
+            min_value=self.n_features_min,
+            max_value=self.n_features_max,
+            max_label="n_features_max",
+        )
+        self.max_categorical_cardinality = _validate_int_field(
+            field_name="dataset.max_categorical_cardinality",
+            value=self.max_categorical_cardinality,
+            minimum=2,
+        )
+        self.categorical_ratio_min = _validate_finite_float_field(
+            field_name="dataset.categorical_ratio_min",
+            value=self.categorical_ratio_min,
+            lo=-math.inf,
+            hi=math.inf,
+            lo_inclusive=True,
+            hi_inclusive=True,
+            expectation="a finite value",
+        )
+        self.categorical_ratio_max = _validate_finite_float_field(
+            field_name="dataset.categorical_ratio_max",
+            value=self.categorical_ratio_max,
+            lo=-math.inf,
+            hi=math.inf,
+            lo_inclusive=True,
+            hi_inclusive=True,
+            expectation="a finite value",
+        )
+        if self.categorical_ratio_min > self.categorical_ratio_max:
+            raise ValueError(
+                "dataset.categorical_ratio_min must be <= categorical_ratio_max, "
+                f"got {self.categorical_ratio_min} > {self.categorical_ratio_max}."
+            )
+
         self.n_classes_min = _validate_int_field(
             field_name="dataset.n_classes_min",
             value=self.n_classes_min,
@@ -341,7 +389,7 @@ class DatasetConfig:
             max_value=self.n_classes_max,
             max_label="n_classes_max",
         )
-        if str(self.task).strip().lower() == "classification":
+        if self.task == "classification":
             validate_class_split_feasibility(
                 n_classes=int(self.n_classes_min),
                 n_train=int(self.n_train),
@@ -398,6 +446,24 @@ class DatasetConfig:
 class GraphConfig:
     n_nodes_min: int = 2
     n_nodes_max: int = 32
+
+    def __post_init__(self) -> None:
+        self.n_nodes_min = _validate_int_field(
+            field_name="graph.n_nodes_min",
+            value=self.n_nodes_min,
+            minimum=2,
+        )
+        self.n_nodes_max = _validate_int_field(
+            field_name="graph.n_nodes_max",
+            value=self.n_nodes_max,
+            minimum=2,
+        )
+        _validate_min_max_pair(
+            name="graph.n_nodes_min",
+            min_value=self.n_nodes_min,
+            max_value=self.n_nodes_max,
+            max_label="n_nodes_max",
+        )
 
 
 def _validate_min_max_pair(
@@ -490,7 +556,7 @@ class ShiftConfig:
 
 @dataclass(slots=True)
 class NoiseConfig:
-    family: NoiseFamily = NOISE_FAMILY_LEGACY
+    family: NoiseFamily = NOISE_FAMILY_GAUSSIAN
     scale: float = 1.0
     student_t_df: float = 5.0
     mixture_weights: dict[NoiseMixtureComponent, float] | None = None
@@ -526,7 +592,6 @@ class NoiseConfig:
 class RuntimeConfig:
     device: str = "auto"
     torch_dtype: str = "float32"
-    hardware_aware: bool = True
 
 
 @dataclass(slots=True)
@@ -621,18 +686,26 @@ class GeneratorConfig:
             maximum=SEED32_MAX,
         )
 
+    def validate_generation_constraints(self) -> None:
+        """Re-validate nested generation config after runtime overrides."""
+
+        self.dataset = DatasetConfig(**asdict(self.dataset))
+        self.graph = GraphConfig(**asdict(self.graph))
+        self.shift = ShiftConfig(**asdict(self.shift))
+        self.noise = NoiseConfig(**asdict(self.noise))
+        self.runtime = RuntimeConfig(**asdict(self.runtime))
+        self.output = OutputConfig(**asdict(self.output))
+        self.diagnostics = DiagnosticsConfig(**asdict(self.diagnostics))
+        self.benchmark = BenchmarkConfig(**asdict(self.benchmark))
+        self.filter = FilterConfig(**asdict(self.filter))
+
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> GeneratorConfig:
         """Construct `GeneratorConfig` from a nested dictionary payload."""
 
         data = data or {}
         dataset = DatasetConfig(**(data.get("dataset") or {}))
-        graph_data = dict(data.get("graph") or {})
-        if "n_nodes_log2_min" in graph_data and "n_nodes_min" not in graph_data:
-            graph_data["n_nodes_min"] = graph_data.pop("n_nodes_log2_min")
-        if "n_nodes_log2_max" in graph_data and "n_nodes_max" not in graph_data:
-            graph_data["n_nodes_max"] = graph_data.pop("n_nodes_log2_max")
-        graph = GraphConfig(**graph_data)
+        graph = GraphConfig(**(data.get("graph") or {}))
         shift = ShiftConfig(**(data.get("shift") or {}))
         noise = NoiseConfig(**(data.get("noise") or {}))
         runtime = RuntimeConfig(**(data.get("runtime") or {}))

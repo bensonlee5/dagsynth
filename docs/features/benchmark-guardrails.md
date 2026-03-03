@@ -73,7 +73,7 @@ dagsynth benchmark \
   --warn-threshold-pct 10 \
   --fail-threshold-pct 20 \
   --fail-on-regression \
-  --no-hardware-aware \
+  --hardware-policy none \
   --no-memory \
   --out-dir benchmarks/results/ci_smoke_shift_local
 ```

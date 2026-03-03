@@ -63,7 +63,7 @@ def _measure_persistence_datasets_per_minute(
         return 0.0
 
     start = time.perf_counter()
-    with tempfile.TemporaryDirectory(prefix="cauchy_lineage_guardrail_") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="dagsynth_lineage_guardrail_") as tmp_dir:
         out_dir = Path(tmp_dir) / "shards"
         _ = write_packed_parquet_shards_stream(
             bundles,
@@ -293,7 +293,7 @@ def _collect_lineage_guardrails(
         return {"enabled": False}
 
     sample_seed = offset_seed32(config.seed, LINEAGE_GUARDRAIL_SEED_OFFSET)
-    with tempfile.TemporaryDirectory(prefix="cauchy_lineage_guardrail_stage_") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="dagsynth_lineage_guardrail_stage_") as tmp_dir:
         stage_root = Path(tmp_dir)
         baseline_stage_dir = stage_root / "baseline"
         current_stage_dir = stage_root / "current"

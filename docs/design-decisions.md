@@ -1,11 +1,11 @@
 # Design Decisions
 
 Lightweight Architecture Decision Records (ADRs) for foundational choices
-in the Cauchy generator.
+in dagsynth.
 
 ______________________________________________________________________
 
-## 1. Cauchy distribution for DAG edge probabilities
+## 1. Latent variable edge sampling for DAG structure
 
 ### Context
 
@@ -16,24 +16,28 @@ degree distributions.
 
 ### Decision
 
-Edge probabilities follow an additive logit model on the Cauchy distribution:
+Edge probabilities follow an additive logit model using latent variables
+drawn from a Cauchy distribution:
 
 ```
 p_ij = sigmoid(A + B_i + C_j + edge_logit_bias)
 ```
 
-where A is a scalar, B_i is per-source-node, and C_j is per-target-node, all
-drawn from the standard Cauchy distribution. Only upper-triangular entries are
-kept to enforce acyclicity.
+where A is a global latent scalar, B_i is a per-source-node latent variable,
+and C_j is a per-target-node latent variable, all drawn from the standard
+Cauchy distribution. Only upper-triangular entries are kept to enforce
+acyclicity.
 
-This documents the current baseline implementation and may be extended via
-future roadmap work while preserving backward-compatible defaults.
+This documents the current baseline implementation of **latent variable edge
+sampling** and may be extended via future roadmap work while preserving
+backward-compatible defaults.
 
 ### Rationale
 
-- **Heavy tails** — the Cauchy distribution produces occasional extreme
-  values, creating natural variability in graph density within and across
-  datasets. Some nodes become hubs; others stay sparse.
+- **Heavy tails via Cauchy latents** — using the Cauchy distribution for the
+  latent variables produces occasional extreme logit values, creating natural
+  variability in graph density within and across datasets. Some nodes become
+  hubs; others stay sparse.
 - **Node-level heterogeneity** — separate per-row (B_i) and per-column (C_j)
   terms let individual nodes have distinct connectivity profiles.
 - **Global sparsity control** — the `edge_logit_bias` additive term shifts
@@ -261,9 +265,8 @@ introduce explicit user-facing noise-family configuration.
 
 ### Decision
 
-Issue `#25` should start with five selectable modes:
+Issue `#25` should start with four selectable modes:
 
-- `legacy` (default compatibility mode)
 - `gaussian`
 - `laplace`
 - `student_t`
@@ -274,8 +277,8 @@ Student-t components only.
 
 ### Rationale
 
-- **Backward compatibility first** — `legacy` default preserves existing config
-  behavior and seeded reproducibility for users who do not opt in.
+- **Simple baseline default** — `gaussian` remains the default and preserves
+  seeded reproducibility with an explicit family label.
 - **Coverage without excessive surface area** — Gaussian, Laplace, and
   Student-t provide progressively heavier tails with interpretable behavior.
 - **Controlled flexibility** — `mixture` allows blended regimes without opening

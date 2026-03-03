@@ -135,7 +135,7 @@ metadata JSON contract, and DAG lineage schema.
 - `core/dataset.py`: dataset orchestration entrypoint (`E.3`)
 - `core/layout.py`: dataset layout, graph sampling, and node assignments
   (`E.3`, `E.4`)
-- `graph/dag_sampler.py`: random Cauchy DAG (`E.4`)
+- `graph/dag_sampler.py`: latent variable DAG sampling (`E.4`)
 - `core/node_pipeline.py`: per-node flow (`E.5`)
 - `converters/numeric.py`, `converters/categorical.py`: converters (`E.6`)
 - `functions/multi.py`: concatenation vs per-parent aggregation (`E.7`)
@@ -381,9 +381,9 @@ metadata JSON contract, and DAG lineage schema.
 - GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27` (completed)
 - Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/sampling/`, `src/dagsynth/core/dataset.py`, `src/dagsynth/bench/suite.py`
 - Delivered scope:
-  - Config supports `legacy`, `gaussian`, `laplace`, `student_t`, and `mixture` families with safety validation.
+  - Config supports `gaussian`, `laplace`, `student_t`, and `mixture` families with safety validation.
   - Runtime sampling and generation metadata report requested/effective family settings.
-  - Benchmark guardrails include metadata validation and runtime delta checks versus legacy-noise controls.
+  - Benchmark guardrails include metadata validation and runtime delta checks versus gaussian-noise controls.
   - Presets/docs/tests cover family-specific generation and benchmark workflows.
 - Completion evidence:
   - All delivery issues in the chain are closed (`#25`, `#26`, `#27`).

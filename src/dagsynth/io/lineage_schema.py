@@ -299,7 +299,7 @@ def validate_lineage_payload(payload: Mapping[str, Any]) -> None:
 def validate_metadata_lineage(metadata: Mapping[str, Any], *, required: bool = False) -> None:
     """Validate `metadata.lineage` when present.
 
-    When `required` is False (default), missing lineage is accepted for backward compatibility.
+    When `required` is False (default), missing lineage is accepted.
     """
 
     metadata_payload = _as_mapping(metadata, path="metadata")

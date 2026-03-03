@@ -71,7 +71,7 @@ def test_generate_cli_rejects_oversized_seed() -> None:
     assert int(exc.value.code) == 2
 
 
-def test_generate_cli_uses_default_config_without_legacy_overrides(
+def test_generate_cli_uses_default_config_without_noise_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, bool] = {"called": False}
@@ -101,7 +101,8 @@ def test_generate_cli_uses_default_config_without_legacy_overrides(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -147,7 +148,8 @@ def test_generate_cli_many_class_preset_end_to_end_no_write(
             "2",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -215,7 +217,8 @@ def test_generate_cli_shift_presets_emit_shift_metadata_no_write(
             "2",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -278,7 +281,8 @@ def test_generate_cli_noise_presets_emit_noise_metadata_no_write(
             "2",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -357,7 +361,8 @@ def test_generate_cli_coverage_tolerates_null_quantiles_and_targets(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -400,7 +405,8 @@ def test_generate_cli_no_write_allows_null_output_dir_when_coverage_disabled(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -440,7 +446,8 @@ def test_generate_cli_enables_diagnostics_flag(
             "--device",
             "cpu",
             "--diagnostics",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -491,7 +498,8 @@ def test_generate_cli_applies_missingness_overrides_no_write(
             "1.8",
             "--missing-mnar-logit-scale",
             "2.2",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -518,7 +526,8 @@ def test_generate_cli_rejects_invalid_missingness_combination() -> None:
                 "0.2",
                 "--missing-mechanism",
                 "none",
-                "--no-hardware-aware",
+                "--hardware-policy",
+                "none",
                 "--no-write",
             ]
         )
@@ -602,7 +611,8 @@ def test_generate_cli_missingness_no_write_end_to_end(tmp_path) -> None:
             "mnar",
             "--missing-mnar-logit-scale",
             "1.5",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )

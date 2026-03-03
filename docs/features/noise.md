@@ -7,7 +7,7 @@ ______________________________________________________________________
 
 ## When to use
 
-- You want heavier-tail stochasticity than legacy defaults.
+- You want heavier-tail stochasticity than the Gaussian default.
 - You need deterministic comparisons across Gaussian/Laplace/Student-t regimes.
 - You want benchmark guardrails for runtime impact and metadata validity.
 
@@ -15,8 +15,7 @@ ______________________________________________________________________
 
 ## Supported families
 
-- `legacy`: compatibility mode for default behavior.
-- `gaussian`: explicit Gaussian sampling.
+- `gaussian`: default Gaussian sampling.
 - `laplace`: heavier-tailed Laplace noise.
 - `student_t`: heavy-tailed Student-t (`df > 2`).
 - `mixture`: weighted mixture over Gaussian/Laplace/Student-t.
@@ -59,7 +58,7 @@ ______________________________________________________________________
 - Benchmark summary `noise_guardrails`:
   - metadata coverage/validity
   - sampled-family counts
-  - runtime delta vs legacy-noise control
+  - runtime delta vs gaussian-noise control
 
 For output details, see [output-format.md](../output-format.md).
 

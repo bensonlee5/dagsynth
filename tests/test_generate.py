@@ -5,6 +5,7 @@ import math
 
 from dagsynth.config import (
     GeneratorConfig,
+    NOISE_FAMILY_GAUSSIAN,
     NOISE_FAMILY_LAPLACE,
     NOISE_FAMILY_STUDENT_T,
 )
@@ -228,16 +229,16 @@ def test_generate_one_shift_metadata_matches_resolved_runtime_params() -> None:
     )
 
 
-def test_generate_one_noise_metadata_emits_legacy_defaults() -> None:
+def test_generate_one_noise_metadata_emits_gaussian_defaults() -> None:
     cfg = _tiny_regression_config()
-    cfg.noise.family = "legacy"
+    cfg.noise.family = "gaussian"
     cfg.noise.scale = 1.0
     cfg.noise.student_t_df = 5.0
 
     bundle = generate_one(cfg, seed=1884, device="cpu")
     noise_metadata = bundle.metadata["noise"]
-    assert noise_metadata["family_requested"] == "legacy"
-    assert noise_metadata["family_sampled"] == "legacy"
+    assert noise_metadata["family_requested"] == "gaussian"
+    assert noise_metadata["family_sampled"] == "gaussian"
     assert noise_metadata["sampling_strategy"] == "dataset_level"
     assert noise_metadata["scale"] == pytest.approx(1.0)
     assert noise_metadata["student_t_df"] == pytest.approx(5.0)
@@ -245,9 +246,9 @@ def test_generate_one_noise_metadata_emits_legacy_defaults() -> None:
 
 
 @pytest.mark.parametrize("family", [NOISE_FAMILY_LAPLACE, NOISE_FAMILY_STUDENT_T])
-def test_generate_one_nonlegacy_noise_family_changes_outputs_for_same_seed(family: str) -> None:
+def test_generate_one_nongaussian_noise_family_changes_outputs_for_same_seed(family: str) -> None:
     baseline = _tiny_regression_config()
-    baseline.noise.family = "legacy"
+    baseline.noise.family = NOISE_FAMILY_GAUSSIAN
 
     drifted = _tiny_regression_config()
     drifted.noise.family = family
@@ -722,7 +723,7 @@ def test_generate_batch_fixed_layout_rejects_plan_config_drift() -> None:
         list(generate_batch_fixed_layout_iter(drifted, plan=plan, num_datasets=1, seed=222))
 
 
-def test_generate_batch_fixed_layout_rejects_legacy_plan_without_compatibility_snapshot() -> None:
+def test_generate_batch_fixed_layout_rejects_plan_without_compatibility_snapshot() -> None:
     cfg = _tiny_regression_config()
     sampled = sample_fixed_layout(cfg, seed=112, device="cpu")
     legacy_plan = FixedLayoutPlan(
@@ -736,7 +737,7 @@ def test_generate_batch_fixed_layout_rejects_legacy_plan_without_compatibility_s
         compatibility_snapshot=None,
     )
 
-    with pytest.raises(ValueError, match=r"missing compatibility snapshot"):
+    with pytest.raises(ValueError, match=r"compatibility_snapshot must be a mapping"):
         list(generate_batch_fixed_layout_iter(cfg, plan=legacy_plan, num_datasets=1, seed=223))
 
 

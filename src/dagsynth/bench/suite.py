@@ -63,7 +63,7 @@ from dagsynth.bench.throughput import run_throughput_benchmark
 from dagsynth.config import (
     GeneratorConfig,
     MISSINGNESS_MECHANISM_NONE,
-    NOISE_FAMILY_LEGACY,
+    NOISE_FAMILY_GAUSSIAN,
     SHIFT_PROFILE_OFF,
 )
 from dagsynth.core.dataset import generate_batch_iter, generate_one
@@ -73,11 +73,8 @@ from dagsynth.diagnostics import (
     write_coverage_summary_json,
     write_coverage_summary_markdown,
 )
-from dagsynth.hardware import (
-    HardwareInfo,
-    apply_hardware_profile,
-    detect_hardware,
-)
+from dagsynth.hardware import HardwareInfo, detect_hardware
+from dagsynth.hardware_policy import apply_hardware_policy
 from dagsynth.meta_targets import (
     build_coverage_aggregation_config,
 )
@@ -201,17 +198,15 @@ def _prepare_config_for_profile(
     spec: ProfileRunSpec,
     *,
     suite: str,
-    no_hardware_aware: bool,
+    hardware_policy: str,
 ) -> tuple[GeneratorConfig, str, HardwareInfo]:
-    """Clone and hardware-tune a profile config before running benchmarks."""
+    """Clone and apply explicit hardware policy to a profile config."""
 
     cfg = _clone_config(spec.config)
-    if no_hardware_aware:
-        cfg.runtime.hardware_aware = False
 
     requested_device = spec.device or cfg.runtime.device
     hw = detect_hardware(requested_device)
-    cfg = apply_hardware_profile(cfg, hw)
+    cfg = apply_hardware_policy(cfg, hw, policy_name=hardware_policy)
 
     if suite == "smoke":
         cfg.dataset.n_train = min(cfg.dataset.n_train, SMOKE_N_TRAIN_CAP)
@@ -262,9 +257,9 @@ def _is_shift_enabled(config: GeneratorConfig) -> bool:
 
 
 def _is_noise_enabled(config: GeneratorConfig) -> bool:
-    """Return whether non-legacy noise controls are enabled in config."""
+    """Return whether non-gaussian noise controls are enabled in config."""
 
-    return str(config.noise.family).strip().lower() != NOISE_FAMILY_LEGACY
+    return str(config.noise.family).strip().lower() != NOISE_FAMILY_GAUSSIAN
 
 
 def _build_shift_directional_check(
@@ -333,7 +328,7 @@ def run_profile_benchmark(
     collect_memory: bool,
     collect_reproducibility: bool,
     include_micro: bool,
-    no_hardware_aware: bool,
+    hardware_policy: str,
     collect_diagnostics: bool,
     diagnostics_root_dir: Path | None,
     warn_threshold_pct: float,
@@ -346,7 +341,7 @@ def run_profile_benchmark(
     config, requested_device, hw = _prepare_config_for_profile(
         spec,
         suite=suite,
-        no_hardware_aware=no_hardware_aware,
+        hardware_policy=hardware_policy,
     )
 
     num_datasets, warmup = _profile_counts(
@@ -404,6 +399,8 @@ def run_profile_benchmark(
     result["hardware_memory_gb"] = hw.total_memory_gb
     result["hardware_peak_flops"] = hw.peak_flops
     result["hardware_profile"] = hw.profile
+    result["hardware_policy"] = str(hardware_policy)
+    result["effective_config"] = config.to_dict()
     result["diagnostics_enabled"] = diagnostics_enabled
     result["diagnostics_artifacts"] = None
     result["missingness_guardrails"] = {"enabled": False}
@@ -703,7 +700,7 @@ def run_profile_benchmark(
 
     if noise_enabled and noise_guardrails is not None:
         baseline_config = _copy_runtime_config(config)
-        baseline_config.noise.family = NOISE_FAMILY_LEGACY
+        baseline_config.noise.family = NOISE_FAMILY_GAUSSIAN
         baseline_config.noise.scale = 1.0
         baseline_config.noise.student_t_df = 5.0
         baseline_config.noise.mixture_weights = None
@@ -758,8 +755,8 @@ def run_profile_benchmark(
                     baseline=baseline_dpm,
                     degradation_pct=runtime_degradation_value,
                     detail=(
-                        "Non-legacy noise throughput regressed versus an equivalent "
-                        "legacy-noise control run."
+                        "Non-gaussian noise throughput regressed versus an equivalent "
+                        "gaussian-noise control run."
                     ),
                 )
             )
@@ -885,7 +882,7 @@ def run_benchmark_suite(
     collect_diagnostics: bool,
     diagnostics_root_dir: Path | None,
     fail_on_regression: bool,
-    no_hardware_aware: bool,
+    hardware_policy: str,
 ) -> dict[str, Any]:
     """Run a benchmark suite over one or more profiles and attach regression diagnostics."""
 
@@ -917,7 +914,7 @@ def run_benchmark_suite(
                 warn_threshold_pct=float(warn_threshold_pct),
                 fail_threshold_pct=float(fail_threshold_pct),
                 include_micro=include_micro,
-                no_hardware_aware=no_hardware_aware,
+                hardware_policy=hardware_policy,
                 diagnostics_occurrence_index=occurrence_index,
                 diagnostics_occurrence_total=key_totals[spec.key],
             )

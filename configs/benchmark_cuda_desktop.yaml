@@ -19,7 +19,6 @@ graph:
 runtime:
   device: cuda
   torch_dtype: float32
-  hardware_aware: true
 
 output:
   out_dir: data/benchmark_cuda_desktop

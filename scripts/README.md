@@ -13,7 +13,7 @@ These wrappers run `dagsynth` from the repo root (typically via `uv run`).
 - `scripts/generate-many-class.sh [num_datasets] [device] [out_dir] [seed]`
   - Uses `configs/preset_many_class_generate_smoke.yaml`.
 - `scripts/generate-noise.sh [family] [num_datasets] [device] [out_dir] [seed]`
-  - Runs preset-based noise family workflows (`legacy`, `gaussian`, `laplace`, `student_t`, `mixture`).
+  - Runs preset-based noise family workflows (`gaussian`, `laplace`, `student_t`, `mixture`).
 - `scripts/generate-smoke.sh [config] [num_datasets] [device]`
   - Runs quick in-memory generation with `--no-write`.
 - `scripts/generate-curriculum.sh --base-config ... --out-root ... --datasets-per-stage ... --n-test ... (--train-start/--train-stop/--train-step | --train-values)`
@@ -72,5 +72,5 @@ The diagnostics profile directory is sanitized and hash-suffixed (for example, `
 When missingness is enabled in benchmark configs, summary JSON includes
 `profile_results[*].missingness_guardrails` and may escalate regression status via runtime or acceptance issues.
 
-When non-legacy noise is enabled in benchmark configs, summary JSON includes
+When non-gaussian noise is enabled in benchmark configs, summary JSON includes
 `profile_results[*].noise_guardrails` and may escalate regression status via runtime or metadata validity issues.

@@ -5,11 +5,14 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import math
+import re
 import sys
 from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from dagsynth.bench.baseline import (
     build_baseline_payload,
@@ -33,11 +36,8 @@ from dagsynth.diagnostics import (
     write_coverage_summary_json,
     write_coverage_summary_markdown,
 )
-from dagsynth.hardware import (
-    HardwareInfo,
-    apply_hardware_profile,
-    detect_hardware,
-)
+from dagsynth.hardware import HardwareInfo, detect_hardware
+from dagsynth.hardware_policy import apply_hardware_policy, list_hardware_policies
 from dagsynth.io.parquet_writer import write_packed_parquet_shards_stream
 from dagsynth.meta_targets import (
     build_coverage_aggregation_config,
@@ -45,6 +45,7 @@ from dagsynth.meta_targets import (
 from dagsynth.rng import SEED32_MAX, SEED32_MIN
 
 DEVICE_CHOICES = ("auto", "cpu", "cuda", "mps")
+HARDWARE_POLICY_CHOICES = list_hardware_policies()
 MISSINGNESS_MECHANISM_CLI_CHOICES = (
     MISSINGNESS_MECHANISM_NONE,
     MISSINGNESS_MECHANISM_MCAR,
@@ -218,9 +219,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Device override (auto/cpu/cuda/mps).",
     )
     g.add_argument(
-        "--no-hardware-aware",
-        action="store_true",
-        help="Disable automatic hardware-based config tuning.",
+        "--hardware-policy",
+        default="none",
+        choices=HARDWARE_POLICY_CHOICES,
+        help="Explicit hardware policy to apply to config (default: none).",
     )
     g.add_argument(
         "--no-write",
@@ -268,6 +270,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override MNAR logit scale (> 0).",
     )
+    g.add_argument(
+        "--print-effective-config",
+        action="store_true",
+        help="Print resolved effective config YAML before generation.",
+    )
     b = sub.add_parser("benchmark", help="Run benchmark suite across one or more profiles.")
     b.add_argument("--config", default=None, help="Optional YAML config for profile 'custom'.")
     b.add_argument(
@@ -289,9 +296,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Override benchmark warmup count.",
     )
     b.add_argument(
-        "--no-hardware-aware",
-        action="store_true",
-        help="Disable automatic hardware-based config tuning.",
+        "--hardware-policy",
+        default="none",
+        choices=HARDWARE_POLICY_CHOICES,
+        help="Explicit hardware policy to apply to configs (default: none).",
     )
     b.add_argument("--json-out", default=None, help="Optional path to write suite summary JSON.")
     b.add_argument(
@@ -355,6 +363,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional root directory for benchmark diagnostics artifacts.",
     )
+    b.add_argument(
+        "--print-effective-config",
+        action="store_true",
+        help="Print each profile's resolved effective config YAML before execution.",
+    )
 
     h = sub.add_parser("hardware", help="Inspect detected hardware and profile mapping.")
     h.add_argument(
@@ -370,14 +383,13 @@ def _resolve_config_with_hardware(
     config: GeneratorConfig,
     *,
     device: str | None,
-    no_hardware_aware: bool,
+    hardware_policy: str,
 ) -> tuple[GeneratorConfig, HardwareInfo]:
-    """Apply runtime hardware detection and optional profile-based tuning."""
+    """Apply hardware detection and explicit policy selection."""
 
-    if no_hardware_aware:
-        config.runtime.hardware_aware = False
     hw = detect_hardware(device or config.runtime.device)
-    config = apply_hardware_profile(config, hw)
+    config = apply_hardware_policy(config, hw, policy_name=hardware_policy)
+    config.validate_generation_constraints()
     return config, hw
 
 
@@ -414,6 +426,31 @@ def _apply_missingness_cli_overrides(config: GeneratorConfig, args: argparse.Nam
         _raise_usage_error(str(exc))
 
 
+def _effective_config_yaml(config: GeneratorConfig) -> str:
+    """Render an effective config payload as YAML text."""
+
+    return yaml.safe_dump(
+        config.to_dict(),
+        sort_keys=False,
+        default_flow_style=False,
+    )
+
+
+def _write_effective_config(config: GeneratorConfig, path: Path) -> Path:
+    """Persist effective config YAML to disk."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_effective_config_yaml(config), encoding="utf-8")
+    return path
+
+
+def _print_effective_config(config: GeneratorConfig, *, header: str) -> None:
+    """Print effective config YAML to stdout with a short header."""
+
+    print(header)
+    print(_effective_config_yaml(config).rstrip())
+
+
 def _write_generate_diagnostics_artifacts(
     diagnostics_aggregator: CoverageAggregator,
     *,
@@ -434,7 +471,7 @@ def _run_generate(args: argparse.Namespace) -> int:
     config, hw = _resolve_config_with_hardware(
         config,
         device=args.device,
-        no_hardware_aware=bool(args.no_hardware_aware),
+        hardware_policy=str(args.hardware_policy),
     )
     _apply_missingness_cli_overrides(config, args)
     if args.diagnostics:
@@ -442,6 +479,20 @@ def _run_generate(args: argparse.Namespace) -> int:
 
     seed = args.seed if args.seed is not None else config.seed
     out_dir = args.out or config.output.out_dir
+    effective_config_root = out_dir
+    if effective_config_root is None:
+        effective_config_root = (
+            args.diagnostics_out_dir or config.diagnostics.out_dir or "effective_config_artifacts"
+        )
+    if args.print_effective_config:
+        _print_effective_config(config, header="Effective config:")
+
+    effective_config_path = _write_effective_config(
+        config,
+        Path(effective_config_root) / "effective_config.yaml",
+    )
+    print(f"Wrote effective config: {effective_config_path}")
+
     diagnostics_enabled = bool(config.diagnostics.enabled)
     diagnostics_out_dir: Path | None = None
     diagnostics_aggregator: CoverageAggregator | None = None
@@ -455,7 +506,8 @@ def _run_generate(args: argparse.Namespace) -> int:
         )
     print(
         f"Hardware backend={hw.backend} device='{hw.device_name}' "
-        f"memory_gb={hw.total_memory_gb} peak_flops={hw.peak_flops:.3e} profile={hw.profile}"
+        f"memory_gb={hw.total_memory_gb} peak_flops={hw.peak_flops:.3e} profile={hw.profile} "
+        f"hardware_policy={args.hardware_policy}"
     )
 
     stream: Iterator[Any] = generate_batch_iter(
@@ -543,6 +595,44 @@ def _benchmark_diagnostics_root_dir(
     return _default_benchmark_artifact_dir()
 
 
+def _sanitize_profile_segment(profile_key: str) -> str:
+    """Normalize profile key into a filesystem-safe segment."""
+
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", str(profile_key)).strip("._-")
+    return normalized or "profile"
+
+
+def _write_benchmark_effective_configs(summary: dict[str, Any], artifact_dir: Path) -> list[Path]:
+    """Persist per-profile effective configs when benchmark artifacts are enabled."""
+
+    profile_results = summary.get("profile_results", [])
+    if not isinstance(profile_results, list):
+        return []
+
+    output_paths: list[Path] = []
+    key_counts: dict[str, int] = {}
+    out_root = artifact_dir / "effective_configs"
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    for idx, result in enumerate(profile_results):
+        if not isinstance(result, dict):
+            continue
+        payload = result.get("effective_config")
+        if not isinstance(payload, dict):
+            continue
+        key = _sanitize_profile_segment(str(result.get("profile_key", f"profile_{idx}")))
+        key_counts[key] = key_counts.get(key, 0) + 1
+        count = key_counts[key]
+        suffix = f"_run{count}" if count > 1 else ""
+        path = out_root / f"{key}{suffix}.yaml"
+        path.write_text(
+            yaml.safe_dump(payload, sort_keys=False, default_flow_style=False),
+            encoding="utf-8",
+        )
+        output_paths.append(path)
+    return output_paths
+
+
 def _print_profile_result_line(result: dict[str, Any]) -> None:
     """Print one compact profile benchmark summary line."""
 
@@ -626,8 +716,19 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         collect_diagnostics=bool(args.diagnostics),
         diagnostics_root_dir=diagnostics_root_dir,
         fail_on_regression=bool(args.fail_on_regression),
-        no_hardware_aware=bool(args.no_hardware_aware),
+        hardware_policy=str(args.hardware_policy),
     )
+
+    if args.print_effective_config:
+        for result in summary.get("profile_results", []):
+            if not isinstance(result, dict):
+                continue
+            payload = result.get("effective_config")
+            if not isinstance(payload, dict):
+                continue
+            profile_key = str(result.get("profile_key", "unknown"))
+            print(f"Effective config [{profile_key}]:")
+            print(yaml.safe_dump(payload, sort_keys=False, default_flow_style=False).rstrip())
 
     for result in summary.get("profile_results", []):
         _print_profile_result_line(result)
@@ -640,6 +741,12 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     if artifact_dir is not None:
         json_path = write_suite_json(summary, artifact_dir / "summary.json")
         md_path = write_suite_markdown(summary, artifact_dir / "summary.md")
+        effective_paths = _write_benchmark_effective_configs(summary, artifact_dir)
+        if effective_paths:
+            print(
+                "Wrote benchmark effective configs under: "
+                f"{(artifact_dir / 'effective_configs').resolve()}"
+            )
         print(f"Wrote benchmark artifacts: {json_path} and {md_path}")
 
     if args.json_out:

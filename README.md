@@ -25,6 +25,8 @@ Generate a default batch from the repo:
 dagsynth generate --config configs/default.yaml --num-datasets 10 --out data/run1
 ```
 
+Each generate run writes `effective_config.yaml` in the resolved output directory.
+
 Run a smoke benchmark:
 
 ```bash

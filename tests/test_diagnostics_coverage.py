@@ -218,7 +218,8 @@ def test_generate_no_write_with_coverage_enabled_emits_artifacts(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )

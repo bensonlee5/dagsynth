@@ -13,7 +13,6 @@ from dagsynth.math_utils import normalize_positive_weights
 from dagsynth.config import (
     NOISE_FAMILY_GAUSSIAN,
     NOISE_FAMILY_LAPLACE,
-    NOISE_FAMILY_LEGACY,
     NOISE_FAMILY_MIXTURE,
     NOISE_FAMILY_STUDENT_T,
     NoiseFamily,
@@ -32,7 +31,7 @@ _MAX_TORCH_SEED = (1 << 31) - 1
 class NoiseSamplingSpec:
     """Runtime noise selection parameters used by generation paths."""
 
-    family: NoiseFamily = NOISE_FAMILY_LEGACY
+    family: NoiseFamily = NOISE_FAMILY_GAUSSIAN
     scale: float = 1.0
     student_t_df: float = 5.0
     mixture_weights: Mapping[str, float] | None = None
@@ -200,7 +199,7 @@ def _sample_family(
 ) -> torch.Tensor:
     """Sample one non-mixture family."""
 
-    if family in (NOISE_FAMILY_LEGACY, NOISE_FAMILY_GAUSSIAN):
+    if family == NOISE_FAMILY_GAUSSIAN:
         return torch.randn(shape, generator=generator, device=device)
     if family == NOISE_FAMILY_LAPLACE:
         return _laplace(shape, generator=generator, device=device)
@@ -268,7 +267,7 @@ def sample_noise(
     *,
     generator: torch.Generator,
     device: str,
-    family: NoiseFamily | str = NOISE_FAMILY_LEGACY,
+    family: NoiseFamily | str = NOISE_FAMILY_GAUSSIAN,
     scale: float = 1.0,
     student_t_df: float = 5.0,
     mixture_weights: Mapping[str, float] | None = None,
@@ -319,7 +318,7 @@ def sample_noise_from_spec(
             shape,
             generator=generator,
             device=device,
-            family=NOISE_FAMILY_LEGACY,
+            family=NOISE_FAMILY_GAUSSIAN,
             scale=parsed_multiplier,
         )
 

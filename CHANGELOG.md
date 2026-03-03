@@ -14,9 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sample_cauchy_dag` renamed to `sample_dag`; `graph/cauchy_graph.py` renamed to `graph/dag_sampler.py`.
 - Noise rollout presets for generate/benchmark smoke workflows (`configs/preset_noise_*.yaml`)
 - Noise workflow script wrapper (`scripts/generate-noise.sh`)
-- Noise benchmark guardrail reporting (`noise_guardrails`) for runtime delta vs legacy control and metadata validity
+- Noise benchmark guardrail reporting (`noise_guardrails`) for runtime delta vs gaussian control and metadata validity
 - Noise feature guide (`docs/features/noise.md`) and usage/workflow documentation updates
 - Benchmark profile summaries now surface noise guardrail status in CLI and Markdown reports
+- **Breaking:** removed `noise.family=legacy`; default noise family is now explicit `gaussian`.
+- **Breaking:** removed config/runtime compatibility knobs `runtime.hardware_aware`, CLI `--no-hardware-aware`, and graph aliases `graph.n_nodes_log2_min/max`.
+- **Breaking:** `shift.profile` no longer accepts boolean aliases; only explicit string values are allowed.
+- Hardware detection and policy are now separated: `hardware.py` handles detection and `hardware_policy.py` handles explicit scaling policy.
+- Added hardware policy registry APIs (`apply_hardware_policy`, `register_hardware_policy`, `list_hardware_policies`) with immutable policy application semantics.
+- Added CLI `--hardware-policy` and `--print-effective-config` options; generate/benchmark runs now persist resolved effective config artifacts.
+- Fixed-layout plan schema now requires a non-null `compatibility_snapshot` payload.
 
 ## [0.2.0] - 2026-03-02
 

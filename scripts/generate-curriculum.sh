@@ -16,9 +16,9 @@ Usage:
     (--train-start <int> --train-stop <int> --train-step <int> | --train-values <csv>) \
     [--chunk-size <int>] \
     [--device <auto|cpu|cuda|mps>] \
+    [--hardware-policy <none|cuda_tiered_v1>] \
     [--seed <int>] \
     [--n-features <int> | --stage-columns <csv>] \
-    [--no-hardware-aware] \
     [--no-write] \
     [--dry-run]
 
@@ -79,7 +79,7 @@ DEVICE="auto"
 SEED_OVERRIDE=""
 N_FEATURES=""
 STAGE_COLUMNS=""
-NO_HARDWARE_AWARE=0
+HARDWARE_POLICY="none"
 NO_WRITE=0
 DRY_RUN=0
 
@@ -135,6 +135,11 @@ while [[ $# -gt 0 ]]; do
       DEVICE="$2"
       shift 2
       ;;
+    --hardware-policy)
+      [[ $# -ge 2 ]] || die "--hardware-policy requires a value"
+      HARDWARE_POLICY="$2"
+      shift 2
+      ;;
     --seed)
       [[ $# -ge 2 ]] || die "--seed requires a value"
       SEED_OVERRIDE="$2"
@@ -149,10 +154,6 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "--stage-columns requires a value"
       STAGE_COLUMNS="$2"
       shift 2
-      ;;
-    --no-hardware-aware)
-      NO_HARDWARE_AWARE=1
-      shift
       ;;
     --no-write)
       NO_WRITE=1
@@ -186,6 +187,8 @@ case "$DEVICE" in
   auto|cpu|cuda|mps) ;;
   *) die "--device must be one of: auto, cpu, cuda, mps" ;;
 esac
+
+[[ -n "$HARDWARE_POLICY" ]] || die "--hardware-policy must be non-empty"
 
 if [[ -n "$N_FEATURES" && -n "$STAGE_COLUMNS" ]]; then
   die "--n-features and --stage-columns are mutually exclusive"
@@ -357,11 +360,9 @@ for idx in "${!TRAIN_ROWS[@]}"; do
       --config "$stage_cfg"
       --num-datasets "$chunk_n"
       --device "$DEVICE"
+      --hardware-policy "$HARDWARE_POLICY"
       --seed "$chunk_seed"
     )
-    if (( NO_HARDWARE_AWARE == 1 )); then
-      cmd+=(--no-hardware-aware)
-    fi
     if (( NO_WRITE == 1 )); then
       cmd+=(--no-write)
     else
@@ -412,7 +413,7 @@ if (( ${#STAGE_COLS[@]} > 0 )); then
   STAGE_COLS_CSV="$(IFS=,; echo "${STAGE_COLS[*]}")"
 fi
 
-"${PYTHON_RUNNER[@]}" - "$MANIFEST_PATH" "$RECORDS_TSV" "$BASE_CONFIG" "$OUT_ROOT" "$RUN_STARTED_AT" "$RUN_COMPLETED_AT" "$RUN_STATUS" "$ERROR_MESSAGE" "$RUN_SEED" "$DEVICE" "$NO_WRITE" "$NO_HARDWARE_AWARE" "$CHUNK_SIZE" "$DATASETS_PER_STAGE" "$N_TEST" "$TRAIN_ROWS_CSV" "$STAGE_COLS_CSV" "$N_FEATURES" "$TOTAL_GENERATED" <<'PY'
+"${PYTHON_RUNNER[@]}" - "$MANIFEST_PATH" "$RECORDS_TSV" "$BASE_CONFIG" "$OUT_ROOT" "$RUN_STARTED_AT" "$RUN_COMPLETED_AT" "$RUN_STATUS" "$ERROR_MESSAGE" "$RUN_SEED" "$DEVICE" "$HARDWARE_POLICY" "$NO_WRITE" "$CHUNK_SIZE" "$DATASETS_PER_STAGE" "$N_TEST" "$TRAIN_ROWS_CSV" "$STAGE_COLS_CSV" "$N_FEATURES" "$TOTAL_GENERATED" <<'PY'
 import json
 import sys
 from collections import defaultdict
@@ -429,8 +430,8 @@ from pathlib import Path
     error_message,
     run_seed,
     device,
+    hardware_policy,
     no_write,
-    no_hardware_aware,
     chunk_size,
     datasets_per_stage,
     n_test,
@@ -516,8 +517,8 @@ payload = {
     "error": error_message or None,
     "run_seed": int(run_seed),
     "device": device,
+    "hardware_policy": hardware_policy,
     "no_write": bool(int(no_write)),
-    "no_hardware_aware": bool(int(no_hardware_aware)),
     "chunk_size": int(chunk_size),
     "datasets_per_stage": int(datasets_per_stage),
     "n_test": int(n_test),

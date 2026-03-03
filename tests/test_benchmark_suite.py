@@ -77,7 +77,7 @@ def test_run_benchmark_suite_smoke_single_profile() -> None:
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     assert summary["suite"] == "smoke"
@@ -115,7 +115,7 @@ def test_run_benchmark_suite_missingness_guardrails_emit_metrics() -> None:
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -208,7 +208,7 @@ def test_run_benchmark_suite_missingness_runtime_guardrail_updates_regression_st
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -246,7 +246,7 @@ def test_run_benchmark_suite_shift_guardrails_emit_metrics() -> None:
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -348,7 +348,7 @@ def test_run_benchmark_suite_shift_runtime_guardrail_updates_regression_status(
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -453,7 +453,7 @@ def test_run_benchmark_suite_shift_directional_guardrail_failure_updates_status(
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     guardrails = summary["profile_results"][0]["shift_guardrails"]
@@ -492,7 +492,7 @@ def test_run_benchmark_suite_noise_guardrails_emit_metrics() -> None:
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -520,8 +520,8 @@ def test_run_benchmark_suite_noise_runtime_guardrail_updates_regression_status(
     ):
         _ = warmup_datasets
         _ = device
-        nonlegacy_noise = str(config.noise.family) != "legacy"
-        dpm = 70.0 if nonlegacy_noise else 100.0
+        nongaussian_noise = str(config.noise.family) != "gaussian"
+        dpm = 70.0 if nongaussian_noise else 100.0
         dps = dpm / 60.0
         elapsed = (float(num_datasets) / dps) if dps > 0 else 0.0
         if on_bundle is not None:
@@ -587,7 +587,7 @@ def test_run_benchmark_suite_noise_runtime_guardrail_updates_regression_status(
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -628,10 +628,10 @@ def test_run_benchmark_suite_noise_metadata_coverage_failure_updates_status(
         if on_bundle is not None:
             for i in range(num_datasets):
                 metadata = {"seed": i, "attempt_used": 0}
-                if str(config.noise.family) == "legacy":
+                if str(config.noise.family) == "gaussian":
                     metadata["noise"] = {
-                        "family_requested": "legacy",
-                        "family_sampled": "legacy",
+                        "family_requested": "gaussian",
+                        "family_sampled": "gaussian",
                         "sampling_strategy": "dataset_level",
                         "scale": 1.0,
                         "student_t_df": 5.0,
@@ -686,7 +686,7 @@ def test_run_benchmark_suite_noise_metadata_coverage_failure_updates_status(
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -763,7 +763,7 @@ def test_run_benchmark_suite_lineage_runtime_guardrail_updates_regression_status
         collect_diagnostics=False,
         diagnostics_root_dir=None,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -1143,7 +1143,7 @@ def test_run_benchmark_suite_sanitizes_profile_key_for_diagnostics_paths(tmp_pat
         collect_diagnostics=True,
         diagnostics_root_dir=diagnostics_root,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     result = summary["profile_results"][0]
@@ -1183,7 +1183,7 @@ def test_run_benchmark_suite_uses_unique_diagnostics_dirs_for_duplicate_profile_
         collect_diagnostics=True,
         diagnostics_root_dir=diagnostics_root,
         fail_on_regression=False,
-        no_hardware_aware=True,
+        hardware_policy="none",
     )
 
     results = summary["profile_results"]

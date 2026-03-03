@@ -14,7 +14,6 @@ import dagsynth.sampling.noise as noise_mod
 @pytest.mark.parametrize(
     ("family", "kwargs"),
     [
-        ("legacy", {}),
         ("gaussian", {}),
         ("laplace", {}),
         ("student_t", {"student_t_df": 6.0}),

@@ -51,7 +51,7 @@ class FixedLayoutPlan:
     n_train: int
     n_test: int
     layout_signature: str
-    compatibility_snapshot: dict[str, Any] | None = None
+    compatibility_snapshot: dict[str, Any]
 
 
 @dataclass(slots=True, frozen=True)
@@ -818,10 +818,9 @@ def _validate_fixed_layout_plan_compatibility(
     """Validate that a fixed-layout plan is compatible with the active config."""
 
     snapshot = plan.compatibility_snapshot
-    if snapshot is None:
+    if not isinstance(snapshot, dict):
         raise ValueError(
-            "Fixed-layout plan is missing compatibility snapshot. "
-            "Resample with sample_fixed_layout(...) before generation."
+            "Fixed-layout plan integrity mismatch: compatibility_snapshot must be a mapping."
         )
 
     computed_layout_signature = _layout_signature(plan.layout)

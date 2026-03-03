@@ -1,4 +1,4 @@
-"""Hardware-aware utilities for GPU capability and profile tuning."""
+"""Hardware detection utilities for runtime backend capability."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ import math
 from dataclasses import dataclass
 
 import torch
-
-from dagsynth.config import GeneratorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -139,39 +137,3 @@ def detect_hardware(requested_device: str | None = None) -> HardwareInfo:
         peak_flops=float("inf"),
         profile="cpu",
     )
-
-
-def apply_hardware_profile(config: GeneratorConfig, hw: HardwareInfo) -> GeneratorConfig:
-    """Apply conservative config overrides based on detected hardware tier."""
-
-    if not config.runtime.hardware_aware or hw.backend != "cuda":
-        return config
-
-    if hw.profile == "cuda_h100":
-        config.benchmark.profile_name = "cuda_h100_auto"
-        config.dataset.n_train = max(config.dataset.n_train, 4096)
-        config.dataset.n_test = max(config.dataset.n_test, 1024)
-        config.dataset.n_features_max = max(config.dataset.n_features_max, 192)
-        config.graph.n_nodes_max = max(config.graph.n_nodes_max, 64)
-        config.output.shard_size = max(config.output.shard_size, 512)
-        config.benchmark.num_datasets = max(config.benchmark.num_datasets, 5000)
-        config.benchmark.warmup_datasets = max(config.benchmark.warmup_datasets, 50)
-        return config
-
-    if hw.profile == "cuda_datacenter":
-        config.benchmark.profile_name = "cuda_datacenter_auto"
-        config.dataset.n_train = max(config.dataset.n_train, 1536)
-        config.dataset.n_test = max(config.dataset.n_test, 512)
-        config.dataset.n_features_max = max(config.dataset.n_features_max, 96)
-        config.graph.n_nodes_max = max(config.graph.n_nodes_max, 48)
-        config.output.shard_size = max(config.output.shard_size, 256)
-        config.benchmark.num_datasets = max(config.benchmark.num_datasets, 2500)
-        config.benchmark.warmup_datasets = max(config.benchmark.warmup_datasets, 30)
-        return config
-
-    if hw.profile == "cuda_desktop":
-        config.benchmark.profile_name = "cuda_desktop_auto"
-        return config
-
-    config.benchmark.profile_name = "cuda_unknown_fallback"
-    return config

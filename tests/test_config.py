@@ -208,6 +208,11 @@ def test_runtime_config_rejects_generation_engine_key() -> None:
         GeneratorConfig.from_dict({"runtime": {"generation_engine": "appendix_light"}})
 
 
+def test_runtime_config_rejects_hardware_aware_key() -> None:
+    with pytest.raises(TypeError, match="hardware_aware"):
+        GeneratorConfig.from_dict({"runtime": {"hardware_aware": True}})
+
+
 def test_legacy_filter_keys_are_rejected() -> None:
     with pytest.raises(TypeError, match="n_trees"):
         GeneratorConfig.from_dict(
@@ -220,6 +225,11 @@ def test_legacy_filter_keys_are_rejected() -> None:
                 }
             }
         )
+
+
+def test_legacy_graph_log2_keys_are_rejected() -> None:
+    with pytest.raises(TypeError, match="n_nodes_log2_min"):
+        GeneratorConfig.from_dict({"graph": {"n_nodes_log2_min": 2, "n_nodes_log2_max": 8}})
 
 
 def test_filter_n_jobs_accepts_minus_one_and_positive_values() -> None:
@@ -382,9 +392,9 @@ def test_shift_schema_rejects_invalid_profile_value() -> None:
         GeneratorConfig.from_dict({"shift": {"enabled": True, "profile": "unknown_mode"}})
 
 
-def test_shift_schema_accepts_boolean_false_alias_for_off_profile() -> None:
-    cfg = GeneratorConfig.from_dict({"shift": {"enabled": False, "profile": False}})
-    assert cfg.shift.profile == "off"
+def test_shift_schema_rejects_boolean_false_profile_alias() -> None:
+    with pytest.raises(ValueError, match="Unsupported shift.profile"):
+        GeneratorConfig.from_dict({"shift": {"enabled": False, "profile": False}})
 
 
 def test_shift_schema_rejects_boolean_true_profile_alias() -> None:
@@ -392,10 +402,20 @@ def test_shift_schema_rejects_boolean_true_profile_alias() -> None:
         GeneratorConfig.from_dict({"shift": {"enabled": False, "profile": True}})
 
 
-def test_shift_schema_from_yaml_accepts_unquoted_off_profile(tmp_path) -> None:
+def test_shift_schema_from_yaml_rejects_unquoted_off_profile(tmp_path) -> None:
     cfg_path = tmp_path / "shift_off.yaml"
     cfg_path.write_text(
         "shift:\n  enabled: false\n  profile: off\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Unsupported shift.profile"):
+        GeneratorConfig.from_yaml(cfg_path)
+
+
+def test_shift_schema_from_yaml_accepts_quoted_off_profile(tmp_path) -> None:
+    cfg_path = tmp_path / "shift_off_quoted.yaml"
+    cfg_path.write_text(
+        "shift:\n  enabled: false\n  profile: 'off'\n",
         encoding="utf-8",
     )
     cfg = GeneratorConfig.from_yaml(cfg_path)
