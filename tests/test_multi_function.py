@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from cauchy_generator.functions.multi import apply_multi_function
+from dagsynth.functions.multi import apply_multi_function
 from conftest import make_generator as _make_generator
 
 

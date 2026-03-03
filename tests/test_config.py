@@ -1,6 +1,6 @@
 import pytest
 
-from cauchy_generator.config import (
+from dagsynth.config import (
     MAX_SUPPORTED_CLASS_COUNT,
     MISSINGNESS_MECHANISM_MAR,
     MISSINGNESS_MECHANISM_MCAR,
@@ -8,7 +8,7 @@ from cauchy_generator.config import (
     MISSINGNESS_MECHANISM_NONE,
     GeneratorConfig,
 )
-from cauchy_generator.io.lineage_schema import validate_metadata_lineage
+from dagsynth.io.lineage_schema import validate_metadata_lineage
 
 
 def test_load_default_config() -> None:

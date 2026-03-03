@@ -2,7 +2,7 @@
 
 import pytest
 
-from cauchy_generator.rng import (
+from dagsynth.rng import (
     SEED32_MAX,
     SeedManager,
     derive_seed,

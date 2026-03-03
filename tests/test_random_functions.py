@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from cauchy_generator.functions.random_functions import (
+from dagsynth.functions.random_functions import (
     _apply_tree,
     apply_random_function,
 )

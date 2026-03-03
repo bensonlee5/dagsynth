@@ -7,15 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Changed
 
+- **Rename: `cauchy-generator` is now `dagsynth`.** Package name, CLI entrypoint, Python import paths, and all internal references updated. The CLI command is now `dagsynth` (was `cauchy-gen`). Python imports change from `from cauchy_generator.…` to `from dagsynth.…`.
+- **Breaking:** Lineage schema name changed from `cauchy_generator.dag_lineage` to `dagsynth.dag_lineage`. Existing Parquet files with embedded lineage metadata will fail validation against the new schema name.
+- `sample_cauchy_dag` renamed to `sample_dag`; `graph/cauchy_graph.py` renamed to `graph/dag_sampler.py`.
 - Noise rollout presets for generate/benchmark smoke workflows (`configs/preset_noise_*.yaml`)
 - Noise workflow script wrapper (`scripts/generate-noise.sh`)
 - Noise benchmark guardrail reporting (`noise_guardrails`) for runtime delta vs legacy control and metadata validity
 - Noise feature guide (`docs/features/noise.md`) and usage/workflow documentation updates
-
-### Changed
-
 - Benchmark profile summaries now surface noise guardrail status in CLI and Markdown reports
 
 ## [0.2.0] - 2026-03-02
@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Versioned DAG lineage schema validator for `metadata.lineage` (`schema_name=cauchy_generator.dag_lineage`, `schema_version=1.0.0`) with strict adjacency/assignment checks and backward-compatible optional metadata mode
+- Versioned DAG lineage schema validator for `metadata.lineage` (`schema_name=dagsynth.dag_lineage`, `schema_version=1.0.0`) with strict adjacency/assignment checks and backward-compatible optional metadata mode
 
 ## [0.1.11] - 2026-02-23
 
@@ -137,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opt-in soft meta-feature steering with bounded deterministic candidate selection
 - New generation CLI controls: `--diagnostics`, `--steer-meta`, and repeatable `--meta-target key=min:max[:weight]`
 - Steering metadata payload propagation on generated bundles when steering is enabled
-- Benchmark diagnostics collection controls: `cauchy-gen benchmark --diagnostics [--diagnostics-out-dir ...]`
+- Benchmark diagnostics collection controls: `dagsynth benchmark --diagnostics [--diagnostics-out-dir ...]`
 - Per-profile benchmark diagnostics artifacts and summary pointers under `diagnostics/<sanitized_profile_key>_<hash>/`
 - New presets: `configs/preset_diagnostics_on.yaml` and `configs/preset_steering_conservative.yaml`
 

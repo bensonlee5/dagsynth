@@ -48,14 +48,14 @@ else
   die "Python runner not found; set CURRICULUM_PYTHON_BIN, create .venv, or install uv"
 fi
 
-if [[ -n "${CURRICULUM_CAUCHY_GEN_BIN:-}" ]]; then
-  GEN_RUNNER=("${CURRICULUM_CAUCHY_GEN_BIN}")
-elif [[ -x "${REPO_ROOT}/.venv/bin/cauchy-gen" ]]; then
-  GEN_RUNNER=("${REPO_ROOT}/.venv/bin/cauchy-gen")
+if [[ -n "${CURRICULUM_DAGSYNTH_BIN:-}" ]]; then
+  GEN_RUNNER=("${CURRICULUM_DAGSYNTH_BIN}")
+elif [[ -x "${REPO_ROOT}/.venv/bin/dagsynth" ]]; then
+  GEN_RUNNER=("${REPO_ROOT}/.venv/bin/dagsynth")
 elif command -v uv >/dev/null 2>&1; then
-  GEN_RUNNER=("uv" "run" "cauchy-gen")
+  GEN_RUNNER=("uv" "run" "dagsynth")
 else
-  die "cauchy-gen runner not found; set CURRICULUM_CAUCHY_GEN_BIN, create .venv, or install uv"
+  die "dagsynth runner not found; set CURRICULUM_DAGSYNTH_BIN, create .venv, or install uv"
 fi
 
 is_int() {

@@ -1,6 +1,6 @@
-# How cauchy-generator Works
+# How dagsynth Works
 
-This guide explains how `cauchy-generator` works end-to-end and defines core
+This guide explains how `dagsynth` works end-to-end and defines core
 terms used across the repository.
 
 This is the current baseline architecture. Function families, noise families,
@@ -9,12 +9,12 @@ default behavior.
 
 ## Who this is for
 
-- End users who run `cauchy-gen generate` and `cauchy-gen benchmark`
+- End users who run `dagsynth generate` and `dagsynth benchmark`
 - Contributors who need a fast mental model before reading implementation files
 
 ## Mental model in 90 seconds
 
-`cauchy-generator` produces synthetic tabular datasets by sampling a causal DAG,
+`dagsynth` produces synthetic tabular datasets by sampling a causal DAG,
 running random mechanisms over DAG nodes, converting node outputs into
 features/targets, and applying quality/realism controls.
 
@@ -29,7 +29,7 @@ features/targets, and applying quality/realism controls.
 
 ## End-to-end flow
 
-`cauchy-gen` has three commands:
+`dagsynth` has three commands:
 
 - `generate`: produce datasets and optionally write artifacts.
 - `benchmark`: run profile/suite workloads and report guardrails.
@@ -37,7 +37,7 @@ features/targets, and applying quality/realism controls.
 
 ```mermaid
 flowchart LR
-    CLI["cauchy-gen CLI"]
+    CLI["dagsynth CLI"]
 
     CLI --> Cfg
     CLI --> BCfg
@@ -77,8 +77,8 @@ flowchart LR
 
 ### 1. Entry points and run-level setup
 
-- `generate` flows through `src/cauchy_generator/cli.py` into generation
-  helpers in `src/cauchy_generator/core/dataset.py`.
+- `generate` flows through `src/dagsynth/cli.py` into generation
+  helpers in `src/dagsynth/core/dataset.py`.
 - A run-level seed initializes `SeedManager`, which derives deterministic child
   seeds (dataset-level and component-level).
 - Hardware-aware defaults are applied before generation begins.
@@ -87,7 +87,7 @@ flowchart LR
 
 - `_sample_layout` decides feature/node/depth structure and feature/target
   assignment surfaces.
-- `sample_cauchy_dag` builds an upper-triangular DAG with Cauchy-based edge
+- `sample_dag` builds an upper-triangular DAG with Cauchy-based edge
   logits.
 
 ### 3. Node execution and tensor assembly

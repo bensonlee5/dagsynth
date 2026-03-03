@@ -3,12 +3,12 @@ import pytest
 import torch
 import math
 
-from cauchy_generator.config import (
+from dagsynth.config import (
     GeneratorConfig,
     NOISE_FAMILY_LAPLACE,
     NOISE_FAMILY_STUDENT_T,
 )
-from cauchy_generator.core.dataset import (
+from dagsynth.core.dataset import (
     FixedLayoutPlan,
     _generate_torch,
     _stratified_split_indices,
@@ -19,14 +19,14 @@ from cauchy_generator.core.dataset import (
     generate_one,
     sample_fixed_layout,
 )
-from cauchy_generator.core.shift import mechanism_nonlinear_mass, resolve_shift_runtime_params
-from cauchy_generator.io.lineage_schema import (
+from dagsynth.core.shift import mechanism_nonlinear_mass, resolve_shift_runtime_params
+from dagsynth.io.lineage_schema import (
     LINEAGE_SCHEMA_NAME,
     LINEAGE_SCHEMA_VERSION,
     validate_metadata_lineage,
     validate_lineage_payload,
 )
-from cauchy_generator.types import DatasetBundle
+from dagsynth.types import DatasetBundle
 
 
 def _tiny_config() -> GeneratorConfig:
@@ -383,7 +383,7 @@ def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
     )
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._sample_layout",
+        "dagsynth.core.dataset._sample_layout",
         lambda *_args, **_kwargs: layout,
     )
 
@@ -393,7 +393,7 @@ def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
         return x, y, {"filter": {"enabled": False}}
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._generate_graph_dataset_torch",
+        "dagsynth.core.dataset._generate_graph_dataset_torch",
         _stub_generate_graph_dataset_torch,
     )
 
@@ -424,7 +424,7 @@ def test_generate_one_lineage_assignments_follow_postprocess_feature_mapping(
         )
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset.postprocess_dataset",
+        "dagsynth.core.dataset.postprocess_dataset",
         _stub_postprocess_dataset,
     )
 
@@ -470,11 +470,11 @@ def test_generate_torch_forces_cpu_for_stratified_split(
         raise _SplitSentinel
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._generate_graph_dataset_torch",
+        "dagsynth.core.dataset._generate_graph_dataset_torch",
         _stub_generate_graph_dataset_torch,
     )
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._stratified_split_indices",
+        "dagsynth.core.dataset._stratified_split_indices",
         _stub_stratified_split_indices,
     )
 
@@ -539,11 +539,11 @@ def test_generate_torch_routes_postprocess_to_runtime_device(
         raise _PostprocessSentinel
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._generate_graph_dataset_torch",
+        "dagsynth.core.dataset._generate_graph_dataset_torch",
         _stub_generate_graph_dataset_torch,
     )
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset.postprocess_dataset",
+        "dagsynth.core.dataset.postprocess_dataset",
         _stub_postprocess_dataset,
     )
 
@@ -621,15 +621,15 @@ def test_generate_torch_routes_missingness_to_runtime_device(
         raise _MissingnessSentinel
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._generate_graph_dataset_torch",
+        "dagsynth.core.dataset._generate_graph_dataset_torch",
         _stub_generate_graph_dataset_torch,
     )
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset.postprocess_dataset",
+        "dagsynth.core.dataset.postprocess_dataset",
         _stub_postprocess_dataset,
     )
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset.inject_missingness",
+        "dagsynth.core.dataset.inject_missingness",
         _stub_inject_missingness,
     )
 
@@ -801,7 +801,7 @@ def test_generate_batch_fixed_layout_raises_on_schema_mismatch(
         )
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._generate_one_with_resolved_layout",
+        "dagsynth.core.dataset._generate_one_with_resolved_layout",
         _stub_generate_one_with_resolved_layout,
     )
 
@@ -836,7 +836,7 @@ def test_torch_path_applies_filter_when_enabled(monkeypatch: pytest.MonkeyPatch)
             "threshold_delta": 0.15,
         }
 
-    monkeypatch.setattr("cauchy_generator.core.dataset.apply_extra_trees_filter", _stub_filter)
+    monkeypatch.setattr("dagsynth.core.dataset.apply_extra_trees_filter", _stub_filter)
     cfg = _tiny_config()
     cfg.filter.enabled = True
 
@@ -868,8 +868,8 @@ def test_auto_retries_on_cpu_when_mps_fails(monkeypatch: pytest.MonkeyPatch) -> 
             metadata={"backend": "torch", "device": "cpu"},
         )
 
-    monkeypatch.setattr("cauchy_generator.core.dataset._resolve_device", lambda *_args: "mps")
-    monkeypatch.setattr("cauchy_generator.core.dataset._generate_torch", _stub_generate_torch)
+    monkeypatch.setattr("dagsynth.core.dataset._resolve_device", lambda *_args: "mps")
+    monkeypatch.setattr("dagsynth.core.dataset._generate_torch", _stub_generate_torch)
     cfg = _tiny_config()
 
     bundle = generate_one(cfg, seed=123, device="auto")
@@ -883,7 +883,7 @@ def test_auto_does_not_fallback_to_numpy_if_torch_runtime_fails(
     def _raise_runtime(*_args, **_kwargs):
         raise RuntimeError("simulated torch runtime failure")
 
-    monkeypatch.setattr("cauchy_generator.core.dataset._generate_torch", _raise_runtime)
+    monkeypatch.setattr("dagsynth.core.dataset._generate_torch", _raise_runtime)
     cfg = _tiny_config()
 
     with pytest.raises(RuntimeError, match="simulated torch runtime failure"):
@@ -894,7 +894,7 @@ def test_explicit_cuda_request_raises_when_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset.torch.cuda.is_available",
+        "dagsynth.core.dataset.torch.cuda.is_available",
         lambda: False,
     )
     cfg = _tiny_config()
@@ -967,7 +967,7 @@ def test_zero_num_datasets_does_not_resolve_device(monkeypatch: pytest.MonkeyPat
     def _raise_if_called(*_args, **_kwargs):
         raise RuntimeError("device resolution should not run for empty batches")
 
-    monkeypatch.setattr("cauchy_generator.core.dataset._resolve_device", _raise_if_called)
+    monkeypatch.setattr("dagsynth.core.dataset._resolve_device", _raise_if_called)
     assert list(generate_batch_iter(cfg, num_datasets=0, seed=5, device="cuda")) == []
 
 
@@ -1051,7 +1051,7 @@ def test_generate_retries_when_stratified_split_is_infeasible(
         raise ValueError("infeasible_stratified_split: forced for test")
 
     monkeypatch.setattr(
-        "cauchy_generator.core.dataset._stratified_split_indices",
+        "dagsynth.core.dataset._stratified_split_indices",
         _raise_infeasible_split,
     )
 

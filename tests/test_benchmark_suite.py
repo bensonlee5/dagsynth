@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-import cauchy_generator.bench.guardrails as guardrails_mod
-import cauchy_generator.bench.suite as suite_mod
-from cauchy_generator.bench.micro import run_microbenchmarks
-from cauchy_generator.bench.report import write_suite_markdown
-from cauchy_generator.bench.suite import ProfileRunSpec, run_benchmark_suite
-from cauchy_generator.config import GeneratorConfig
-from cauchy_generator.types import DatasetBundle
+import dagsynth.bench.guardrails as guardrails_mod
+import dagsynth.bench.suite as suite_mod
+from dagsynth.bench.micro import run_microbenchmarks
+from dagsynth.bench.report import write_suite_markdown
+from dagsynth.bench.suite import ProfileRunSpec, run_benchmark_suite
+from dagsynth.config import GeneratorConfig
+from dagsynth.types import DatasetBundle
 
 
 def _tiny_cpu_config() -> GeneratorConfig:
@@ -183,9 +183,9 @@ def test_run_benchmark_suite_missingness_runtime_guardrail_updates_regression_st
             "slo_pass_100_datasets_per_min": dpm >= 100.0,
         }
 
-    monkeypatch.setattr("cauchy_generator.bench.suite.run_throughput_benchmark", _stub_throughput)
+    monkeypatch.setattr("dagsynth.bench.suite.run_throughput_benchmark", _stub_throughput)
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_latency",
+        "dagsynth.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
             "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
@@ -319,9 +319,9 @@ def test_run_benchmark_suite_shift_runtime_guardrail_updates_regression_status(
             "slo_pass_100_datasets_per_min": dpm >= 100.0,
         }
 
-    monkeypatch.setattr("cauchy_generator.bench.suite.run_throughput_benchmark", _stub_throughput)
+    monkeypatch.setattr("dagsynth.bench.suite.run_throughput_benchmark", _stub_throughput)
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_latency",
+        "dagsynth.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
             "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
@@ -331,7 +331,7 @@ def test_run_benchmark_suite_shift_runtime_guardrail_updates_regression_status(
         },
     )
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        "dagsynth.bench.suite._collect_lineage_guardrails",
         lambda *_args, **_kwargs: {"enabled": False},
     )
 
@@ -424,9 +424,9 @@ def test_run_benchmark_suite_shift_directional_guardrail_failure_updates_status(
             "slo_pass_100_datasets_per_min": True,
         }
 
-    monkeypatch.setattr("cauchy_generator.bench.suite.run_throughput_benchmark", _stub_throughput)
+    monkeypatch.setattr("dagsynth.bench.suite.run_throughput_benchmark", _stub_throughput)
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_latency",
+        "dagsynth.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
             "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
@@ -436,7 +436,7 @@ def test_run_benchmark_suite_shift_directional_guardrail_failure_updates_status(
         },
     )
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        "dagsynth.bench.suite._collect_lineage_guardrails",
         lambda *_args, **_kwargs: {"enabled": False},
     )
 
@@ -558,9 +558,9 @@ def test_run_benchmark_suite_noise_runtime_guardrail_updates_regression_status(
             "slo_pass_100_datasets_per_min": dpm >= 100.0,
         }
 
-    monkeypatch.setattr("cauchy_generator.bench.suite.run_throughput_benchmark", _stub_throughput)
+    monkeypatch.setattr("dagsynth.bench.suite.run_throughput_benchmark", _stub_throughput)
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_latency",
+        "dagsynth.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
             "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
@@ -570,7 +570,7 @@ def test_run_benchmark_suite_noise_runtime_guardrail_updates_regression_status(
         },
     )
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        "dagsynth.bench.suite._collect_lineage_guardrails",
         lambda *_args, **_kwargs: {"enabled": False},
     )
 
@@ -657,9 +657,9 @@ def test_run_benchmark_suite_noise_metadata_coverage_failure_updates_status(
             "slo_pass_100_datasets_per_min": dpm >= 100.0,
         }
 
-    monkeypatch.setattr("cauchy_generator.bench.suite.run_throughput_benchmark", _stub_throughput)
+    monkeypatch.setattr("dagsynth.bench.suite.run_throughput_benchmark", _stub_throughput)
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_latency",
+        "dagsynth.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
             "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
@@ -669,7 +669,7 @@ def test_run_benchmark_suite_noise_metadata_coverage_failure_updates_status(
         },
     )
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        "dagsynth.bench.suite._collect_lineage_guardrails",
         lambda *_args, **_kwargs: {"enabled": False},
     )
 
@@ -726,7 +726,7 @@ def test_run_benchmark_suite_lineage_runtime_guardrail_updates_regression_status
     spec = ProfileRunSpec(key="cpu_test", config=cfg, device="cpu")
 
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite._collect_lineage_guardrails",
+        "dagsynth.bench.suite._collect_lineage_guardrails",
         lambda *_args, **_kwargs: {
             "enabled": True,
             "sample_datasets": 2,
@@ -832,7 +832,7 @@ def test_collect_lineage_guardrails_uses_median_of_three_trials_with_runtime_gat
                 metadata={
                     "seed": i,
                     "attempt_used": 0,
-                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                    "lineage": {"schema_name": "dagsynth.dag_lineage"},
                 },
             )
 
@@ -849,11 +849,9 @@ def test_collect_lineage_guardrails_uses_median_of_three_trials_with_runtime_gat
         assert num_bundles > 0
         return float(next(trial_values))
 
+    monkeypatch.setattr("dagsynth.bench.guardrails.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails.generate_batch_iter", _stub_generate_batch_iter
-    )
-    monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails._measure_persistence_datasets_per_minute",
+        "dagsynth.bench.guardrails._measure_persistence_datasets_per_minute",
         _stub_measure,
     )
 
@@ -908,7 +906,7 @@ def test_collect_lineage_guardrails_emits_runtime_issue_when_sample_is_sufficien
                 metadata={
                     "seed": i,
                     "attempt_used": 0,
-                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                    "lineage": {"schema_name": "dagsynth.dag_lineage"},
                 },
             )
 
@@ -925,11 +923,9 @@ def test_collect_lineage_guardrails_emits_runtime_issue_when_sample_is_sufficien
         assert num_bundles > 0
         return float(next(trial_values))
 
+    monkeypatch.setattr("dagsynth.bench.guardrails.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails.generate_batch_iter", _stub_generate_batch_iter
-    )
-    monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails._measure_persistence_datasets_per_minute",
+        "dagsynth.bench.guardrails._measure_persistence_datasets_per_minute",
         _stub_measure,
     )
 
@@ -978,7 +974,7 @@ def test_collect_lineage_guardrails_reports_unavailable_for_non_runtime_persiste
                 metadata={
                     "seed": i,
                     "attempt_used": 0,
-                    "lineage": {"schema_name": "cauchy_generator.dag_lineage"},
+                    "lineage": {"schema_name": "dagsynth.dag_lineage"},
                 },
             )
 
@@ -997,11 +993,9 @@ def test_collect_lineage_guardrails_reports_unavailable_for_non_runtime_persiste
         _ = trials
         raise ValueError("codec unavailable")
 
+    monkeypatch.setattr("dagsynth.bench.guardrails.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails.generate_batch_iter", _stub_generate_batch_iter
-    )
-    monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails._measure_lineage_persistence_trials",
+        "dagsynth.bench.guardrails._measure_lineage_persistence_trials",
         _stub_trials,
     )
 
@@ -1060,11 +1054,9 @@ def test_measure_lineage_persistence_trials_replays_staged_bundles_without_gener
         assert seen == 2
         return 100.0 if len(call_counts) % 2 == 1 else 90.0
 
+    monkeypatch.setattr("dagsynth.bench.guardrails.generate_batch_iter", _unexpected_generate)
     monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails.generate_batch_iter", _unexpected_generate
-    )
-    monkeypatch.setattr(
-        "cauchy_generator.bench.guardrails._measure_persistence_datasets_per_minute",
+        "dagsynth.bench.guardrails._measure_persistence_datasets_per_minute",
         _stub_measure,
     )
 
@@ -1121,7 +1113,7 @@ def test_collect_reproducibility_uses_streaming_generation(
             yield _bundle(int(seed or 0) + i)
 
     monkeypatch.setattr(
-        "cauchy_generator.bench.suite.generate_batch_iter",
+        "dagsynth.bench.suite.generate_batch_iter",
         _stub_generate_batch_iter,
     )
 

@@ -1,8 +1,8 @@
 import math
 
-from cauchy_generator.config import GeneratorConfig
-from cauchy_generator.hardware import HardwareInfo, apply_hardware_profile
-from cauchy_generator.hardware import detect_hardware, get_peak_flops
+from dagsynth.config import GeneratorConfig
+from dagsynth.hardware import HardwareInfo, apply_hardware_profile
+from dagsynth.hardware import detect_hardware, get_peak_flops
 
 
 def test_peak_flops_lookup() -> None:

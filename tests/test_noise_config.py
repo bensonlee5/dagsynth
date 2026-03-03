@@ -1,6 +1,6 @@
 import pytest
 
-from cauchy_generator.config import (
+from dagsynth.config import (
     NOISE_FAMILY_GAUSSIAN,
     NOISE_FAMILY_LAPLACE,
     NOISE_FAMILY_LEGACY,

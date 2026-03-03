@@ -1,6 +1,6 @@
 # Mission-Aligned Roadmap (2026Q1)
 
-This is the canonical roadmap for `cauchy-generator`.
+This is the canonical roadmap for `dagsynth`.
 
 It maps the mission and strategic pillars in `README.md` to:
 
@@ -105,9 +105,9 @@ walkthroughs, see `docs/how-it-works.md`.
 
 #### CLI
 
-- `cauchy-gen generate --config ... --num-datasets ... --device cuda --seed ...`
-- `cauchy-gen generate --missing-rate ... --missing-mechanism ... --missing-mar-observed-fraction ... --missing-mar-logit-scale ... --missing-mnar-logit-scale ...`
-- `cauchy-gen benchmark --suite standard --profile all --baseline ... --fail-on-regression`
+- `dagsynth generate --config ... --num-datasets ... --device cuda --seed ...`
+- `dagsynth generate --missing-rate ... --missing-mechanism ... --missing-mar-observed-fraction ... --missing-mar-logit-scale ... --missing-mnar-logit-scale ...`
+- `dagsynth benchmark --suite standard --profile all --baseline ... --fail-on-regression`
 
 #### Output Contract
 
@@ -135,7 +135,7 @@ metadata JSON contract, and DAG lineage schema.
 - `core/dataset.py`: dataset orchestration entrypoint (`E.3`)
 - `core/layout.py`: dataset layout, graph sampling, and node assignments
   (`E.3`, `E.4`)
-- `graph/cauchy_graph.py`: random Cauchy DAG (`E.4`)
+- `graph/dag_sampler.py`: random Cauchy DAG (`E.4`)
 - `core/node_pipeline.py`: per-node flow (`E.5`)
 - `converters/numeric.py`, `converters/categorical.py`: converters (`E.6`)
 - `functions/multi.py`: concatenation vs per-parent aggregation (`E.7`)
@@ -210,7 +210,7 @@ metadata JSON contract, and DAG lineage schema.
 - Mission alignment: causal discovery
 - Pillar alignment: causal structural integrity
 - Goal: persist full adjacency matrix and node assignment lineage as stable dataset artifacts.
-- Repo touchpoints: `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/layout.py`, `src/cauchy_generator/io/parquet_writer.py`, `src/cauchy_generator/types.py`
+- Repo touchpoints: `src/dagsynth/core/dataset.py`, `src/dagsynth/core/layout.py`, `src/dagsynth/io/parquet_writer.py`, `src/dagsynth/types.py`
 - Delivered scope:
   - Every generated dataset emits lineage metadata with adjacency + assignment lineage and deterministic seed behavior.
   - Persisted shard outputs rewrite dense adjacency into compact bit-packed artifacts with per-shard index files.
@@ -229,7 +229,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity
 - Goal: support observational + interventional sampling tracks with explicit intervention specs.
 - GitHub tracking: epic `#67`; dependency chain `#84 -> #85 -> #86 -> #87`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/cli.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/core/node_pipeline.py`, `src/dagsynth/cli.py`
 - Exit criteria:
   - Config supports opt-in intervention mode with safe default (`off`).
   - Generated artifacts contain intervention set and pre/post intervention metadata.
@@ -244,10 +244,10 @@ metadata JSON contract, and DAG lineage schema.
 - Goal: provide configurable missing-data mechanisms with deterministic seeded behavior and benchmark-time acceptance/runtime guardrails.
 - Delivered scope:
   - `DatasetConfig` supports missingness controls (`missing_rate`, mechanism, MAR/MNAR scales). See [docs/how-it-works.md](../how-it-works.md) for MCAR/MAR/MNAR mechanism definitions.
-  - `cauchy-gen generate` supports missingness CLI overrides.
+  - `dagsynth generate` supports missingness CLI overrides.
   - Generation path injects deterministic missingness masks and emits per-bundle metadata.
   - Benchmark profiles emit `missingness_guardrails` including metadata coverage, realized-rate accuracy, and runtime degradation checks.
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/sampling/missingness.py`, `src/cauchy_generator/postprocess/postprocess.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`, `src/cauchy_generator/bench/suite.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/sampling/missingness.py`, `src/dagsynth/postprocess/postprocess.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/cli.py`, `src/dagsynth/bench/suite.py`
 - Completion evidence:
   - Config and CLI support opt-in mechanism selection and missing rate controls.
   - Tests validate expected missing-rate and dependency behavior.
@@ -261,7 +261,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity, tabular realism
 - Goal: introduce controlled distribution-shift/drift modes in graph and mechanism sampling.
 - GitHub tracking: epic `#64`; dependency chain `#72 -> #73 -> #74 -> #75`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/shift.py`, `src/cauchy_generator/diagnostics/`, `src/cauchy_generator/bench/`, `configs/preset_shift_*.yaml`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/core/shift.py`, `src/dagsynth/diagnostics/`, `src/dagsynth/bench/`, `configs/preset_shift_*.yaml`
 - Delivered scope:
   - Shift controls are integrated into graph/mechanism/noise sampling with deterministic seeded behavior.
   - Per-bundle metadata and diagnostics expose resolved shift settings and observability signals.
@@ -280,7 +280,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: define reproducible stress presets (low-SNR, class imbalance, harder interactions).
 - GitHub tracking: epic `#65`; dependency chain `#76 -> #79 -> #78 -> #77`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/functions/random_functions.py`, `src/cauchy_generator/postprocess/postprocess.py`, `src/cauchy_generator/bench/`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/functions/random_functions.py`, `src/dagsynth/postprocess/postprocess.py`, `src/dagsynth/bench/`
 - Exit criteria:
   - Presets are selectable via config/CLI and remain opt-in.
   - Benchmarks and diagnostics confirm regimes differ from baseline in intended directions.
@@ -295,8 +295,8 @@ metadata JSON contract, and DAG lineage schema.
 - Goal: historical; staged complexity controls have been removed in favor of
   explicit split sizing and fixed-layout generation.
 - GitHub tracking: epic `#49`; dependency chain `#50 -> #51 -> #90 -> #52 -> #53`
-- Repo touchpoints (historical): `src/cauchy_generator/config.py`,
-  `src/cauchy_generator/core/dataset.py`
+- Repo touchpoints (historical): `src/dagsynth/config.py`,
+  `src/dagsynth/core/dataset.py`
 
 ### RD-007: Many-Class and High-Cardinality Expansion
 
@@ -308,7 +308,7 @@ metadata JSON contract, and DAG lineage schema.
 - Current rollout envelope (`#20`): enforce `dataset.n_classes_max <= 32` as the narrow-go safety cap until follow-on hardening (`#21`-`#23`) lands.
 - `#22` scope: class-aware RF filter thresholding plus metadata diagnostics so many-class accept/reject behavior remains interpretable.
 - GitHub tracking: epic `#19`; research gate `#43`; conditional chain `#20 -> #21 -> #22 -> #23`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/converters/categorical.py`, `src/cauchy_generator/filtering/extra_trees_filter.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/converters/categorical.py`, `src/dagsynth/filtering/extra_trees_filter.py`
 - Exit criteria:
   - Feasibility report produces explicit `go` / `narrow-go` / `no-go` decision under predefined thresholds.
   - If `go` or `narrow-go`: implementation chain (`#20`-`#23`) lands with backward-compatible defaults.
@@ -321,7 +321,7 @@ metadata JSON contract, and DAG lineage schema.
 - Mission alignment: foundation model pretraining
 - Pillar alignment: tabular realism
 - Goal: feature retired; diagnostics target bands remain as reporting-only metadata.
-- Repo touchpoints: `src/cauchy_generator/diagnostics/coverage.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`
+- Repo touchpoints: `src/dagsynth/diagnostics/coverage.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/cli.py`
 - Notes:
   - Steering selection logic was removed to simplify generation semantics.
   - `diagnostics.meta_feature_targets` remains supported for coverage summaries.
@@ -334,7 +334,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: support multi-worker generation and shard writing with deterministic seed partitioning.
 - GitHub tracking: epic `#66`; dependency chain `#80 -> #81 -> #82 -> #83`
-- Repo touchpoints: `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/io/parquet_writer.py`, `src/cauchy_generator/cli.py`
+- Repo touchpoints: `src/dagsynth/core/dataset.py`, `src/dagsynth/io/parquet_writer.py`, `src/dagsynth/cli.py`
 - Exit criteria:
   - Worker-aware config/API is backward-compatible and opt-in.
   - Multi-worker mode matches single-worker outputs for fixed seed equivalence checks.
@@ -348,7 +348,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: evolve hardware-aware scaling from static coarse profile tiers to bounded adaptive tuning based on observed throughput/memory behavior when throughput/cost becomes a practical bottleneck.
 - GitHub tracking: epic `#54`; dependency chain `#55 -> #56 -> #70 -> #57 -> #71 -> #58`
-- Repo touchpoints: `src/cauchy_generator/hardware.py`, `src/cauchy_generator/config.py`, `src/cauchy_generator/cli.py`, `src/cauchy_generator/bench/suite.py`, `src/cauchy_generator/bench/report.py`
+- Repo touchpoints: `src/dagsynth/hardware.py`, `src/dagsynth/config.py`, `src/dagsynth/cli.py`, `src/dagsynth/bench/suite.py`, `src/dagsynth/bench/report.py`
 - Exit criteria:
   - Adaptive mode improves throughput versus profile baseline on at least one CUDA hardware class without violating memory guardrails.
   - Unknown CUDA devices can run adaptive tuning without relying only on static fallback tiers.
@@ -363,7 +363,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity, tabular realism
 - Goal: add explicit mechanism-family mix controls and broaden function families (including BNN/GP-kernel/interactions) to increase structural diversity that materially affects generated datasets for PFN pretraining.
 - GitHub tracking: epic `#28`; dependency chain `#29 -> #30 -> #68 -> #69 -> #31 -> #32`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/functions/random_functions.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/bench/suite.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/functions/random_functions.py`, `src/dagsynth/core/node_pipeline.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/bench/suite.py`
 - Exit criteria:
   - Config supports explicit mechanism-family mix controls with backward-compatible defaults.
   - Expanded mechanism families are selectable and covered by unit/integration tests.
@@ -379,7 +379,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: complete lean, low-complexity integration of explicit noise-family controls and mixtures to diversify residual/noise behavior without broad generator refactors.
 - GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27` (completed)
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/sampling/`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/bench/suite.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/sampling/`, `src/dagsynth/core/dataset.py`, `src/dagsynth/bench/suite.py`
 - Delivered scope:
   - Config supports `legacy`, `gaussian`, `laplace`, `student_t`, and `mixture` families with safety validation.
   - Runtime sampling and generation metadata report requested/effective family settings.
@@ -397,7 +397,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: add an opt-in temporal generation track for sequence datasets so PFN pretraining workflows cover classification/regression/time-series under one reproducible generator framework.
 - GitHub tracking: epic `#110`; dependency chain `#111 -> #112 -> #113 -> #114`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/diagnostics/`, `src/cauchy_generator/bench/`, `docs/`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/core/node_pipeline.py`, `src/dagsynth/diagnostics/`, `src/dagsynth/bench/`, `docs/`
 - Exit criteria:
   - Temporal mode is opt-in and backward-compatible (`off` by default).
   - Fixed seed + config reproducibility is preserved for temporal generation.
@@ -412,7 +412,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: define and validate an opt-in observability path that attributes wall-time/memory bottlenecks to generation and benchmark stages across CPU/CUDA/MPS runs.
 - GitHub tracking: epic TBD; dependency chain TBD
-- Repo touchpoints: `src/cauchy_generator/bench/`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`, `src/cauchy_generator/hardware.py`, `docs/`
+- Repo touchpoints: `src/dagsynth/bench/`, `src/dagsynth/core/dataset.py`, `src/dagsynth/cli.py`, `src/dagsynth/hardware.py`, `docs/`
 - Exit criteria:
   - Bottleneck observability mode is opt-in and backward-compatible (`off` by default).
   - Benchmark/report artifacts expose stage-level timing and bottleneck attribution instead of only total runtime.

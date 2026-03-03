@@ -4,11 +4,11 @@ from dataclasses import fields
 
 import pytest
 
-from cauchy_generator.config import GeneratorConfig
-from cauchy_generator.core.dataset import generate_one
-from cauchy_generator.core.metrics_torch import extract_torch_metrics
-from cauchy_generator.diagnostics import extract_dataset_metrics
-from cauchy_generator.diagnostics.types import DatasetMetrics
+from dagsynth.config import GeneratorConfig
+from dagsynth.core.dataset import generate_one
+from dagsynth.core.metrics_torch import extract_torch_metrics
+from dagsynth.diagnostics import extract_dataset_metrics
+from dagsynth.diagnostics.types import DatasetMetrics
 
 
 def _tiny_config(task: str) -> GeneratorConfig:
@@ -60,10 +60,8 @@ def test_generation_does_not_call_numpy_diagnostics_extractor(
     def _fail_extract(*_args, **_kwargs):
         raise AssertionError("generation should not call diagnostics.extract_dataset_metrics")
 
-    monkeypatch.setattr(
-        "cauchy_generator.diagnostics.metrics.extract_dataset_metrics", _fail_extract
-    )
-    monkeypatch.setattr("cauchy_generator.diagnostics.extract_dataset_metrics", _fail_extract)
+    monkeypatch.setattr("dagsynth.diagnostics.metrics.extract_dataset_metrics", _fail_extract)
+    monkeypatch.setattr("dagsynth.diagnostics.extract_dataset_metrics", _fail_extract)
 
     cfg = _tiny_config("regression")
 

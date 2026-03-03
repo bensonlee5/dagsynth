@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from cauchy_generator.cli import _print_profile_result_line, main
+from dagsynth.cli import _print_profile_result_line, main
 
 
 def test_benchmark_cli_writes_json(tmp_path) -> None:

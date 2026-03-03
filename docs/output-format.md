@@ -217,7 +217,7 @@ ______________________________________________________________________
 
 ## Lineage schema
 
-Schema name: `cauchy_generator.dag_lineage`
+Schema name: `dagsynth.dag_lineage`
 
 ### Version 1.0.0 (dense, in-memory)
 
@@ -227,7 +227,7 @@ lineage is persisted to disk, payloads are rewritten to compact version
 
 ```json
 {
-  "schema_name": "cauchy_generator.dag_lineage",
+  "schema_name": "dagsynth.dag_lineage",
   "schema_version": "1.0.0",
   "graph": {
     "n_nodes": 8,
@@ -253,7 +253,7 @@ data.
 
 ```json
 {
-  "schema_name": "cauchy_generator.dag_lineage",
+  "schema_name": "dagsynth.dag_lineage",
   "schema_version": "1.1.0",
   "graph": {
     "n_nodes": 8,

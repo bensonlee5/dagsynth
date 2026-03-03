@@ -2,8 +2,8 @@
 
 import torch
 
-from cauchy_generator.config import DatasetConfig
-from cauchy_generator.postprocess.postprocess import (
+from dagsynth.config import DatasetConfig
+from dagsynth.postprocess.postprocess import (
     _clip_and_standardize,
     inject_missingness,
     postprocess_dataset,

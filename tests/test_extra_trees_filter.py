@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from cauchy_generator.filtering import apply_extra_trees_filter
+from dagsynth.filtering import apply_extra_trees_filter
 
 
 def _make_regression_data(

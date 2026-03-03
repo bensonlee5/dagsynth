@@ -6,15 +6,15 @@ from dataclasses import replace
 import pytest
 import yaml
 
-from cauchy_generator.cli import main
-from cauchy_generator.config import GeneratorConfig
-from cauchy_generator.diagnostics.coverage import (
+from dagsynth.cli import main
+from dagsynth.config import GeneratorConfig
+from dagsynth.diagnostics.coverage import (
     CoverageAggregationConfig,
     CoverageAggregator,
     write_coverage_summary_json,
     write_coverage_summary_markdown,
 )
-from cauchy_generator.diagnostics.types import DatasetMetrics
+from dagsynth.diagnostics.types import DatasetMetrics
 
 
 def _metric_fixture(**overrides: float | int | str | None) -> DatasetMetrics:
@@ -192,9 +192,7 @@ def test_generate_no_write_with_coverage_enabled_emits_artifacts(
     def _stub_filter(*_args, **_kwargs):
         return True, {"wins_ratio": 0.8, "n_valid_oob": 64, "backend": "extra_trees_cpu"}
 
-    monkeypatch.setattr(
-        "cauchy_generator.core.metrics_torch.apply_extra_trees_filter", _stub_filter
-    )
+    monkeypatch.setattr("dagsynth.core.metrics_torch.apply_extra_trees_filter", _stub_filter)
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     cfg.runtime.device = "cpu"
     cfg.dataset.task = "regression"

@@ -19,7 +19,7 @@ source .venv/bin/activate
 For a global CLI install (without repo presets/config files):
 
 ```bash
-uv tool install cauchy-generator
+uv tool install dagsynth
 ```
 
 ______________________________________________________________________
@@ -29,7 +29,7 @@ ______________________________________________________________________
 Use this when you want a default high-quality batch.
 
 ```bash
-cauchy-gen generate --config configs/default.yaml --num-datasets 10 --out data/run1
+dagsynth generate --config configs/default.yaml --num-datasets 10 --out data/run1
 ```
 
 ______________________________________________________________________
@@ -39,7 +39,7 @@ ______________________________________________________________________
 Use diagnostics to emit per-dataset observability artifacts.
 
 ```bash
-cauchy-gen generate \
+dagsynth generate \
   --config configs/default.yaml \
   --num-datasets 50 \
   --diagnostics \
@@ -58,7 +58,7 @@ Use a fixed layout plan when you want many datasets with consistent structure
 and aligned emitted columns across the batch.
 
 ```python
-from cauchy_generator import (
+from dagsynth import (
     GeneratorConfig,
     generate_batch_fixed_layout,
     sample_fixed_layout,
@@ -80,7 +80,7 @@ ______________________________________________________________________
 Use missingness workflows for MCAR/MAR/MNAR robustness regimes:
 
 ```bash
-cauchy-gen generate --config configs/preset_missingness_mar.yaml --num-datasets 25 --out data/run_missing_mar
+dagsynth generate --config configs/preset_missingness_mar.yaml --num-datasets 25 --out data/run_missing_mar
 ```
 
 Detailed guide: [Missingness](features/missingness.md)
@@ -92,9 +92,9 @@ ______________________________________________________________________
 Use many-class workflows to exercise the rollout envelope (`n_classes_max <= 32`).
 
 ```bash
-cauchy-gen generate --config configs/preset_many_class_generate_smoke.yaml --num-datasets 25 --out data/run_many_class_smoke
+dagsynth generate --config configs/preset_many_class_generate_smoke.yaml --num-datasets 25 --out data/run_many_class_smoke
 
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_many_class_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \
@@ -111,7 +111,7 @@ ______________________________________________________________________
 Use shift profiles for controlled graph/mechanism/noise drift:
 
 ```bash
-cauchy-gen generate --config configs/preset_shift_mixed_generate_smoke.yaml --num-datasets 25 --out data/run_shift_mixed
+dagsynth generate --config configs/preset_shift_mixed_generate_smoke.yaml --num-datasets 25 --out data/run_shift_mixed
 ```
 
 Detailed guide: [Shift / Drift](features/shift.md)
@@ -123,7 +123,7 @@ ______________________________________________________________________
 Use noise workflows for explicit Gaussian/Laplace/Student-t/mixture regimes:
 
 ```bash
-cauchy-gen generate --config configs/preset_noise_mixture_generate_smoke.yaml --num-datasets 25 --out data/run_noise_mixture
+dagsynth generate --config configs/preset_noise_mixture_generate_smoke.yaml --num-datasets 25 --out data/run_noise_mixture
 ```
 
 Detailed guide: [Noise Diversification](features/noise.md)
@@ -136,7 +136,7 @@ Use benchmark workflows for smoke checks, feature guardrails, and regression
 gating.
 
 ```bash
-cauchy-gen benchmark --suite smoke --profile cpu --out-dir benchmarks/results/smoke_cpu
+dagsynth benchmark --suite smoke --profile cpu --out-dir benchmarks/results/smoke_cpu
 ```
 
 Detailed guide: [Benchmark Workflows and Guardrails](features/benchmark-guardrails.md)

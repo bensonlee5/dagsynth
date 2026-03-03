@@ -70,16 +70,16 @@ ______________________________________________________________________
 Run any shift-enabled config:
 
 ```bash
-cauchy-gen generate --config path/to/shift_config.yaml --num-datasets 25 --out data/run_shift
+dagsynth generate --config path/to/shift_config.yaml --num-datasets 25 --out data/run_shift
 ```
 
 Use discoverable smoke presets:
 
 ```bash
-cauchy-gen generate --config configs/preset_shift_graph_drift_generate_smoke.yaml --num-datasets 25 --out data/run_shift_graph
-cauchy-gen generate --config configs/preset_shift_mechanism_drift_generate_smoke.yaml --num-datasets 25 --out data/run_shift_mechanism
-cauchy-gen generate --config configs/preset_shift_noise_drift_generate_smoke.yaml --num-datasets 25 --out data/run_shift_noise
-cauchy-gen generate --config configs/preset_shift_mixed_generate_smoke.yaml --num-datasets 25 --out data/run_shift_mixed
+dagsynth generate --config configs/preset_shift_graph_drift_generate_smoke.yaml --num-datasets 25 --out data/run_shift_graph
+dagsynth generate --config configs/preset_shift_mechanism_drift_generate_smoke.yaml --num-datasets 25 --out data/run_shift_mechanism
+dagsynth generate --config configs/preset_shift_noise_drift_generate_smoke.yaml --num-datasets 25 --out data/run_shift_noise
+dagsynth generate --config configs/preset_shift_mixed_generate_smoke.yaml --num-datasets 25 --out data/run_shift_mixed
 ```
 
 ______________________________________________________________________

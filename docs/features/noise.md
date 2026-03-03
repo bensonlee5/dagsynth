@@ -28,16 +28,16 @@ ______________________________________________________________________
 Generate smoke datasets for each family:
 
 ```bash
-cauchy-gen generate --config configs/preset_noise_gaussian_generate_smoke.yaml --num-datasets 25 --out data/run_noise_gaussian
-cauchy-gen generate --config configs/preset_noise_laplace_generate_smoke.yaml --num-datasets 25 --out data/run_noise_laplace
-cauchy-gen generate --config configs/preset_noise_student_t_generate_smoke.yaml --num-datasets 25 --out data/run_noise_student_t
-cauchy-gen generate --config configs/preset_noise_mixture_generate_smoke.yaml --num-datasets 25 --out data/run_noise_mixture
+dagsynth generate --config configs/preset_noise_gaussian_generate_smoke.yaml --num-datasets 25 --out data/run_noise_gaussian
+dagsynth generate --config configs/preset_noise_laplace_generate_smoke.yaml --num-datasets 25 --out data/run_noise_laplace
+dagsynth generate --config configs/preset_noise_student_t_generate_smoke.yaml --num-datasets 25 --out data/run_noise_student_t
+dagsynth generate --config configs/preset_noise_mixture_generate_smoke.yaml --num-datasets 25 --out data/run_noise_mixture
 ```
 
 Benchmark guardrail smoke run:
 
 ```bash
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_noise_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \

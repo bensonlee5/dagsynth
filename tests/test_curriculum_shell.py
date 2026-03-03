@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from cauchy_generator.config import GeneratorConfig
+from dagsynth.config import GeneratorConfig
 
 
 def _write_tiny_config(path: Path) -> None:
@@ -62,7 +62,7 @@ def test_curriculum_shell_dry_run_range(tmp_path: Path) -> None:
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.count("DRY RUN:") == 6
-    assert "cauchy-gen generate" in proc.stdout
+    assert "dagsynth generate" in proc.stdout
 
     manifest_path = out_root / "curriculum_manifest.json"
     assert manifest_path.exists()
@@ -156,7 +156,7 @@ def test_curriculum_shell_marks_unexecuted_stages_skipped_after_failure(tmp_path
     config_path = tmp_path / "tiny.yaml"
     _write_tiny_config(config_path)
     out_root = tmp_path / "out"
-    fake_gen = tmp_path / "fake-cauchy-gen.sh"
+    fake_gen = tmp_path / "fake-dagsynth.sh"
     fake_gen.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
     fake_gen.chmod(0o755)
 
@@ -182,7 +182,7 @@ def test_curriculum_shell_marks_unexecuted_stages_skipped_after_failure(tmp_path
         check=False,
         text=True,
         capture_output=True,
-        env={**os.environ, "CURRICULUM_CAUCHY_GEN_BIN": str(fake_gen)},
+        env={**os.environ, "CURRICULUM_DAGSYNTH_BIN": str(fake_gen)},
     )
 
     assert proc.returncode != 0

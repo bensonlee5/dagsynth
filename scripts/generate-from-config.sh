@@ -22,7 +22,7 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
 fi
 
 CMD=(
-  uv run cauchy-gen generate
+  uv run dagsynth generate
   --config "$CONFIG_PATH"
   --num-datasets "$NUM_DATASETS"
   --device "$DEVICE"

@@ -16,7 +16,7 @@ ______________________________________________________________________
 ## Generation workflow
 
 ```bash
-cauchy-gen generate \
+dagsynth generate \
   --config configs/preset_many_class_generate_smoke.yaml \
   --num-datasets 25 \
   --out data/run_many_class_smoke
@@ -27,7 +27,7 @@ ______________________________________________________________________
 ## Benchmark workflow
 
 ```bash
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_many_class_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \

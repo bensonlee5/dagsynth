@@ -36,7 +36,7 @@ jobs:
 
       - name: Run smoke benchmark (CPU)
         run: |
-          uv run cauchy-gen benchmark \
+          uv run dagsynth benchmark \
             --suite smoke \
             --profile cpu \
             --baseline benchmarks/baselines/cpu_smoke.json \
@@ -61,7 +61,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const marker = '<!-- cauchy-benchmark-smoke -->';
+            const marker = '<!-- dagsynth-benchmark-smoke -->';
             const summaryPath = 'benchmarks/results/ci_smoke/summary.md';
 
             let summary = 'Benchmark summary file was not generated.';
@@ -120,7 +120,7 @@ jobs:
 
       - name: Run standard benchmark (CPU)
         run: |
-          uv run cauchy-gen benchmark \
+          uv run dagsynth benchmark \
             --suite standard \
             --profile cpu \
             --baseline benchmarks/baselines/cpu_standard.json \
