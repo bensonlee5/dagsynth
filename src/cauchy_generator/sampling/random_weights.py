@@ -7,6 +7,8 @@ import torch
 from cauchy_generator.math_utils import log_uniform as _log_uniform
 from cauchy_generator.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
 
+_LOG_WEIGHT_CLAMP = 60.0
+
 
 def sample_random_weights(
     dim: int,
@@ -43,7 +45,16 @@ def sample_random_weights(
         noise_spec=noise_spec,
         scale_multiplier=effective_sigma,
     )
-    w = torch.pow(m, -q) * torch.exp(noise)
+    log_w = (-float(q) * torch.log(m)) + noise
+    log_w = torch.nan_to_num(
+        log_w,
+        nan=0.0,
+        posinf=_LOG_WEIGHT_CLAMP,
+        neginf=-_LOG_WEIGHT_CLAMP,
+    )
+    log_w = torch.clamp(log_w, min=-_LOG_WEIGHT_CLAMP, max=_LOG_WEIGHT_CLAMP)
+    log_w = log_w - torch.max(log_w)
+    w = torch.exp(log_w)
     w = torch.clamp(w, min=1e-12)
     w /= torch.sum(w)
 
