@@ -2,7 +2,7 @@
 
 import torch
 
-from cauchy_generator.converters.numeric import apply_numeric_converter
+from dagsynth.converters.numeric import apply_numeric_converter
 from conftest import make_generator as _make_generator
 
 

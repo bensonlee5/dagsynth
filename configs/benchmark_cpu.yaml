@@ -19,7 +19,6 @@ graph:
 runtime:
   device: cpu
   torch_dtype: float32
-  hardware_aware: true
 
 output:
   out_dir: data/benchmark_cpu

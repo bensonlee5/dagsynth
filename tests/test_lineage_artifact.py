@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from cauchy_generator.io.lineage_artifact import (
+from dagsynth.io.lineage_artifact import (
     pack_upper_triangle_adjacency,
     sha256_hex,
     unpack_upper_triangle_adjacency,

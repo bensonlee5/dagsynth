@@ -1,8 +1,8 @@
 import typing
 
-from cauchy_generator.bench.throughput import run_throughput_benchmark
-from cauchy_generator.config import GeneratorConfig
-from cauchy_generator.rng import offset_seed32
+from dagsynth.bench.throughput import run_throughput_benchmark
+from dagsynth.config import GeneratorConfig
+from dagsynth.rng import offset_seed32
 
 
 def test_run_throughput_benchmark_uses_streaming_generation(
@@ -22,7 +22,7 @@ def test_run_throughput_benchmark_uses_streaming_generation(
             yield None
 
     monkeypatch.setattr(
-        "cauchy_generator.bench.throughput.generate_batch_iter",
+        "dagsynth.bench.throughput.generate_batch_iter",
         _stub_generate_batch_iter,
     )
 
@@ -58,11 +58,10 @@ def test_run_throughput_benchmark_updates_callback_on_measured_generation(
     ):
         _ = seed
         _ = device
-        for idx in range(num_datasets):
-            yield idx
+        yield from range(num_datasets)
 
     monkeypatch.setattr(
-        "cauchy_generator.bench.throughput.generate_batch_iter",
+        "dagsynth.bench.throughput.generate_batch_iter",
         _stub_generate_batch_iter,
     )
 

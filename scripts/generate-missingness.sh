@@ -26,7 +26,7 @@ case "$MECHANISM" in
 esac
 
 CMD=(
-  uv run cauchy-gen generate
+  uv run dagsynth generate
   --config "configs/default.yaml"
   --num-datasets "$NUM_DATASETS"
   --device "$DEVICE"

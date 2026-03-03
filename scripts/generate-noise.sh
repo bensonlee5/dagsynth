@@ -10,9 +10,6 @@ OUT_DIR="${4:-data/run_noise_${FAMILY}_$(date +%Y%m%d_%H%M%S)}"
 SEED_ARG="${5:-}"
 
 case "$FAMILY" in
-  legacy)
-    CONFIG_PATH="configs/default.yaml"
-    ;;
   gaussian)
     CONFIG_PATH="configs/preset_noise_gaussian_generate_smoke.yaml"
     ;;
@@ -26,7 +23,7 @@ case "$FAMILY" in
     CONFIG_PATH="configs/preset_noise_mixture_generate_smoke.yaml"
     ;;
   *)
-    echo "Error: family must be one of: legacy, gaussian, laplace, student_t, mixture" >&2
+    echo "Error: family must be one of: gaussian, laplace, student_t, mixture" >&2
     exit 1
     ;;
 esac

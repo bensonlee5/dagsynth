@@ -1,6 +1,6 @@
 import torch
 
-from cauchy_generator.core.node_pipeline import (
+from dagsynth.core.node_pipeline import (
     ConverterSpec,
     apply_node_pipeline,
 )

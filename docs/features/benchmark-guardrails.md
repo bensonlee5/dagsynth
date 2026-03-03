@@ -18,14 +18,14 @@ ______________________________________________________________________
 Quick smoke and broader standard runs:
 
 ```bash
-cauchy-gen benchmark --suite smoke --profile cpu --out-dir benchmarks/results/smoke_cpu
-cauchy-gen benchmark --suite standard --profile cpu --out-dir benchmarks/results/standard_cpu
+dagsynth benchmark --suite smoke --profile cpu --out-dir benchmarks/results/smoke_cpu
+dagsynth benchmark --suite standard --profile cpu --out-dir benchmarks/results/standard_cpu
 ```
 
 Diagnostics-enabled benchmark:
 
 ```bash
-cauchy-gen benchmark \
+dagsynth benchmark \
   --suite smoke \
   --profile cpu \
   --diagnostics \
@@ -37,21 +37,21 @@ ______________________________________________________________________
 ## Feature-specific guardrail runs
 
 ```bash
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_missingness_mar.yaml \
   --profile custom \
   --suite smoke \
   --no-memory \
   --out-dir benchmarks/results/smoke_missing_mar
 
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_shift_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \
   --no-memory \
   --out-dir benchmarks/results/smoke_shift_guardrails
 
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_noise_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \
@@ -66,14 +66,14 @@ ______________________________________________________________________
 For CI-like checks:
 
 ```bash
-cauchy-gen benchmark \
+dagsynth benchmark \
   --config configs/preset_shift_benchmark_smoke.yaml \
   --profile custom \
   --suite smoke \
   --warn-threshold-pct 10 \
   --fail-threshold-pct 20 \
   --fail-on-regression \
-  --no-hardware-aware \
+  --hardware-policy none \
   --no-memory \
   --out-dir benchmarks/results/ci_smoke_shift_local
 ```

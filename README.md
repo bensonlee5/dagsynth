@@ -1,4 +1,4 @@
-# cauchy-generator
+# dagsynth
 
 High-throughput synthetic tabular data generation built around causal structure.
 Use it to generate, benchmark, and stress-test tabular datasets with
@@ -6,36 +6,45 @@ deterministic seed behavior.
 
 ## Quick Start
 
-Install:
+Examples in this README assume a repo checkout (so `configs/*.yaml` is available):
 
 ```bash
-uv tool install cauchy-generator
+uv sync --group dev
+source .venv/bin/activate
 ```
 
-Generate a default batch:
+Install the packaged CLI globally when you do not need repo presets/config files:
 
 ```bash
-cauchy-gen generate --config configs/default.yaml --num-datasets 10 --out data/run1
+uv tool install dagsynth
 ```
+
+Generate a default batch from the repo:
+
+```bash
+dagsynth generate --config configs/default.yaml --num-datasets 10 --out data/run1
+```
+
+Each generate run writes `effective_config.yaml` in the resolved output directory.
 
 Run a smoke benchmark:
 
 ```bash
-cauchy-gen benchmark --suite smoke --profile cpu --out-dir benchmarks/results/smoke_cpu
+dagsynth benchmark --suite smoke --profile cpu --out-dir benchmarks/results/smoke_cpu
 ```
 
 Inspect detected hardware profile:
 
 ```bash
-cauchy-gen hardware
+dagsynth hardware
 ```
 
 View help and available options for commands:
 
 ```bash
-cauchy-gen --help
-cauchy-gen generate --help
-cauchy-gen benchmark --help
+dagsynth --help
+dagsynth generate --help
+dagsynth benchmark --help
 ```
 
 ## Features
@@ -57,6 +66,7 @@ cauchy-gen benchmark --help
   [missingness](docs/features/missingness.md),
   [many-class](docs/features/many-class.md),
   [shift](docs/features/shift.md),
+  [noise](docs/features/noise.md),
   [benchmark guardrails](docs/features/benchmark-guardrails.md)
 
 ## Codebase Navigation
@@ -67,31 +77,31 @@ The project is organized into functional modules that manage the lifecycle of a 
 
 The high-level logic that bridges CLI/API requests to the generation engine.
 
-- [`src/cauchy_generator/cli.py`](src/cauchy_generator/cli.py): Maps CLI flags to `GeneratorConfig` and handles command dispatch.
-- [`src/cauchy_generator/core/dataset.py`](src/cauchy_generator/core/dataset.py): The main orchestration engine. Manages batch generation, fixed-layout planning, and end-to-end synchronization.
+- [`src/dagsynth/cli.py`](src/dagsynth/cli.py): Maps CLI flags to `GeneratorConfig` and handles command dispatch.
+- [`src/dagsynth/core/dataset.py`](src/dagsynth/core/dataset.py): The main orchestration engine. Manages batch generation, fixed-layout planning, and end-to-end synchronization.
 
 ### 2. The Generation Pipeline (The "Assembly Line")
 
 Follow this sequence to understand how a latent causal structure becomes a realized dataset.
 
-- **Structure ([`graph/`](src/cauchy_generator/graph/)):** Samples the underlying Directed Acyclic Graph (DAG).
-- **Layout ([`core/layout.py`](src/cauchy_generator/core/layout.py)):** Maps features and targets to DAG nodes and assigns data types.
-- **Execution ([`core/node_pipeline.py`](src/cauchy_generator/core/node_pipeline.py)):** Processes nodes in topological order, applying functional relationships.
-- **Mechanisms ([`functions/`](src/cauchy_generator/functions/)):** Contains the mathematical families (linear, non-linear, mixture) that define how nodes interact.
-- **Conversion ([`converters/`](src/cauchy_generator/converters/)):** Transforms latent continuous values into observable numeric or categorical data.
+- **Structure ([`graph/`](src/dagsynth/graph/)):** Samples the underlying Directed Acyclic Graph (DAG).
+- **Layout ([`core/layout.py`](src/dagsynth/core/layout.py)):** Maps features and targets to DAG nodes and assigns data types.
+- **Execution ([`core/node_pipeline.py`](src/dagsynth/core/node_pipeline.py)):** Processes nodes in topological order, applying functional relationships.
+- **Mechanisms ([`functions/`](src/dagsynth/functions/)):** Contains the mathematical families (linear, non-linear, mixture) that define how nodes interact.
+- **Conversion ([`converters/`](src/dagsynth/converters/)):** Transforms latent continuous values into observable numeric or categorical data.
 
 ### 3. Control, Integrity & Quality
 
 Infrastructure that ensures reproducibility, deterministic behavior, and data quality.
 
-- [`src/cauchy_generator/rng.py`](src/cauchy_generator/rng.py): The `SeedManager` ensures strictly isolated, deterministic child seeds for every component.
-- [`src/cauchy_generator/filtering/`](src/cauchy_generator/filtering/): Implements the "learnability gate" (via CPU ExtraTrees) to reject invalid or trivial datasets.
-- [`src/cauchy_generator/core/metrics_torch.py`](src/cauchy_generator/core/metrics_torch.py): Unified torch-native metric extraction used by diagnostics and generation telemetry.
-- [`src/cauchy_generator/postprocess/`](src/cauchy_generator/postprocess/): Handles final-stage transformations, including deterministic missingness (MCAR/MAR/MNAR) injection.
+- [`src/dagsynth/rng.py`](src/dagsynth/rng.py): The `SeedManager` ensures strictly isolated, deterministic child seeds for every component.
+- [`src/dagsynth/filtering/`](src/dagsynth/filtering/): Implements the "learnability gate" (via CPU ExtraTrees) to reject invalid or trivial datasets.
+- [`src/dagsynth/core/metrics_torch.py`](src/dagsynth/core/metrics_torch.py): Unified torch-native metric extraction used by diagnostics and generation telemetry.
+- [`src/dagsynth/postprocess/`](src/dagsynth/postprocess/): Handles final-stage transformations, including deterministic missingness (MCAR/MAR/MNAR) injection.
 
 ### 4. Configuration & Architecture
 
-- [`src/cauchy_generator/config.py`](src/cauchy_generator/config.py): The source of truth for all generator settings, implemented as strongly-typed dataclasses.
+- [`src/dagsynth/config.py`](src/dagsynth/config.py): The source of truth for all generator settings, implemented as strongly-typed dataclasses.
 - [`docs/design-decisions.md`](docs/design-decisions.md): Rationale behind the architectural choices and reproducibility guarantees.
 
 ### Tip: Audit via Verification
@@ -105,7 +115,7 @@ uv run pytest -v tests/test_generate.py tests/test_rng.py
 ## Python API
 
 ```python
-from cauchy_generator import GeneratorConfig, generate_one
+from dagsynth import GeneratorConfig, generate_one
 
 config = GeneratorConfig.from_yaml("configs/default.yaml")
 bundle = generate_one(config, seed=42)

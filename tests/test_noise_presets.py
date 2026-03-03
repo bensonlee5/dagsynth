@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from cauchy_generator.config import GeneratorConfig
+from dagsynth.config import GeneratorConfig
 
 
 @pytest.mark.parametrize(

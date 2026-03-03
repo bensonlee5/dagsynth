@@ -23,4 +23,4 @@ if [[ -n "$DIAGNOSTICS_OUT_DIR" ]]; then
   args+=(--diagnostics-out-dir "$DIAGNOSTICS_OUT_DIR")
 fi
 
-uv run cauchy-gen "${args[@]}"
+uv run dagsynth "${args[@]}"

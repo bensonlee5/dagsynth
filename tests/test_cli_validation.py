@@ -1,8 +1,8 @@
 import pytest
 import yaml
 
-from cauchy_generator.cli import main
-from cauchy_generator.config import GeneratorConfig
+from dagsynth.cli import main
+from dagsynth.config import GeneratorConfig
 
 
 def test_generate_cli_rejects_invalid_device() -> None:
@@ -71,7 +71,7 @@ def test_generate_cli_rejects_oversized_seed() -> None:
     assert int(exc.value.code) == 2
 
 
-def test_generate_cli_uses_default_config_without_legacy_overrides(
+def test_generate_cli_uses_default_config_without_noise_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, bool] = {"called": False}
@@ -90,7 +90,7 @@ def test_generate_cli_uses_default_config_without_legacy_overrides(
         captured["called"] = True
         yield object()
 
-    monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
+    monkeypatch.setattr("dagsynth.cli.generate_batch_iter", _stub_generate_batch_iter)
 
     code = main(
         [
@@ -101,7 +101,8 @@ def test_generate_cli_uses_default_config_without_legacy_overrides(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -112,7 +113,7 @@ def test_generate_cli_uses_default_config_without_legacy_overrides(
 def test_generate_cli_many_class_preset_end_to_end_no_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from cauchy_generator.core import dataset as dataset_mod
+    from dagsynth.core import dataset as dataset_mod
 
     captured_metadata: list[dict[str, object]] = []
     original_generate_batch_iter = dataset_mod.generate_batch_iter
@@ -134,7 +135,7 @@ def test_generate_cli_many_class_preset_end_to_end_no_write(
             yield bundle
 
     monkeypatch.setattr(
-        "cauchy_generator.cli.generate_batch_iter",
+        "dagsynth.cli.generate_batch_iter",
         _capture_generate_batch_iter,
     )
 
@@ -147,7 +148,8 @@ def test_generate_cli_many_class_preset_end_to_end_no_write(
             "2",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -178,7 +180,7 @@ def test_generate_cli_shift_presets_emit_shift_metadata_no_write(
     config_path: str,
     expected_profile: str,
 ) -> None:
-    from cauchy_generator.core import dataset as dataset_mod
+    from dagsynth.core import dataset as dataset_mod
 
     captured_shift: list[dict[str, object]] = []
     original_generate_batch_iter = dataset_mod.generate_batch_iter
@@ -202,7 +204,7 @@ def test_generate_cli_shift_presets_emit_shift_metadata_no_write(
             yield bundle
 
     monkeypatch.setattr(
-        "cauchy_generator.cli.generate_batch_iter",
+        "dagsynth.cli.generate_batch_iter",
         _capture_generate_batch_iter,
     )
 
@@ -215,7 +217,8 @@ def test_generate_cli_shift_presets_emit_shift_metadata_no_write(
             "2",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -241,7 +244,7 @@ def test_generate_cli_noise_presets_emit_noise_metadata_no_write(
     config_path: str,
     expected_family: str,
 ) -> None:
-    from cauchy_generator.core import dataset as dataset_mod
+    from dagsynth.core import dataset as dataset_mod
 
     captured_noise: list[dict[str, object]] = []
     original_generate_batch_iter = dataset_mod.generate_batch_iter
@@ -265,7 +268,7 @@ def test_generate_cli_noise_presets_emit_noise_metadata_no_write(
             yield bundle
 
     monkeypatch.setattr(
-        "cauchy_generator.cli.generate_batch_iter",
+        "dagsynth.cli.generate_batch_iter",
         _capture_generate_batch_iter,
     )
 
@@ -278,7 +281,8 @@ def test_generate_cli_noise_presets_emit_noise_metadata_no_write(
             "2",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -342,10 +346,10 @@ def test_generate_cli_coverage_tolerates_null_quantiles_and_targets(
         for _ in range(num_datasets):
             yield object()
 
-    monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
+    monkeypatch.setattr("dagsynth.cli.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
-        "cauchy_generator.cli.CoverageAggregator.update_bundle",
-        lambda self, _bundle: None,
+        "dagsynth.cli.CoverageAggregator.update_bundle",
+        lambda _self, _bundle: None,
     )
 
     code = main(
@@ -357,7 +361,8 @@ def test_generate_cli_coverage_tolerates_null_quantiles_and_targets(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -389,7 +394,7 @@ def test_generate_cli_no_write_allows_null_output_dir_when_coverage_disabled(
         for _ in range(num_datasets):
             yield object()
 
-    monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
+    monkeypatch.setattr("dagsynth.cli.generate_batch_iter", _stub_generate_batch_iter)
 
     code = main(
         [
@@ -400,7 +405,8 @@ def test_generate_cli_no_write_allows_null_output_dir_when_coverage_disabled(
             "1",
             "--device",
             "cpu",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -425,10 +431,10 @@ def test_generate_cli_enables_diagnostics_flag(
         for _ in range(num_datasets):
             yield object()
 
-    monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
+    monkeypatch.setattr("dagsynth.cli.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
-        "cauchy_generator.cli.CoverageAggregator.update_bundle",
-        lambda self, _bundle: None,
+        "dagsynth.cli.CoverageAggregator.update_bundle",
+        lambda _self, _bundle: None,
     )
     code = main(
         [
@@ -440,7 +446,8 @@ def test_generate_cli_enables_diagnostics_flag(
             "--device",
             "cpu",
             "--diagnostics",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -470,7 +477,7 @@ def test_generate_cli_applies_missingness_overrides_no_write(
         for _ in range(num_datasets):
             yield object()
 
-    monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
+    monkeypatch.setattr("dagsynth.cli.generate_batch_iter", _stub_generate_batch_iter)
 
     code = main(
         [
@@ -491,7 +498,8 @@ def test_generate_cli_applies_missingness_overrides_no_write(
             "1.8",
             "--missing-mnar-logit-scale",
             "2.2",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )
@@ -518,7 +526,8 @@ def test_generate_cli_rejects_invalid_missingness_combination() -> None:
                 "0.2",
                 "--missing-mechanism",
                 "none",
-                "--no-hardware-aware",
+                "--hardware-policy",
+                "none",
                 "--no-write",
             ]
         )
@@ -602,7 +611,8 @@ def test_generate_cli_missingness_no_write_end_to_end(tmp_path) -> None:
             "mnar",
             "--missing-mnar-logit-scale",
             "1.5",
-            "--no-hardware-aware",
+            "--hardware-policy",
+            "none",
             "--no-write",
         ]
     )

@@ -143,14 +143,14 @@ multipliers are `1.0`.
 
 Present for all generated bundles.
 
-| Key                 | Type           | Description                                                          |
-| ------------------- | -------------- | -------------------------------------------------------------------- |
-| `family_requested`  | str            | Configured noise family (`legacy`, `gaussian`, `laplace`, etc.)      |
-| `family_sampled`    | str            | Effective family used by the dataset generation runtime              |
-| `sampling_strategy` | str            | Runtime selection strategy (`dataset_level`)                         |
-| `scale`             | float          | Base noise scale from config                                         |
-| `student_t_df`      | float          | Student-t degrees of freedom parameter used by the runtime           |
-| `mixture_weights`   | object or null | Effective normalized mixture weights when `family_requested=mixture` |
+| Key                 | Type           | Description                                                             |
+| ------------------- | -------------- | ----------------------------------------------------------------------- |
+| `family_requested`  | str            | Configured noise family (`gaussian`, `laplace`, `student_t`, `mixture`) |
+| `family_sampled`    | str            | Effective family used by the dataset generation runtime                 |
+| `sampling_strategy` | str            | Runtime selection strategy (`dataset_level`)                            |
+| `scale`             | float          | Base noise scale from config                                            |
+| `student_t_df`      | float          | Student-t degrees of freedom parameter used by the runtime              |
+| `mixture_weights`   | object or null | Effective normalized mixture weights when `family_requested=mixture`    |
 
 ### Filter sub-object
 
@@ -217,7 +217,7 @@ ______________________________________________________________________
 
 ## Lineage schema
 
-Schema name: `cauchy_generator.dag_lineage`
+Schema name: `dagsynth.dag_lineage`
 
 ### Version 1.0.0 (dense, in-memory)
 
@@ -227,7 +227,7 @@ lineage is persisted to disk, payloads are rewritten to compact version
 
 ```json
 {
-  "schema_name": "cauchy_generator.dag_lineage",
+  "schema_name": "dagsynth.dag_lineage",
   "schema_version": "1.0.0",
   "graph": {
     "n_nodes": 8,
@@ -253,7 +253,7 @@ data.
 
 ```json
 {
-  "schema_name": "cauchy_generator.dag_lineage",
+  "schema_name": "dagsynth.dag_lineage",
   "schema_version": "1.1.0",
   "graph": {
     "n_nodes": 8,

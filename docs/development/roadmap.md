@@ -1,6 +1,6 @@
 # Mission-Aligned Roadmap (2026Q1)
 
-This is the canonical roadmap for `cauchy-generator`.
+This is the canonical roadmap for `dagsynth`.
 
 It maps the mission and strategic pillars in `README.md` to:
 
@@ -22,6 +22,7 @@ Related docs:
 - `partial`: some building blocks exist, but mission-level claim is not fully met.
 - `planned`: scoped and prioritized, not implemented.
 - `research`: exploratory with higher uncertainty or risk.
+- `retired`: historical item that no longer represents active roadmap work.
 
 ## Canonical Planning Metadata
 
@@ -52,8 +53,8 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 | 0    | RD-008     | Meta-feature coverage steering (retired)                     | retired     | Now       | `#9` (historical)                                    |
 | 0    | RD-006     | Curriculum complexity scaling (features + graph)             | implemented | Now       | `#49 -> #50 -> #51 -> #90 -> #52 -> #53` (completed) |
 | 0    | RD-004     | Shift-aware SCM generation                                   | implemented | Now       | `#64 -> #72 -> #73 -> #74 -> #75` (completed)        |
+| 0    | RD-012     | Noise family diversification for synthetic generation        | implemented | Now       | `#24 -> #25 -> #26 -> #27` (completed)               |
 | 3    | RD-011     | Mechanism family mix expansion (BNN/GP kernels/interactions) | planned     | Next      | `#28 -> #29 -> #30 -> #68 -> #69 -> #31 -> #32`      |
-| 4    | RD-012     | Noise family diversification for synthetic generation        | planned     | Next      | `#24 -> #25 -> #26 -> #27`                           |
 | 5    | RD-013     | Time-series generation tracks for PFN pretraining            | research    | Next      | `#110 -> #111 -> #112 -> #113 -> #114`               |
 | 6    | RD-014     | Run-time bottleneck observability and telemetry              | research    | Next      | `epic TBD; dependency chain TBD`                     |
 | 7    | RD-007     | Many-class and high-cardinality expansion                    | research    | Next      | `#19 -> #43 -> (#20 -> #21 -> #22 -> #23)`           |
@@ -64,17 +65,17 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 
 ## Current Capability Matrix
 
-| README Mission/Pillar Claim                                         | Current State | Evidence in Repo                                                                                                                                                           | Gap                                                                                                                                                                  | Roadmap IDs                                    |
-| ------------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Foundation model pretraining with diverse structural priors         | `partial`     | DAG-based generation, mixed-type conversion, diagnostics extraction/coverage aggregation, configurable missingness, throughput benchmarks, and opt-in shift/drift controls | Hard-task regimes, mechanism-family controls, end-to-end noise-family integration, many-class expansion, and time-series generation are not implemented end-to-end   | RD-004, RD-005, RD-007, RD-011, RD-012, RD-013 |
-| Causal discovery with ground-truth DAGs and interventional datasets | `partial`     | DAG lineage metadata is emitted per dataset and persisted as compact shard-level artifacts with schema validation and benchmark guardrails                                 | Interventional/counterfactual generation semantics are not implemented                                                                                               | RD-002                                         |
-| Robustness testing with hard tasks, shifts, adversarial regimes     | `partial`     | Basic filtering and diagnostics proxies exist; missingness mechanisms and shift/drift controls are implemented with deterministic controls and benchmark guardrails        | No explicit hard-task/adversarial profile suite and no explicit noise-family diversification controls                                                                | RD-004, RD-005, RD-012                         |
-| Causal structural integrity (hierarchical dependencies)             | `implemented` | Graph-driven node pipeline and multi-family function composition                                                                                                           | Deeper mechanism-family controls are not user-configurable                                                                                                           | RD-007, RD-011                                 |
-| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, and fixed-layout generation are implemented                                      | High-cardinality/many-class limits and noise-family diversity remain conservative                                                                                    | RD-007, RD-012                                 |
-| PFN task coverage (classification, regression, time-series)         | `partial`     | Classification and regression generation pipelines are fully supported with deterministic seeds and diagnostics/benchmark workflows                                        | No time-series generation mode, temporal metadata contract, or temporal diagnostics/guardrails                                                                       | RD-013                                         |
-| Staged complexity scaling (features/nodes/samples)                  | `retired`     | Historical staged-complexity implementation (RD-006) has been retired in favor of explicit split sizing and fixed-layout generation                                        | Not active                                                                                                                                                           | RD-006                                         |
-| Hardware-native performance (Torch + hardware-aware tuning)         | `partial`     | Torch CPU/CUDA/MPS path, hardware detection, coarse profile-based tuning, and benchmark suite                                                                              | Stage-level bottleneck attribution/telemetry is not implemented; hardware-adaptive autotuning is not implemented; parallel/distributed generation is not implemented | RD-014, RD-010, RD-009                         |
-| Parallel streaming Parquet sharding                                 | `partial`     | Streaming Parquet writing exists                                                                                                                                           | Writing is currently single-process sequential                                                                                                                       | RD-009                                         |
+| README Mission/Pillar Claim                                         | Current State | Evidence in Repo                                                                                                                                                                                           | Gap                                                                                                                                                                  | Roadmap IDs                            |
+| ------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Foundation model pretraining with diverse structural priors         | `partial`     | DAG-based generation, mixed-type conversion, diagnostics extraction/coverage aggregation, configurable missingness, explicit noise-family controls, throughput benchmarks, and opt-in shift/drift controls | Hard-task regimes, mechanism-family controls, many-class expansion, and time-series generation are not implemented end-to-end                                        | RD-004, RD-005, RD-007, RD-011, RD-013 |
+| Causal discovery with ground-truth DAGs and interventional datasets | `partial`     | DAG lineage metadata is emitted per dataset and persisted as compact shard-level artifacts with schema validation and benchmark guardrails                                                                 | Interventional/counterfactual generation semantics are not implemented                                                                                               | RD-002                                 |
+| Robustness testing with hard tasks, shifts, adversarial regimes     | `partial`     | Basic filtering and diagnostics proxies exist; missingness mechanisms, explicit noise-family controls, and shift/drift controls are implemented with deterministic controls and benchmark guardrails       | No explicit hard-task/adversarial profile suite                                                                                                                      | RD-004, RD-005                         |
+| Causal structural integrity (hierarchical dependencies)             | `implemented` | Graph-driven node pipeline and multi-family function composition                                                                                                                                           | Deeper mechanism-family controls are not user-configurable                                                                                                           | RD-007, RD-011                         |
+| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, explicit noise-family controls, and fixed-layout generation are implemented                                      | High-cardinality/many-class limits remain conservative                                                                                                               | RD-007                                 |
+| PFN task coverage (classification, regression, time-series)         | `partial`     | Classification and regression generation pipelines are fully supported with deterministic seeds and diagnostics/benchmark workflows                                                                        | No time-series generation mode, temporal metadata contract, or temporal diagnostics/guardrails                                                                       | RD-013                                 |
+| Staged complexity scaling (features/nodes/samples)                  | `retired`     | Historical staged-complexity implementation (RD-006) has been retired in favor of explicit split sizing and fixed-layout generation                                                                        | Not active                                                                                                                                                           | RD-006                                 |
+| Hardware-native performance (Torch + hardware-aware tuning)         | `partial`     | Torch CPU/CUDA/MPS path, hardware detection, coarse profile-based tuning, and benchmark suite                                                                                                              | Stage-level bottleneck attribution/telemetry is not implemented; hardware-adaptive autotuning is not implemented; parallel/distributed generation is not implemented | RD-014, RD-010, RD-009                 |
+| Parallel streaming Parquet sharding                                 | `partial`     | Streaming Parquet writing exists                                                                                                                                                                           | Writing is currently single-process sequential                                                                                                                       | RD-009                                 |
 
 ## Current Implementation Baseline
 
@@ -104,9 +105,9 @@ walkthroughs, see `docs/how-it-works.md`.
 
 #### CLI
 
-- `cauchy-gen generate --config ... --num-datasets ... --device cuda --seed ...`
-- `cauchy-gen generate --missing-rate ... --missing-mechanism ... --missing-mar-observed-fraction ... --missing-mar-logit-scale ... --missing-mnar-logit-scale ...`
-- `cauchy-gen benchmark --suite standard --profile all --baseline ... --fail-on-regression`
+- `dagsynth generate --config ... --num-datasets ... --device cuda --seed ...`
+- `dagsynth generate --missing-rate ... --missing-mechanism ... --missing-mar-observed-fraction ... --missing-mar-logit-scale ... --missing-mnar-logit-scale ...`
+- `dagsynth benchmark --suite standard --profile all --baseline ... --fail-on-regression`
 
 #### Output Contract
 
@@ -134,7 +135,7 @@ metadata JSON contract, and DAG lineage schema.
 - `core/dataset.py`: dataset orchestration entrypoint (`E.3`)
 - `core/layout.py`: dataset layout, graph sampling, and node assignments
   (`E.3`, `E.4`)
-- `graph/cauchy_graph.py`: random Cauchy DAG (`E.4`)
+- `graph/dag_sampler.py`: latent variable DAG sampling (`E.4`)
 - `core/node_pipeline.py`: per-node flow (`E.5`)
 - `converters/numeric.py`, `converters/categorical.py`: converters (`E.6`)
 - `functions/multi.py`: concatenation vs per-parent aggregation (`E.7`)
@@ -209,7 +210,7 @@ metadata JSON contract, and DAG lineage schema.
 - Mission alignment: causal discovery
 - Pillar alignment: causal structural integrity
 - Goal: persist full adjacency matrix and node assignment lineage as stable dataset artifacts.
-- Repo touchpoints: `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/layout.py`, `src/cauchy_generator/io/parquet_writer.py`, `src/cauchy_generator/types.py`
+- Repo touchpoints: `src/dagsynth/core/dataset.py`, `src/dagsynth/core/layout.py`, `src/dagsynth/io/parquet_writer.py`, `src/dagsynth/types.py`
 - Delivered scope:
   - Every generated dataset emits lineage metadata with adjacency + assignment lineage and deterministic seed behavior.
   - Persisted shard outputs rewrite dense adjacency into compact bit-packed artifacts with per-shard index files.
@@ -228,7 +229,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity
 - Goal: support observational + interventional sampling tracks with explicit intervention specs.
 - GitHub tracking: epic `#67`; dependency chain `#84 -> #85 -> #86 -> #87`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/cli.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/core/node_pipeline.py`, `src/dagsynth/cli.py`
 - Exit criteria:
   - Config supports opt-in intervention mode with safe default (`off`).
   - Generated artifacts contain intervention set and pre/post intervention metadata.
@@ -243,10 +244,10 @@ metadata JSON contract, and DAG lineage schema.
 - Goal: provide configurable missing-data mechanisms with deterministic seeded behavior and benchmark-time acceptance/runtime guardrails.
 - Delivered scope:
   - `DatasetConfig` supports missingness controls (`missing_rate`, mechanism, MAR/MNAR scales). See [docs/how-it-works.md](../how-it-works.md) for MCAR/MAR/MNAR mechanism definitions.
-  - `cauchy-gen generate` supports missingness CLI overrides.
+  - `dagsynth generate` supports missingness CLI overrides.
   - Generation path injects deterministic missingness masks and emits per-bundle metadata.
   - Benchmark profiles emit `missingness_guardrails` including metadata coverage, realized-rate accuracy, and runtime degradation checks.
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/sampling/missingness.py`, `src/cauchy_generator/postprocess/postprocess.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`, `src/cauchy_generator/bench/suite.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/sampling/missingness.py`, `src/dagsynth/postprocess/postprocess.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/cli.py`, `src/dagsynth/bench/suite.py`
 - Completion evidence:
   - Config and CLI support opt-in mechanism selection and missing rate controls.
   - Tests validate expected missing-rate and dependency behavior.
@@ -260,7 +261,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity, tabular realism
 - Goal: introduce controlled distribution-shift/drift modes in graph and mechanism sampling.
 - GitHub tracking: epic `#64`; dependency chain `#72 -> #73 -> #74 -> #75`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/shift.py`, `src/cauchy_generator/diagnostics/`, `src/cauchy_generator/bench/`, `configs/preset_shift_*.yaml`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/core/shift.py`, `src/dagsynth/diagnostics/`, `src/dagsynth/bench/`, `configs/preset_shift_*.yaml`
 - Delivered scope:
   - Shift controls are integrated into graph/mechanism/noise sampling with deterministic seeded behavior.
   - Per-bundle metadata and diagnostics expose resolved shift settings and observability signals.
@@ -279,7 +280,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: define reproducible stress presets (low-SNR, class imbalance, harder interactions).
 - GitHub tracking: epic `#65`; dependency chain `#76 -> #79 -> #78 -> #77`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/functions/random_functions.py`, `src/cauchy_generator/postprocess/postprocess.py`, `src/cauchy_generator/bench/`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/functions/random_functions.py`, `src/dagsynth/postprocess/postprocess.py`, `src/dagsynth/bench/`
 - Exit criteria:
   - Presets are selectable via config/CLI and remain opt-in.
   - Benchmarks and diagnostics confirm regimes differ from baseline in intended directions.
@@ -294,8 +295,8 @@ metadata JSON contract, and DAG lineage schema.
 - Goal: historical; staged complexity controls have been removed in favor of
   explicit split sizing and fixed-layout generation.
 - GitHub tracking: epic `#49`; dependency chain `#50 -> #51 -> #90 -> #52 -> #53`
-- Repo touchpoints (historical): `src/cauchy_generator/config.py`,
-  `src/cauchy_generator/core/dataset.py`
+- Repo touchpoints (historical): `src/dagsynth/config.py`,
+  `src/dagsynth/core/dataset.py`
 
 ### RD-007: Many-Class and High-Cardinality Expansion
 
@@ -307,7 +308,7 @@ metadata JSON contract, and DAG lineage schema.
 - Current rollout envelope (`#20`): enforce `dataset.n_classes_max <= 32` as the narrow-go safety cap until follow-on hardening (`#21`-`#23`) lands.
 - `#22` scope: class-aware RF filter thresholding plus metadata diagnostics so many-class accept/reject behavior remains interpretable.
 - GitHub tracking: epic `#19`; research gate `#43`; conditional chain `#20 -> #21 -> #22 -> #23`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/converters/categorical.py`, `src/cauchy_generator/filtering/extra_trees_filter.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/converters/categorical.py`, `src/dagsynth/filtering/extra_trees_filter.py`
 - Exit criteria:
   - Feasibility report produces explicit `go` / `narrow-go` / `no-go` decision under predefined thresholds.
   - If `go` or `narrow-go`: implementation chain (`#20`-`#23`) lands with backward-compatible defaults.
@@ -320,7 +321,7 @@ metadata JSON contract, and DAG lineage schema.
 - Mission alignment: foundation model pretraining
 - Pillar alignment: tabular realism
 - Goal: feature retired; diagnostics target bands remain as reporting-only metadata.
-- Repo touchpoints: `src/cauchy_generator/diagnostics/coverage.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`
+- Repo touchpoints: `src/dagsynth/diagnostics/coverage.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/cli.py`
 - Notes:
   - Steering selection logic was removed to simplify generation semantics.
   - `diagnostics.meta_feature_targets` remains supported for coverage summaries.
@@ -333,7 +334,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: support multi-worker generation and shard writing with deterministic seed partitioning.
 - GitHub tracking: epic `#66`; dependency chain `#80 -> #81 -> #82 -> #83`
-- Repo touchpoints: `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/io/parquet_writer.py`, `src/cauchy_generator/cli.py`
+- Repo touchpoints: `src/dagsynth/core/dataset.py`, `src/dagsynth/io/parquet_writer.py`, `src/dagsynth/cli.py`
 - Exit criteria:
   - Worker-aware config/API is backward-compatible and opt-in.
   - Multi-worker mode matches single-worker outputs for fixed seed equivalence checks.
@@ -347,7 +348,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: evolve hardware-aware scaling from static coarse profile tiers to bounded adaptive tuning based on observed throughput/memory behavior when throughput/cost becomes a practical bottleneck.
 - GitHub tracking: epic `#54`; dependency chain `#55 -> #56 -> #70 -> #57 -> #71 -> #58`
-- Repo touchpoints: `src/cauchy_generator/hardware.py`, `src/cauchy_generator/config.py`, `src/cauchy_generator/cli.py`, `src/cauchy_generator/bench/suite.py`, `src/cauchy_generator/bench/report.py`
+- Repo touchpoints: `src/dagsynth/hardware.py`, `src/dagsynth/config.py`, `src/dagsynth/cli.py`, `src/dagsynth/bench/suite.py`, `src/dagsynth/bench/report.py`
 - Exit criteria:
   - Adaptive mode improves throughput versus profile baseline on at least one CUDA hardware class without violating memory guardrails.
   - Unknown CUDA devices can run adaptive tuning without relying only on static fallback tiers.
@@ -362,7 +363,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity, tabular realism
 - Goal: add explicit mechanism-family mix controls and broaden function families (including BNN/GP-kernel/interactions) to increase structural diversity that materially affects generated datasets for PFN pretraining.
 - GitHub tracking: epic `#28`; dependency chain `#29 -> #30 -> #68 -> #69 -> #31 -> #32`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/functions/random_functions.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/bench/suite.py`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/functions/random_functions.py`, `src/dagsynth/core/node_pipeline.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/bench/suite.py`
 - Exit criteria:
   - Config supports explicit mechanism-family mix controls with backward-compatible defaults.
   - Expanded mechanism families are selectable and covered by unit/integration tests.
@@ -372,21 +373,21 @@ metadata JSON contract, and DAG lineage schema.
 
 ### RD-012: Noise Family Diversification for Synthetic Generation
 
-- Status: `planned`
-- Milestone: `Next`
+- Status: `implemented`
+- Milestone: `Now` (completed via epics/issues `#24`, `#25`, `#26`, `#27`)
 - Mission alignment: foundation model pretraining, robustness testing
 - Pillar alignment: tabular realism
 - Goal: complete lean, low-complexity integration of explicit noise-family controls and mixtures to diversify residual/noise behavior without broad generator refactors.
-- GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/sampling/`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/bench/suite.py`
-- Current status checkpoint (2026-02-28):
-  - `#25` established schema + sampler primitives.
-  - End-to-end generation/metadata integration remains tracked in `#26`.
-- Exit criteria:
-  - Configured noise families measurably affect generated outputs (not schema-only behavior).
-  - Default behavior remains stable when not enabled.
-  - Selection and metadata/reporting integration are available.
-  - Docs and presets make workflow discoverable.
+- GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27` (completed)
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/sampling/`, `src/dagsynth/core/dataset.py`, `src/dagsynth/bench/suite.py`
+- Delivered scope:
+  - Config supports `gaussian`, `laplace`, `student_t`, and `mixture` families with safety validation.
+  - Runtime sampling and generation metadata report requested/effective family settings.
+  - Benchmark guardrails include metadata validation and runtime delta checks versus gaussian-noise controls.
+  - Presets/docs/tests cover family-specific generation and benchmark workflows.
+- Completion evidence:
+  - All delivery issues in the chain are closed (`#25`, `#26`, `#27`).
+  - End-user docs include noise workflow guidance and benchmark examples.
 
 ### RD-013: Time-Series Generation Tracks for PFN Pretraining
 
@@ -396,7 +397,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: add an opt-in temporal generation track for sequence datasets so PFN pretraining workflows cover classification/regression/time-series under one reproducible generator framework.
 - GitHub tracking: epic `#110`; dependency chain `#111 -> #112 -> #113 -> #114`
-- Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/core/node_pipeline.py`, `src/cauchy_generator/diagnostics/`, `src/cauchy_generator/bench/`, `docs/`
+- Repo touchpoints: `src/dagsynth/config.py`, `src/dagsynth/core/dataset.py`, `src/dagsynth/core/node_pipeline.py`, `src/dagsynth/diagnostics/`, `src/dagsynth/bench/`, `docs/`
 - Exit criteria:
   - Temporal mode is opt-in and backward-compatible (`off` by default).
   - Fixed seed + config reproducibility is preserved for temporal generation.
@@ -411,7 +412,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: define and validate an opt-in observability path that attributes wall-time/memory bottlenecks to generation and benchmark stages across CPU/CUDA/MPS runs.
 - GitHub tracking: epic TBD; dependency chain TBD
-- Repo touchpoints: `src/cauchy_generator/bench/`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/cli.py`, `src/cauchy_generator/hardware.py`, `docs/`
+- Repo touchpoints: `src/dagsynth/bench/`, `src/dagsynth/core/dataset.py`, `src/dagsynth/cli.py`, `src/dagsynth/hardware.py`, `docs/`
 - Exit criteria:
   - Bottleneck observability mode is opt-in and backward-compatible (`off` by default).
   - Benchmark/report artifacts expose stage-level timing and bottleneck attribution instead of only total runtime.
@@ -428,6 +429,7 @@ metadata JSON contract, and DAG lineage schema.
 - RD-008 meta-feature coverage steering (retired)
 - RD-006 staged complexity scaling (retired), completed via `#49`, `#50`, `#51`, `#90`, `#52`, and `#53`
 - RD-004 shift-aware SCM generation, completed via `#64`, `#72`, `#73`, `#74`, and `#75`
+- RD-012 noise family diversification, completed via `#24`, `#25`, `#26`, and `#27`
 
 ### Now
 
@@ -436,7 +438,6 @@ metadata JSON contract, and DAG lineage schema.
 ### Next
 
 - RD-011 mechanism family mix expansion
-- RD-012 noise family diversification
 - RD-013 time-series generation tracks
 - RD-014 bottleneck observability and telemetry
 - RD-007 many-class/high-cardinality expansion (research-gated)
@@ -453,13 +454,13 @@ metadata JSON contract, and DAG lineage schema.
 - RD-003 and RD-008 are implemented and provide a stronger baseline for remaining realism and robustness roadmap work.
 - RD-007 is explicitly research-gated by `#19/#43` before conditional rollout issues (`#20`-`#23`) proceed.
 - RD-011 is the primary near-term diversity lever and is tracked in epic `#28`.
-- RD-012 formalizes complementary noise-family diversification controls tracked in epic `#24`, and should remain lean while proving measurable gain.
+- RD-012 is implemented via epic `#24` and provides explicit noise-family controls for stress-profile composition.
 - RD-013 introduces sequence/temporal generation coverage and is tracked in epic `#110`.
 - RD-014 should precede or run in parallel with RD-010 so adaptive tuning decisions are guided by stage-level bottleneck evidence.
 - RD-014 should inform RD-009 worker/sharding design by identifying true single-process bottlenecks first.
 - RD-014 remains observability-only and must not change default runtime behavior when disabled.
 - RD-005 now primarily depends on RD-004 for shift/drift controls, and can build on existing RD-003 missingness infrastructure.
-- RD-005 can additionally consume RD-011 mechanism-family controls first and RD-012 noise-family controls second for stress-profile composition.
+- RD-005 can consume implemented RD-012 noise-family controls while RD-011 mechanism-family controls remain in flight.
 - RD-004/RD-005/RD-009/RD-002 now have explicit epic trackers and PR-scoped delivery chains.
 - RD-002 builds on completed RD-001 lineage artifacts for intervention metadata extensions.
 - RD-013 should define temporal schema + metadata contracts before adding temporal stress-profile variants.

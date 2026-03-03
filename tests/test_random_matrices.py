@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from cauchy_generator.linalg.random_matrices import sample_random_matrix
+from dagsynth.linalg.random_matrices import sample_random_matrix
 from conftest import make_generator as _make_generator
 
 

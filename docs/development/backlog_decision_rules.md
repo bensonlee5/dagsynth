@@ -65,7 +65,7 @@ Every item must include:
 - `pillar_alignment`:
   one or more README strategic pillars explicitly served by the item.
 - `status`:
-  one of `implemented`, `partial`, `planned`, `research`.
+  one of `implemented`, `partial`, `planned`, `research`, `retired`.
   Implemented items may remain in roadmap/backlog tables for traceability when explicitly marked `implemented`.
 - `milestone`:
   one of `Now`, `Next`, `Later`.

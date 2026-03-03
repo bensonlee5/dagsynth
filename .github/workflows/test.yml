@@ -24,7 +24,7 @@ jobs:
       - name: Test with coverage
         run: >
           uv run pytest
-          --cov=cauchy_generator
+          --cov=dagsynth
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
           -q

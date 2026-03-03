@@ -4,14 +4,14 @@ import math
 
 import pytest
 
-from cauchy_generator.config import (
+from dagsynth.config import (
     SHIFT_PROFILE_GRAPH_DRIFT,
     SHIFT_PROFILE_MECHANISM_DRIFT,
     SHIFT_PROFILE_MIXED,
     SHIFT_PROFILE_NOISE_DRIFT,
     GeneratorConfig,
 )
-from cauchy_generator.core.shift import (
+from dagsynth.core.shift import (
     MECHANISM_FAMILY_ORDER,
     mechanism_nonlinear_mass,
     mechanism_family_probabilities,

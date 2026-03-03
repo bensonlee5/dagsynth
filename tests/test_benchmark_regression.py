@@ -1,8 +1,8 @@
-from cauchy_generator.bench.baseline import (
+from dagsynth.bench.baseline import (
     build_baseline_payload,
     compare_summary_to_baseline,
 )
-from cauchy_generator.bench.metrics import degradation_percent, percent_change
+from dagsynth.bench.metrics import degradation_percent, percent_change
 
 
 def test_percent_change_and_degradation_direction() -> None:

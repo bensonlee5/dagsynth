@@ -1,27 +1,26 @@
-# How cauchy-generator Works
+# How dagsynth Works
 
-This guide explains how `cauchy-generator` works end-to-end and defines core
+This guide explains how `dagsynth` works end-to-end and defines core
 terms used across the repository.
 
 This is the current baseline architecture. Function families, noise families,
-and parameterizations can expand over time while keeping backward-compatible
-default behavior.
+and parameterizations can expand over time with explicit config defaults.
 
 ## Who this is for
 
-- End users who run `cauchy-gen generate` and `cauchy-gen benchmark`
+- End users who run `dagsynth generate` and `dagsynth benchmark`
 - Contributors who need a fast mental model before reading implementation files
 
 ## Mental model in 90 seconds
 
-`cauchy-generator` produces synthetic tabular datasets by sampling a causal DAG,
+`dagsynth` produces synthetic tabular datasets by sampling a causal DAG,
 running random mechanisms over DAG nodes, converting node outputs into
 features/targets, and applying quality/realism controls.
 
-1. Load config and resolve hardware profile.
+1. Load config, detect hardware, and apply explicit hardware policy (if requested).
 1. Derive deterministic seeds for each dataset and component.
 1. Sample dataset layout.
-1. Sample a Cauchy DAG and node assignments.
+1. Sample a latent variable DAG and node assignments.
 1. Execute node pipelines in topological order to produce latent outputs.
 1. Convert node outputs into observable `X` and `y`.
 1. Apply filtering, postprocess transforms, and optional missingness injection.
@@ -29,7 +28,7 @@ features/targets, and applying quality/realism controls.
 
 ## End-to-end flow
 
-`cauchy-gen` has three commands:
+`dagsynth` has three commands:
 
 - `generate`: produce datasets and optionally write artifacts.
 - `benchmark`: run profile/suite workloads and report guardrails.
@@ -37,7 +36,7 @@ features/targets, and applying quality/realism controls.
 
 ```mermaid
 flowchart LR
-    CLI["cauchy-gen CLI"]
+    CLI["dagsynth CLI"]
 
     CLI --> Cfg
     CLI --> BCfg
@@ -45,7 +44,7 @@ flowchart LR
 
     subgraph GeneratePath["generate"]
         direction TB
-        Cfg["Load GeneratorConfig"] --> Tune["detect_hardware + apply_hardware_profile"]
+        Cfg["Load GeneratorConfig"] --> Tune["detect_hardware + apply_hardware_policy"]
         Tune --> Loop["generate_batch_iter"]
         Loop --> Seed["derive dataset/component seeds"]
         Seed --> Layout["sample layout"]
@@ -61,7 +60,7 @@ flowchart LR
 
     subgraph BenchPath["benchmark"]
         direction TB
-        BCfg["resolve suite/profile specs"] --> BTune["per-profile hardware tuning"]
+        BCfg["resolve suite/profile specs"] --> BTune["per-profile hardware policy"]
         BTune --> Runs["run benchmark suite"]
         Runs --> Guards["emit guardrails (runtime/metadata)"]
         Guards --> Reports["write summary JSON/Markdown"]
@@ -77,18 +76,19 @@ flowchart LR
 
 ### 1. Entry points and run-level setup
 
-- `generate` flows through `src/cauchy_generator/cli.py` into generation
-  helpers in `src/cauchy_generator/core/dataset.py`.
+- `generate` flows through `src/dagsynth/cli.py` into generation
+  helpers in `src/dagsynth/core/dataset.py`.
 - A run-level seed initializes `SeedManager`, which derives deterministic child
   seeds (dataset-level and component-level).
-- Hardware-aware defaults are applied before generation begins.
+- Hardware detection is always performed; config tuning is applied only via an
+  explicit hardware policy selection.
 
 ### 2. Layout and structure sampling
 
 - `_sample_layout` decides feature/node/depth structure and feature/target
   assignment surfaces.
-- `sample_cauchy_dag` builds an upper-triangular DAG with Cauchy-based edge
-  logits.
+- `sample_dag` builds an upper-triangular DAG using latent variable
+  edge sampling.
 
 ### 3. Node execution and tensor assembly
 
@@ -252,5 +252,6 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
   [features/missingness.md](features/missingness.md),
   [features/many-class.md](features/many-class.md),
   [features/shift.md](features/shift.md),
+  [features/noise.md](features/noise.md),
   [features/benchmark-guardrails.md](features/benchmark-guardrails.md)
 - Mission-aligned roadmap and priorities: [development/roadmap.md](development/roadmap.md)

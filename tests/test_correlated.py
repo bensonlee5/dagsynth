@@ -2,7 +2,7 @@
 
 import torch
 
-from cauchy_generator.sampling.correlated import CorrelatedSampler
+from dagsynth.sampling.correlated import CorrelatedSampler
 from conftest import make_generator as _make_generator
 
 

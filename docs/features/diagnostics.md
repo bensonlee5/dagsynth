@@ -18,7 +18,7 @@ ______________________________________________________________________
 Enable diagnostics directly:
 
 ```bash
-cauchy-gen generate \
+dagsynth generate \
   --config configs/default.yaml \
   --num-datasets 50 \
   --diagnostics \
@@ -28,7 +28,7 @@ cauchy-gen generate \
 Use the discoverable preset:
 
 ```bash
-cauchy-gen generate \
+dagsynth generate \
   --config configs/preset_diagnostics_on.yaml \
   --num-datasets 25 \
   --diagnostics \
@@ -45,7 +45,7 @@ ______________________________________________________________________
 Diagnostics also work with `benchmark`:
 
 ```bash
-cauchy-gen benchmark \
+dagsynth benchmark \
   --suite smoke \
   --profile cpu \
   --diagnostics \
