@@ -7,17 +7,19 @@ ______________________________________________________________________
 
 ## Prerequisites
 
-Install `cauchy-generator`:
+Examples on this page use repo-local presets under `configs/`.
 
-```bash
-uv tool install cauchy-generator
-```
-
-For development checkouts, use:
+For a repo checkout:
 
 ```bash
 uv sync --group dev
 source .venv/bin/activate
+```
+
+For a global CLI install (without repo presets/config files):
+
+```bash
+uv tool install cauchy-generator
 ```
 
 ______________________________________________________________________

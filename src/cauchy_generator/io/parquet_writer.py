@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, BinaryIO, Iterable, TextIO, cast
+from typing import Any, BinaryIO, TextIO, cast
 
 import numpy as np
 

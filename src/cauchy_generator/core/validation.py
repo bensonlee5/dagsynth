@@ -111,7 +111,7 @@ def _stratified_split_indices(
 
     train_parts: list[torch.Tensor] = []
     test_parts: list[torch.Tensor] = []
-    for idx, n_cls_train in zip(cls_indices, cls_train_counts):
+    for idx, n_cls_train in zip(cls_indices, cls_train_counts, strict=True):
         train_parts.append(idx[:n_cls_train])
         test_parts.append(idx[n_cls_train:])
 

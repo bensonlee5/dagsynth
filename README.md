@@ -6,13 +6,20 @@ deterministic seed behavior.
 
 ## Quick Start
 
-Install:
+Examples in this README assume a repo checkout (so `configs/*.yaml` is available):
+
+```bash
+uv sync --group dev
+source .venv/bin/activate
+```
+
+Install the packaged CLI globally when you do not need repo presets/config files:
 
 ```bash
 uv tool install cauchy-generator
 ```
 
-Generate a default batch:
+Generate a default batch from the repo:
 
 ```bash
 cauchy-gen generate --config configs/default.yaml --num-datasets 10 --out data/run1
@@ -57,6 +64,7 @@ cauchy-gen benchmark --help
   [missingness](docs/features/missingness.md),
   [many-class](docs/features/many-class.md),
   [shift](docs/features/shift.md),
+  [noise](docs/features/noise.md),
   [benchmark guardrails](docs/features/benchmark-guardrails.md)
 
 ## Codebase Navigation

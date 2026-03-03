@@ -116,6 +116,7 @@ def postprocess_dataset(
     - Permute column order
     - Permute class labels for classification
     """
+    _ = device
 
     x_all = torch.cat([x_train, x_test], dim=0).to(torch.float32)
     if preserve_feature_schema:

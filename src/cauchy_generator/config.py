@@ -622,7 +622,7 @@ class GeneratorConfig:
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> "GeneratorConfig":
+    def from_dict(cls, data: dict[str, Any] | None) -> GeneratorConfig:
         """Construct `GeneratorConfig` from a nested dictionary payload."""
 
         data = data or {}
@@ -655,7 +655,7 @@ class GeneratorConfig:
         )
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "GeneratorConfig":
+    def from_yaml(cls, path: str | Path) -> GeneratorConfig:
         """Load config from a YAML file path."""
 
         p = Path(path)

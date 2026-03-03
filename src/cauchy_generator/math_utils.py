@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import math
-from typing import TypeVar
 
 import numpy as np
 import torch
 
-_KT = TypeVar("_KT", bound=str)
 
-
-def normalize_positive_weights(
-    weights: dict[_KT, float],
+def normalize_positive_weights[KT: str](
+    weights: dict[KT, float],
     *,
     field_name: str = "weights",
-) -> dict[_KT, float]:
+) -> dict[KT, float]:
     """Numerically stable normalization: filter positive, scale-by-max, fsum, normalize."""
 
     positive = {k: v for k, v in weights.items() if v > 0.0}
@@ -64,3 +61,14 @@ def sanitize_json(value: object) -> object:
     if isinstance(value, (list, tuple)):
         return [sanitize_json(v) for v in value]
     return value
+
+
+def coerce_optional_finite_float(value: object) -> float | None:
+    """Return a finite float for numeric scalar inputs; otherwise return None."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    as_float = float(value)
+    if not math.isfinite(as_float):
+        return None
+    return as_float

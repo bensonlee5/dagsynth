@@ -58,8 +58,7 @@ def test_run_throughput_benchmark_updates_callback_on_measured_generation(
     ):
         _ = seed
         _ = device
-        for idx in range(num_datasets):
-            yield idx
+        yield from range(num_datasets)
 
     monkeypatch.setattr(
         "cauchy_generator.bench.throughput.generate_batch_iter",

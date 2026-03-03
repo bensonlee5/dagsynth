@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
+from cauchy_generator.math_utils import (
+    coerce_optional_finite_float as _coerce_optional_finite_float,
+)
 from cauchy_generator.types import DatasetBundle
 
 from .constants import MISSINGNESS_RATE_FAIL_ABS_ERROR, MISSINGNESS_RATE_WARN_ABS_ERROR
@@ -390,15 +393,6 @@ def _compose_bundle_callback(
             noise_guardrails.update(bundle)
 
     return _on_bundle
-
-
-def _coerce_optional_finite_float(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    as_float = float(value)
-    if not math.isfinite(as_float):
-        return None
-    return as_float
 
 
 def _mean_or_none(*, total: float, count: int) -> float | None:

@@ -345,7 +345,7 @@ def test_generate_cli_coverage_tolerates_null_quantiles_and_targets(
     monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
         "cauchy_generator.cli.CoverageAggregator.update_bundle",
-        lambda self, _bundle: None,
+        lambda _self, _bundle: None,
     )
 
     code = main(
@@ -428,7 +428,7 @@ def test_generate_cli_enables_diagnostics_flag(
     monkeypatch.setattr("cauchy_generator.cli.generate_batch_iter", _stub_generate_batch_iter)
     monkeypatch.setattr(
         "cauchy_generator.cli.CoverageAggregator.update_bundle",
-        lambda self, _bundle: None,
+        lambda _self, _bundle: None,
     )
     code = main(
         [

@@ -22,6 +22,7 @@ Related docs:
 - `partial`: some building blocks exist, but mission-level claim is not fully met.
 - `planned`: scoped and prioritized, not implemented.
 - `research`: exploratory with higher uncertainty or risk.
+- `retired`: historical item that no longer represents active roadmap work.
 
 ## Canonical Planning Metadata
 
@@ -52,8 +53,8 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 | 0    | RD-008     | Meta-feature coverage steering (retired)                     | retired     | Now       | `#9` (historical)                                    |
 | 0    | RD-006     | Curriculum complexity scaling (features + graph)             | implemented | Now       | `#49 -> #50 -> #51 -> #90 -> #52 -> #53` (completed) |
 | 0    | RD-004     | Shift-aware SCM generation                                   | implemented | Now       | `#64 -> #72 -> #73 -> #74 -> #75` (completed)        |
+| 0    | RD-012     | Noise family diversification for synthetic generation        | implemented | Now       | `#24 -> #25 -> #26 -> #27` (completed)               |
 | 3    | RD-011     | Mechanism family mix expansion (BNN/GP kernels/interactions) | planned     | Next      | `#28 -> #29 -> #30 -> #68 -> #69 -> #31 -> #32`      |
-| 4    | RD-012     | Noise family diversification for synthetic generation        | planned     | Next      | `#24 -> #25 -> #26 -> #27`                           |
 | 5    | RD-013     | Time-series generation tracks for PFN pretraining            | research    | Next      | `#110 -> #111 -> #112 -> #113 -> #114`               |
 | 6    | RD-014     | Run-time bottleneck observability and telemetry              | research    | Next      | `epic TBD; dependency chain TBD`                     |
 | 7    | RD-007     | Many-class and high-cardinality expansion                    | research    | Next      | `#19 -> #43 -> (#20 -> #21 -> #22 -> #23)`           |
@@ -64,17 +65,17 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 
 ## Current Capability Matrix
 
-| README Mission/Pillar Claim                                         | Current State | Evidence in Repo                                                                                                                                                           | Gap                                                                                                                                                                  | Roadmap IDs                                    |
-| ------------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Foundation model pretraining with diverse structural priors         | `partial`     | DAG-based generation, mixed-type conversion, diagnostics extraction/coverage aggregation, configurable missingness, throughput benchmarks, and opt-in shift/drift controls | Hard-task regimes, mechanism-family controls, end-to-end noise-family integration, many-class expansion, and time-series generation are not implemented end-to-end   | RD-004, RD-005, RD-007, RD-011, RD-012, RD-013 |
-| Causal discovery with ground-truth DAGs and interventional datasets | `partial`     | DAG lineage metadata is emitted per dataset and persisted as compact shard-level artifacts with schema validation and benchmark guardrails                                 | Interventional/counterfactual generation semantics are not implemented                                                                                               | RD-002                                         |
-| Robustness testing with hard tasks, shifts, adversarial regimes     | `partial`     | Basic filtering and diagnostics proxies exist; missingness mechanisms and shift/drift controls are implemented with deterministic controls and benchmark guardrails        | No explicit hard-task/adversarial profile suite and no explicit noise-family diversification controls                                                                | RD-004, RD-005, RD-012                         |
-| Causal structural integrity (hierarchical dependencies)             | `implemented` | Graph-driven node pipeline and multi-family function composition                                                                                                           | Deeper mechanism-family controls are not user-configurable                                                                                                           | RD-007, RD-011                                 |
-| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, and fixed-layout generation are implemented                                      | High-cardinality/many-class limits and noise-family diversity remain conservative                                                                                    | RD-007, RD-012                                 |
-| PFN task coverage (classification, regression, time-series)         | `partial`     | Classification and regression generation pipelines are fully supported with deterministic seeds and diagnostics/benchmark workflows                                        | No time-series generation mode, temporal metadata contract, or temporal diagnostics/guardrails                                                                       | RD-013                                         |
-| Staged complexity scaling (features/nodes/samples)                  | `retired`     | Historical staged-complexity implementation (RD-006) has been retired in favor of explicit split sizing and fixed-layout generation                                        | Not active                                                                                                                                                           | RD-006                                         |
-| Hardware-native performance (Torch + hardware-aware tuning)         | `partial`     | Torch CPU/CUDA/MPS path, hardware detection, coarse profile-based tuning, and benchmark suite                                                                              | Stage-level bottleneck attribution/telemetry is not implemented; hardware-adaptive autotuning is not implemented; parallel/distributed generation is not implemented | RD-014, RD-010, RD-009                         |
-| Parallel streaming Parquet sharding                                 | `partial`     | Streaming Parquet writing exists                                                                                                                                           | Writing is currently single-process sequential                                                                                                                       | RD-009                                         |
+| README Mission/Pillar Claim                                         | Current State | Evidence in Repo                                                                                                                                                                                           | Gap                                                                                                                                                                  | Roadmap IDs                            |
+| ------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Foundation model pretraining with diverse structural priors         | `partial`     | DAG-based generation, mixed-type conversion, diagnostics extraction/coverage aggregation, configurable missingness, explicit noise-family controls, throughput benchmarks, and opt-in shift/drift controls | Hard-task regimes, mechanism-family controls, many-class expansion, and time-series generation are not implemented end-to-end                                        | RD-004, RD-005, RD-007, RD-011, RD-013 |
+| Causal discovery with ground-truth DAGs and interventional datasets | `partial`     | DAG lineage metadata is emitted per dataset and persisted as compact shard-level artifacts with schema validation and benchmark guardrails                                                                 | Interventional/counterfactual generation semantics are not implemented                                                                                               | RD-002                                 |
+| Robustness testing with hard tasks, shifts, adversarial regimes     | `partial`     | Basic filtering and diagnostics proxies exist; missingness mechanisms, explicit noise-family controls, and shift/drift controls are implemented with deterministic controls and benchmark guardrails       | No explicit hard-task/adversarial profile suite                                                                                                                      | RD-004, RD-005                         |
+| Causal structural integrity (hierarchical dependencies)             | `implemented` | Graph-driven node pipeline and multi-family function composition                                                                                                                                           | Deeper mechanism-family controls are not user-configurable                                                                                                           | RD-007, RD-011                         |
+| Tabular realism (mixed type + postprocess hooks)                    | `partial`     | Numeric/categorical converters, E.13 postprocessing, configurable missingness mechanisms, explicit noise-family controls, and fixed-layout generation are implemented                                      | High-cardinality/many-class limits remain conservative                                                                                                               | RD-007                                 |
+| PFN task coverage (classification, regression, time-series)         | `partial`     | Classification and regression generation pipelines are fully supported with deterministic seeds and diagnostics/benchmark workflows                                                                        | No time-series generation mode, temporal metadata contract, or temporal diagnostics/guardrails                                                                       | RD-013                                 |
+| Staged complexity scaling (features/nodes/samples)                  | `retired`     | Historical staged-complexity implementation (RD-006) has been retired in favor of explicit split sizing and fixed-layout generation                                                                        | Not active                                                                                                                                                           | RD-006                                 |
+| Hardware-native performance (Torch + hardware-aware tuning)         | `partial`     | Torch CPU/CUDA/MPS path, hardware detection, coarse profile-based tuning, and benchmark suite                                                                                                              | Stage-level bottleneck attribution/telemetry is not implemented; hardware-adaptive autotuning is not implemented; parallel/distributed generation is not implemented | RD-014, RD-010, RD-009                 |
+| Parallel streaming Parquet sharding                                 | `partial`     | Streaming Parquet writing exists                                                                                                                                                                           | Writing is currently single-process sequential                                                                                                                       | RD-009                                 |
 
 ## Current Implementation Baseline
 
@@ -372,21 +373,21 @@ metadata JSON contract, and DAG lineage schema.
 
 ### RD-012: Noise Family Diversification for Synthetic Generation
 
-- Status: `planned`
-- Milestone: `Next`
+- Status: `implemented`
+- Milestone: `Now` (completed via epics/issues `#24`, `#25`, `#26`, `#27`)
 - Mission alignment: foundation model pretraining, robustness testing
 - Pillar alignment: tabular realism
 - Goal: complete lean, low-complexity integration of explicit noise-family controls and mixtures to diversify residual/noise behavior without broad generator refactors.
-- GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27`
+- GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27` (completed)
 - Repo touchpoints: `src/cauchy_generator/config.py`, `src/cauchy_generator/sampling/`, `src/cauchy_generator/core/dataset.py`, `src/cauchy_generator/bench/suite.py`
-- Current status checkpoint (2026-02-28):
-  - `#25` established schema + sampler primitives.
-  - End-to-end generation/metadata integration remains tracked in `#26`.
-- Exit criteria:
-  - Configured noise families measurably affect generated outputs (not schema-only behavior).
-  - Default behavior remains stable when not enabled.
-  - Selection and metadata/reporting integration are available.
-  - Docs and presets make workflow discoverable.
+- Delivered scope:
+  - Config supports `legacy`, `gaussian`, `laplace`, `student_t`, and `mixture` families with safety validation.
+  - Runtime sampling and generation metadata report requested/effective family settings.
+  - Benchmark guardrails include metadata validation and runtime delta checks versus legacy-noise controls.
+  - Presets/docs/tests cover family-specific generation and benchmark workflows.
+- Completion evidence:
+  - All delivery issues in the chain are closed (`#25`, `#26`, `#27`).
+  - End-user docs include noise workflow guidance and benchmark examples.
 
 ### RD-013: Time-Series Generation Tracks for PFN Pretraining
 
@@ -428,6 +429,7 @@ metadata JSON contract, and DAG lineage schema.
 - RD-008 meta-feature coverage steering (retired)
 - RD-006 staged complexity scaling (retired), completed via `#49`, `#50`, `#51`, `#90`, `#52`, and `#53`
 - RD-004 shift-aware SCM generation, completed via `#64`, `#72`, `#73`, `#74`, and `#75`
+- RD-012 noise family diversification, completed via `#24`, `#25`, `#26`, and `#27`
 
 ### Now
 
@@ -436,7 +438,6 @@ metadata JSON contract, and DAG lineage schema.
 ### Next
 
 - RD-011 mechanism family mix expansion
-- RD-012 noise family diversification
 - RD-013 time-series generation tracks
 - RD-014 bottleneck observability and telemetry
 - RD-007 many-class/high-cardinality expansion (research-gated)
@@ -453,13 +454,13 @@ metadata JSON contract, and DAG lineage schema.
 - RD-003 and RD-008 are implemented and provide a stronger baseline for remaining realism and robustness roadmap work.
 - RD-007 is explicitly research-gated by `#19/#43` before conditional rollout issues (`#20`-`#23`) proceed.
 - RD-011 is the primary near-term diversity lever and is tracked in epic `#28`.
-- RD-012 formalizes complementary noise-family diversification controls tracked in epic `#24`, and should remain lean while proving measurable gain.
+- RD-012 is implemented via epic `#24` and provides explicit noise-family controls for stress-profile composition.
 - RD-013 introduces sequence/temporal generation coverage and is tracked in epic `#110`.
 - RD-014 should precede or run in parallel with RD-010 so adaptive tuning decisions are guided by stage-level bottleneck evidence.
 - RD-014 should inform RD-009 worker/sharding design by identifying true single-process bottlenecks first.
 - RD-014 remains observability-only and must not change default runtime behavior when disabled.
 - RD-005 now primarily depends on RD-004 for shift/drift controls, and can build on existing RD-003 missingness infrastructure.
-- RD-005 can additionally consume RD-011 mechanism-family controls first and RD-012 noise-family controls second for stress-profile composition.
+- RD-005 can consume implemented RD-012 noise-family controls while RD-011 mechanism-family controls remain in flight.
 - RD-004/RD-005/RD-009/RD-002 now have explicit epic trackers and PR-scoped delivery chains.
 - RD-002 builds on completed RD-001 lineage artifacts for intervention metadata extensions.
 - RD-013 should define temporal schema + metadata contracts before adding temporal stress-profile variants.

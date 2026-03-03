@@ -19,6 +19,9 @@ from cauchy_generator.core.metric_constants import (
 )
 from cauchy_generator.core.shift import mechanism_nonlinear_mass
 from cauchy_generator.filtering import apply_extra_trees_filter
+from cauchy_generator.math_utils import (
+    coerce_optional_finite_float as _coerce_optional_finite_float,
+)
 from cauchy_generator.types import DatasetBundle
 
 
@@ -232,15 +235,6 @@ def _coerce_bool(value: Any, *, default: bool) -> bool:
     return default
 
 
-def _coerce_optional_finite_float(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    as_float = float(value)
-    if not math.isfinite(as_float):
-        return None
-    return as_float
-
-
 def _coerce_finite_float(value: Any, *, default: float) -> float:
     as_float = _coerce_optional_finite_float(value)
     if as_float is None:
@@ -409,10 +403,7 @@ def _compute_wins_ratio_proxy(*, x: torch.Tensor, y: torch.Tensor, task: str) ->
             y_tensor = dense.to(torch.int64)
         elif task == _TASK_REGRESSION:
             y_matrix = _regression_target_matrix(y).to(torch.float32)
-            if y_matrix.shape[1] == 1:
-                y_tensor = y_matrix[:, 0]
-            else:
-                y_tensor = y_matrix
+            y_tensor = y_matrix[:, 0] if y_matrix.shape[1] == 1 else y_matrix
         else:
             raise ValueError(f"Unsupported task '{task}'.")
         _, details = apply_extra_trees_filter(

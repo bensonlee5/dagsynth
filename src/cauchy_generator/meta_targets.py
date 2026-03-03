@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
 import math
+from typing import TYPE_CHECKING
 
-from cauchy_generator.diagnostics.types import DatasetMetrics
+from cauchy_generator.diagnostics import CoverageAggregationConfig
+
+if TYPE_CHECKING:
+    from cauchy_generator.config import DiagnosticsConfig
 
 TargetBand = tuple[float, float]
-SUPPORTED_METRICS: frozenset[str] = frozenset(
-    field_info.name for field_info in fields(DatasetMetrics) if field_info.name != "task"
-)
 
 
 def coerce_target_bands(raw: object) -> dict[str, TargetBand]:
@@ -58,3 +58,18 @@ def coerce_quantiles(raw: object) -> tuple[float, ...]:
         if math.isfinite(value):
             normalized.append(value)
     return tuple(normalized)
+
+
+def build_coverage_aggregation_config(
+    diagnostics_config: DiagnosticsConfig,
+) -> CoverageAggregationConfig:
+    """Build diagnostics coverage aggregation config from diagnostics settings."""
+
+    return CoverageAggregationConfig(
+        include_spearman=bool(diagnostics_config.include_spearman),
+        histogram_bins=max(1, int(diagnostics_config.histogram_bins)),
+        quantiles=coerce_quantiles(diagnostics_config.quantiles),
+        underrepresented_threshold=float(diagnostics_config.underrepresented_threshold),
+        max_values_per_metric=diagnostics_config.max_values_per_metric,
+        target_bands=merge_target_bands(diagnostics_config.meta_feature_targets),
+    )

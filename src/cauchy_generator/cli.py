@@ -29,7 +29,6 @@ from cauchy_generator.config import (
 )
 from cauchy_generator.core.dataset import generate_batch_iter
 from cauchy_generator.diagnostics import (
-    CoverageAggregationConfig,
     CoverageAggregator,
     write_coverage_summary_json,
     write_coverage_summary_markdown,
@@ -41,8 +40,7 @@ from cauchy_generator.hardware import (
 )
 from cauchy_generator.io.parquet_writer import write_packed_parquet_shards_stream
 from cauchy_generator.meta_targets import (
-    coerce_quantiles,
-    merge_target_bands,
+    build_coverage_aggregation_config,
 )
 from cauchy_generator.rng import SEED32_MAX, SEED32_MIN
 
@@ -183,12 +181,6 @@ def _parse_missing_mechanism_arg(raw: str) -> str:
         return normalize_missing_mechanism(raw)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
-
-
-def _resolve_diagnostics_target_bands(config: GeneratorConfig) -> dict[str, tuple[float, float]]:
-    """Resolve diagnostics target bands from diagnostics config payloads."""
-
-    return merge_target_bands(config.diagnostics.meta_feature_targets)
 
 
 def _raise_usage_error(message: str) -> None:
@@ -422,6 +414,19 @@ def _apply_missingness_cli_overrides(config: GeneratorConfig, args: argparse.Nam
         _raise_usage_error(str(exc))
 
 
+def _write_generate_diagnostics_artifacts(
+    diagnostics_aggregator: CoverageAggregator,
+    *,
+    diagnostics_out_dir: Path,
+) -> None:
+    """Write generation diagnostics coverage artifacts and print output paths."""
+
+    summary = diagnostics_aggregator.build_summary()
+    json_path = write_coverage_summary_json(summary, diagnostics_out_dir / "coverage_summary.json")
+    md_path = write_coverage_summary_markdown(summary, diagnostics_out_dir / "coverage_summary.md")
+    print(f"Wrote diagnostics artifacts: {json_path} and {md_path}")
+
+
 def _run_generate(args: argparse.Namespace) -> int:
     """Execute the ``generate`` command."""
 
@@ -432,7 +437,6 @@ def _run_generate(args: argparse.Namespace) -> int:
         no_hardware_aware=bool(args.no_hardware_aware),
     )
     _apply_missingness_cli_overrides(config, args)
-    resolved_target_bands = _resolve_diagnostics_target_bands(config)
     if args.diagnostics:
         config.diagnostics.enabled = True
 
@@ -447,14 +451,7 @@ def _run_generate(args: argparse.Namespace) -> int:
             diagnostics_root = "diagnostics_artifacts"
         diagnostics_out_dir = Path(diagnostics_root)
         diagnostics_aggregator = CoverageAggregator(
-            CoverageAggregationConfig(
-                include_spearman=bool(config.diagnostics.include_spearman),
-                histogram_bins=int(config.diagnostics.histogram_bins),
-                quantiles=coerce_quantiles(config.diagnostics.quantiles),
-                underrepresented_threshold=float(config.diagnostics.underrepresented_threshold),
-                max_values_per_metric=config.diagnostics.max_values_per_metric,
-                target_bands=resolved_target_bands,
-            )
+            build_coverage_aggregation_config(config.diagnostics)
         )
     print(
         f"Hardware backend={hw.backend} device='{hw.device_name}' "
@@ -481,14 +478,9 @@ def _run_generate(args: argparse.Namespace) -> int:
         generated = sum(1 for _ in stream)
         if diagnostics_aggregator is not None:
             assert diagnostics_out_dir is not None
-            summary = diagnostics_aggregator.build_summary()
-            json_path = write_coverage_summary_json(
-                summary, diagnostics_out_dir / "coverage_summary.json"
+            _write_generate_diagnostics_artifacts(
+                diagnostics_aggregator, diagnostics_out_dir=diagnostics_out_dir
             )
-            md_path = write_coverage_summary_markdown(
-                summary, diagnostics_out_dir / "coverage_summary.md"
-            )
-            print(f"Wrote diagnostics artifacts: {json_path} and {md_path}")
         print(f"Generated {generated} datasets (no-write mode).")
         return 0
 
@@ -500,14 +492,9 @@ def _run_generate(args: argparse.Namespace) -> int:
     )
     if diagnostics_aggregator is not None:
         assert diagnostics_out_dir is not None
-        summary = diagnostics_aggregator.build_summary()
-        json_path = write_coverage_summary_json(
-            summary, diagnostics_out_dir / "coverage_summary.json"
+        _write_generate_diagnostics_artifacts(
+            diagnostics_aggregator, diagnostics_out_dir=diagnostics_out_dir
         )
-        md_path = write_coverage_summary_markdown(
-            summary, diagnostics_out_dir / "coverage_summary.md"
-        )
-        print(f"Wrote diagnostics artifacts: {json_path} and {md_path}")
     print(f"Wrote {written} datasets to: {Path(out_dir)}")
     return 0
 

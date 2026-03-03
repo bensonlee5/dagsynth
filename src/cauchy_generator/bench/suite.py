@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import hashlib
 import copy
@@ -68,7 +69,6 @@ from cauchy_generator.config import (
 from cauchy_generator.core.dataset import generate_batch_iter, generate_one
 from cauchy_generator.core.shift import resolve_shift_runtime_params
 from cauchy_generator.diagnostics import (
-    CoverageAggregationConfig,
     CoverageAggregator,
     write_coverage_summary_json,
     write_coverage_summary_markdown,
@@ -79,8 +79,7 @@ from cauchy_generator.hardware import (
     detect_hardware,
 )
 from cauchy_generator.meta_targets import (
-    coerce_quantiles,
-    merge_target_bands,
+    build_coverage_aggregation_config,
 )
 from cauchy_generator.rng import SeedManager, offset_seed32
 
@@ -225,12 +224,6 @@ def _prepare_config_for_profile(
     return cfg, requested_device, hw
 
 
-def _resolve_target_bands(config: GeneratorConfig) -> dict[str, tuple[float, float]]:
-    """Resolve diagnostics target mappings for coverage aggregation."""
-
-    return merge_target_bands(config.diagnostics.meta_feature_targets)
-
-
 def _sanitize_profile_key(profile_key: str) -> str:
     """Normalize profile key into a filesystem-safe unique path segment."""
 
@@ -250,16 +243,7 @@ def _artifact_pointer(path: Path) -> str:
 def _build_diagnostics_aggregator(config: GeneratorConfig) -> CoverageAggregator:
     """Create a diagnostics coverage aggregator from config."""
 
-    return CoverageAggregator(
-        CoverageAggregationConfig(
-            include_spearman=bool(config.diagnostics.include_spearman),
-            histogram_bins=max(1, int(config.diagnostics.histogram_bins)),
-            quantiles=coerce_quantiles(config.diagnostics.quantiles),
-            underrepresented_threshold=float(config.diagnostics.underrepresented_threshold),
-            max_values_per_metric=config.diagnostics.max_values_per_metric,
-            target_bands=_resolve_target_bands(config),
-        )
-    )
+    return CoverageAggregator(build_coverage_aggregation_config(config.diagnostics))
 
 
 def _is_missingness_enabled(config: GeneratorConfig) -> bool:
@@ -375,10 +359,8 @@ def run_profile_benchmark(
 
     rss_before = _peak_rss_mb() if collect_memory else 0.0
     if collect_memory and hw.backend == "cuda" and torch.cuda.is_available():
-        try:
+        with contextlib.suppress(Exception):
             torch.cuda.reset_peak_memory_stats()
-        except Exception:
-            pass
 
     diagnostics_enabled = bool(collect_diagnostics and diagnostics_root_dir is not None)
     diagnostics_aggregator: CoverageAggregator | None = None
@@ -857,10 +839,7 @@ def resolve_profile_run_specs(
         keys = ["cpu", "cuda_desktop", "cuda_h100"]
 
     if not keys:
-        if config_path:
-            keys = ["custom"]
-        else:
-            keys = ["cpu", "cuda_desktop", "cuda_h100"]
+        keys = ["custom"] if config_path else ["cpu", "cuda_desktop", "cuda_h100"]
 
     resolved: list[ProfileRunSpec] = []
     seen: set[str] = set()

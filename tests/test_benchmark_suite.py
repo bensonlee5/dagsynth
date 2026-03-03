@@ -187,7 +187,7 @@ def test_run_benchmark_suite_missingness_runtime_guardrail_updates_regression_st
     monkeypatch.setattr(
         "cauchy_generator.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
-            "latency_samples": float(num_samples),
+            "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
             "latency_p95_ms": 1.0,
             "latency_min_ms": 1.0,
@@ -323,7 +323,7 @@ def test_run_benchmark_suite_shift_runtime_guardrail_updates_regression_status(
     monkeypatch.setattr(
         "cauchy_generator.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
-            "latency_samples": float(num_samples),
+            "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
             "latency_p95_ms": 1.0,
             "latency_min_ms": 1.0,
@@ -428,7 +428,7 @@ def test_run_benchmark_suite_shift_directional_guardrail_failure_updates_status(
     monkeypatch.setattr(
         "cauchy_generator.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
-            "latency_samples": float(num_samples),
+            "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
             "latency_p95_ms": 1.0,
             "latency_min_ms": 1.0,
@@ -562,7 +562,7 @@ def test_run_benchmark_suite_noise_runtime_guardrail_updates_regression_status(
     monkeypatch.setattr(
         "cauchy_generator.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
-            "latency_samples": float(num_samples),
+            "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
             "latency_p95_ms": 1.0,
             "latency_min_ms": 1.0,
@@ -661,7 +661,7 @@ def test_run_benchmark_suite_noise_metadata_coverage_failure_updates_status(
     monkeypatch.setattr(
         "cauchy_generator.bench.suite._collect_latency",
         lambda _cfg, *, device, num_samples: {
-            "latency_samples": float(num_samples),
+            "latency_samples": float(num_samples) + (0.0 if device is None else 0.0),
             "latency_mean_ms": 1.0,
             "latency_p95_ms": 1.0,
             "latency_min_ms": 1.0,

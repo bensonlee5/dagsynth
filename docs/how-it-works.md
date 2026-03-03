@@ -252,5 +252,6 @@ sections such as `missingness_guardrails`, `lineage_guardrails`, and
   [features/missingness.md](features/missingness.md),
   [features/many-class.md](features/many-class.md),
   [features/shift.md](features/shift.md),
+  [features/noise.md](features/noise.md),
   [features/benchmark-guardrails.md](features/benchmark-guardrails.md)
 - Mission-aligned roadmap and priorities: [development/roadmap.md](development/roadmap.md)
