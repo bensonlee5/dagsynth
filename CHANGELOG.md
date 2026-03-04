@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dagzoo.dag_lineage`. Existing Parquet files with the old schema name will not
   validate against the new constant.
 
-## [0.4.3] - 2026-03-04
+## [0.4.3] - 2026-03-03
 
 ### Fixed
 
