@@ -472,12 +472,12 @@ $$Y = f(X) \\odot g(X)$$
 **Dependency Map:** input slice $X$, warp parameters $(a,b)$, and identity/warp branch choice $\\rightarrow (X'_{\\text{num}}, v_{\\text{num}})$.<br>
 **Path to Final Output:** $v\_{\\text{num}}$ is emitted as numeric feature/target value in `X`/`y`; $X'\_{\\text{num}}$ feeds back into node latent state.<br>
 
-**Rationale.** The identity branch preserves raw latent structure when extra warping is unnecessary. The optional bounded warp—a **Kumaraswamy-like transformation**—provides controllable marginal shaping while staying numerically stable.
+**Rationale.** The identity branch preserves raw latent structure when extra warping is unnecessary. The optional bounded Kumaraswamy-like warp provides controllable marginal shaping while staying numerically stable.
 
 Given input slice $X$ and raw extracted scalar $v = X\_{:,0}$:
 
 - with probability 0.5: identity output (no warp),
-- otherwise sample $a,b \\sim \\operatorname{LogUniform}(0.2,5)$ and apply columnwise min-max followed by **Kumaraswamy-like warping**:
+- otherwise sample $a,b \\sim \\operatorname{LogUniform}(0.2,5)$ and apply columnwise min-max + warp:
 
 $$\\hat{X} = \\frac{X - X\_{\\min}}{\\max(X\_{\\max} - X\_{\\min}, 10^{-6})}$$
 $$X' = 1 - \\left(1 - \\operatorname{clip}(\\hat{X}, 0, 1)^a\\right)^b$$
