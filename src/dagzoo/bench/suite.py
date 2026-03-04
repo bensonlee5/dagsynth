@@ -10,6 +10,7 @@ import re
 import resource
 import sys
 import time
+from collections.abc import Callable
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -366,23 +367,46 @@ def run_preset_benchmark(
         if noise_enabled
         else None
     )
-    throughput_pressure = _ThroughputPressureCollector()
-    stage_sample_collector = StageSampleCollector(
-        max_samples=_latency_sample_count(config, suite, num_datasets)
-    )
+    stage_sample_cap = _latency_sample_count(config, suite, num_datasets)
 
-    composed_on_bundle_callback = _compose_bundle_callback(
+    def _build_throughput_on_bundle_callback(
+        *,
+        diagnostics_aggregator: CoverageAggregator | None,
+        missingness_acceptance: _MissingnessAcceptanceCollector | None,
+        shift_guardrails: _ShiftGuardrailCollector | None,
+        noise_guardrails: _NoiseGuardrailCollector | None,
+    ) -> tuple[
+        Callable[[DatasetBundle], None],
+        StageSampleCollector,
+        _ThroughputPressureCollector,
+    ]:
+        throughput_pressure = _ThroughputPressureCollector()
+        stage_sample_collector = StageSampleCollector(max_samples=stage_sample_cap)
+        composed_on_bundle_callback = _compose_bundle_callback(
+            diagnostics_aggregator=diagnostics_aggregator,
+            missingness_acceptance=missingness_acceptance,
+            shift_guardrails=shift_guardrails,
+            noise_guardrails=noise_guardrails,
+            throughput_pressure=throughput_pressure,
+        )
+
+        def on_bundle_callback(bundle: DatasetBundle) -> None:
+            stage_sample_collector.update(bundle)
+            if composed_on_bundle_callback is not None:
+                composed_on_bundle_callback(bundle)
+
+        return on_bundle_callback, stage_sample_collector, throughput_pressure
+
+    (
+        on_bundle_callback,
+        stage_sample_collector,
+        throughput_pressure,
+    ) = _build_throughput_on_bundle_callback(
         diagnostics_aggregator=diagnostics_aggregator,
         missingness_acceptance=missingness_acceptance,
         shift_guardrails=shift_guardrails,
         noise_guardrails=noise_guardrails,
-        throughput_pressure=throughput_pressure,
     )
-
-    def on_bundle_callback(bundle: DatasetBundle) -> None:
-        stage_sample_collector.update(bundle)
-        if composed_on_bundle_callback is not None:
-            composed_on_bundle_callback(bundle)
 
     result = run_throughput_benchmark(
         config,
@@ -392,6 +416,7 @@ def run_preset_benchmark(
         on_bundle=on_bundle_callback,
     )
     sampled_bundles = stage_sample_collector.bundles
+    stage_sample_datasets = len(sampled_bundles)
     write_dpm = (
         measure_write_datasets_per_minute(sampled_bundles, config=config)
         if sampled_bundles
@@ -427,7 +452,7 @@ def run_preset_benchmark(
     result["generation_datasets_per_minute"] = generation_dpm
     result["write_datasets_per_minute"] = float(write_dpm)
     result["filter_datasets_per_minute"] = float(filter_dpm) if filter_dpm is not None else None
-    result["stage_sample_datasets"] = int(len(sampled_bundles))
+    result["stage_sample_datasets"] = int(stage_sample_datasets)
     result["filter_stage_enabled"] = filter_stage_enabled
     result["accepted_datasets_measured"] = int(throughput_pressure_summary["datasets_seen"])
     result["total_attempts"] = int(throughput_pressure_summary["attempts_total"])
@@ -448,6 +473,10 @@ def run_preset_benchmark(
     result["lineage_guardrails"] = {"enabled": False}
     result["shift_guardrails"] = {"enabled": False}
     result["noise_guardrails"] = {"enabled": False}
+
+    # Stage probes are complete; release retained bundles before latency and
+    # control-run guardrail benchmarks to avoid unnecessary memory retention.
+    sampled_bundles.clear()
 
     latency_stats = _collect_latency(
         config,
@@ -495,7 +524,11 @@ def run_preset_benchmark(
         )
         # Keep control-run callback instrumentation equivalent so runtime delta
         # reflects missingness overhead instead of callback overhead skew.
-        baseline_on_bundle_callback = _compose_bundle_callback(
+        (
+            baseline_on_bundle_callback,
+            baseline_stage_sample_collector,
+            _,
+        ) = _build_throughput_on_bundle_callback(
             diagnostics_aggregator=missingness_baseline_diagnostics_aggregator,
             missingness_acceptance=baseline_missingness_acceptance,
             shift_guardrails=_ShiftGuardrailCollector() if shift_enabled else None,
@@ -513,6 +546,7 @@ def run_preset_benchmark(
             device=requested_device,
             on_bundle=baseline_on_bundle_callback,
         )
+        baseline_stage_sample_collector.bundles.clear()
         baseline_dpm = float(baseline_throughput.get("datasets_per_minute", 0.0))
         current_dpm = float(result.get("datasets_per_minute", 0.0))
         runtime_degradation = degradation_percent("datasets_per_minute", current_dpm, baseline_dpm)
@@ -578,7 +612,11 @@ def run_preset_benchmark(
             else None
         )
         baseline_shift_guardrails = _ShiftGuardrailCollector()
-        baseline_on_bundle_callback = _compose_bundle_callback(
+        (
+            baseline_on_bundle_callback,
+            baseline_stage_sample_collector,
+            _,
+        ) = _build_throughput_on_bundle_callback(
             diagnostics_aggregator=shift_baseline_diagnostics_aggregator,
             missingness_acceptance=shift_baseline_missingness_acceptance,
             shift_guardrails=baseline_shift_guardrails,
@@ -596,6 +634,7 @@ def run_preset_benchmark(
             device=requested_device,
             on_bundle=baseline_on_bundle_callback,
         )
+        baseline_stage_sample_collector.bundles.clear()
         baseline_dpm = float(baseline_throughput.get("datasets_per_minute", 0.0))
         current_dpm = float(result.get("datasets_per_minute", 0.0))
         runtime_degradation = degradation_percent("datasets_per_minute", current_dpm, baseline_dpm)
@@ -757,7 +796,11 @@ def run_preset_benchmark(
         baseline_noise_guardrails = _NoiseGuardrailCollector(
             expected_family_requested=str(baseline_config.noise.family)
         )
-        baseline_on_bundle_callback = _compose_bundle_callback(
+        (
+            baseline_on_bundle_callback,
+            baseline_stage_sample_collector,
+            _,
+        ) = _build_throughput_on_bundle_callback(
             diagnostics_aggregator=noise_baseline_diagnostics_aggregator,
             missingness_acceptance=noise_baseline_missingness_acceptance,
             shift_guardrails=noise_baseline_shift_guardrails,
@@ -770,6 +813,7 @@ def run_preset_benchmark(
             device=requested_device,
             on_bundle=baseline_on_bundle_callback,
         )
+        baseline_stage_sample_collector.bundles.clear()
 
         baseline_dpm = float(baseline_throughput.get("datasets_per_minute", 0.0))
         current_dpm = float(result.get("datasets_per_minute", 0.0))

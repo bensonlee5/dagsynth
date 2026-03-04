@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from dagzoo.bench.collectors import _ThroughputPressureCollector
 from dagzoo.bench.stage_metrics import (
@@ -103,3 +104,44 @@ def test_stage_metric_helpers_return_zero_for_empty_samples() -> None:
     cfg = GeneratorConfig()
     assert measure_filter_datasets_per_minute([], config=cfg) == 0.0
     assert measure_write_datasets_per_minute([], config=cfg) == 0.0
+
+
+def test_filter_stage_metric_uses_recorded_elapsed_seconds() -> None:
+    cfg = GeneratorConfig()
+    bundles = [
+        _bundle(metadata={"filter": {"elapsed_seconds": 0.25}}),
+        _bundle(metadata={"filter": {"elapsed_seconds": 0.50}}),
+    ]
+    dpm = measure_filter_datasets_per_minute(
+        bundles,
+        config=cfg,
+    )
+    assert dpm == pytest.approx(160.0)
+
+
+def test_filter_stage_metric_ignores_missing_or_invalid_elapsed_seconds() -> None:
+    cfg = GeneratorConfig()
+    dpm = measure_filter_datasets_per_minute(
+        [
+            _bundle(metadata={}),
+            _bundle(metadata={"filter": {}}),
+            _bundle(metadata={"filter": {"elapsed_seconds": "bad"}}),
+            _bundle(metadata={"filter": {"elapsed_seconds": -0.1}}),
+            _bundle(metadata={"filter": {"elapsed_seconds": 0.0}}),
+        ],
+        config=cfg,
+    )
+    assert dpm == 0.0
+
+
+def test_filter_stage_metric_uses_only_valid_timed_bundles() -> None:
+    cfg = GeneratorConfig()
+    dpm = measure_filter_datasets_per_minute(
+        [
+            _bundle(metadata={"filter": {"elapsed_seconds": 0.5}}),
+            _bundle(metadata={"filter": {"elapsed_seconds": -1.0}}),
+            _bundle(metadata={"filter": {"elapsed_seconds": 0.5}}),
+        ],
+        config=cfg,
+    )
+    assert dpm == pytest.approx(120.0)

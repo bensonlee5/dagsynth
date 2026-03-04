@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import time
 from typing import Any
 
 import torch
@@ -395,6 +396,7 @@ def _apply_filter(
     if not config.filter.enabled:
         return True, details
 
+    start = time.perf_counter()
     accepted, filter_details = apply_extra_trees_filter(
         x,
         y,
@@ -409,8 +411,10 @@ def _apply_filter(
         threshold=config.filter.threshold,
         n_jobs=config.filter.n_jobs,
     )
+    elapsed_seconds = time.perf_counter() - start
     details.update(filter_details)
     details["accepted"] = accepted
+    details["elapsed_seconds"] = float(max(0.0, elapsed_seconds))
     return accepted, details
 
 

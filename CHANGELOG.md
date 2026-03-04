@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-03-04
+
+### Fixed
+
+- Benchmark runtime guardrail control runs now execute the same per-bundle
+  callback instrumentation (stage-sample update + throughput-pressure
+  collection) as the primary throughput run, removing callback-overhead skew
+  from missingness/shift/noise runtime degradation comparisons.
+- Benchmark stage-sample bundles are now released immediately after write/filter
+  stage probes, reducing avoidable bundle/tensor retention before latency
+  collection and guardrail control runs.
+- Filter stage throughput now uses generation-time filter runtime
+  (`metadata.filter.elapsed_seconds`) captured on pre-filter tensors, avoiding
+  replay skew from postprocessing and missingness-transformed outputs.
+
 ## [0.4.8] - 2026-03-04
 
 ### Fixed
