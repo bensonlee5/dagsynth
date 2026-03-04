@@ -1,4 +1,4 @@
-# Dagsynth Functional Transforms (Canonical)
+# Dagzoo Functional Transforms (Canonical)
 
 This document is the canonical mathematical specification for the generation transforms used by `dagzoo`.
 Equations are implementation-faithful to the current runtime in `src/dagzoo`.

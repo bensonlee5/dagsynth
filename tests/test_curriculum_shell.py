@@ -71,7 +71,11 @@ def test_curriculum_shell_dry_run_range(tmp_path: Path) -> None:
     assert payload["train_rows"] == [8, 9, 10]
     assert payload["fixed_n_features"] == 8
     assert payload["total_generated_datasets"] == 0
-    assert [stage["status"] for stage in payload["stages"]] == ["dry_run", "dry_run", "dry_run"]
+    assert [stage["status"] for stage in payload["stages"]] == [
+        "dry_run",
+        "dry_run",
+        "dry_run",
+    ]
     assert all(stage["generated_datasets"] == 0 for stage in payload["stages"])
 
 
@@ -153,7 +157,9 @@ def test_curriculum_shell_no_write_smoke(tmp_path: Path) -> None:
     assert payload["stage_columns"] == [8, 9]
 
 
-def test_curriculum_shell_marks_unexecuted_stages_skipped_after_failure(tmp_path: Path) -> None:
+def test_curriculum_shell_marks_unexecuted_stages_skipped_after_failure(
+    tmp_path: Path,
+) -> None:
     config_path = tmp_path / "tiny.yaml"
     _write_tiny_config(config_path)
     out_root = tmp_path / "out"
@@ -183,7 +189,7 @@ def test_curriculum_shell_marks_unexecuted_stages_skipped_after_failure(tmp_path
         check=False,
         text=True,
         capture_output=True,
-        env={**os.environ, "CURRICULUM_DAGSYNTH_BIN": str(fake_gen)},
+        env={**os.environ, "CURRICULUM_DAGZOO_BIN": str(fake_gen)},
     )
 
     assert proc.returncode != 0
