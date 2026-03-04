@@ -18,4 +18,5 @@ repos:
         entry: uv run mdformat
         language: system
         types: [markdown]
+        exclude: ^docs/development/transforms\.md$
         pass_filenames: true
