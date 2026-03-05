@@ -77,7 +77,7 @@ flowchart LR
 Recommended first reads after this README:
 
 - [docs/how-it-works.md](docs/how-it-works.md): End-to-end runtime model and terminology.
-- [docs/development/transforms.md](docs/development/transforms.md): Formal transform math, notation, and operator definitions.
+- [docs/development/transforms.html](docs/development/transforms.html): Canonical formal transform math, notation, and operator definitions.
 
 ## Quick Start
 
@@ -137,7 +137,7 @@ dagzoo benchmark --help
 Next reads for end users:
 
 - [docs/how-it-works.md](docs/how-it-works.md): System flow and terminology.
-- [docs/development/transforms.md](docs/development/transforms.md): Formal mathematical specification of transforms.
+- [docs/development/transforms.html](docs/development/transforms.html): Canonical formal mathematical specification of transforms.
 
 Then explore features and workflows in the usage guide and feature docs:
 
