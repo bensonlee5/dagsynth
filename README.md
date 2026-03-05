@@ -77,7 +77,7 @@ flowchart LR
 Recommended first reads after this README:
 
 - [How It Works](https://bensonlee5.github.io/dagzoo/docs/how-it-works/): End-to-end runtime model and terminology.
-- [Transforms (Canonical Math)](https://bensonlee5.github.io/dagzoo/docs/transforms/): Canonical formal transform math, notation, and operator definitions.
+- [Transforms (Math Reference)](https://bensonlee5.github.io/dagzoo/docs/transforms/): Generation logic - formal transform math, notation, and operator definitions.
 
 ## Quick Start
 
@@ -150,7 +150,7 @@ Primary docs site:
 Next reads for end users:
 
 - [How It Works](https://bensonlee5.github.io/dagzoo/docs/how-it-works/): System flow and terminology.
-- [Transforms (Canonical Math)](https://bensonlee5.github.io/dagzoo/docs/transforms/): Canonical formal mathematical specification of transforms.
+- [Transforms (Math Reference)](https://bensonlee5.github.io/dagzoo/docs/transforms/): Formal transform math, notation, and operator definitions.
 
 Then explore features and workflows in the usage guide and feature docs:
 

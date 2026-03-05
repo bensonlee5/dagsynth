@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Lightweight link checker for docs Markdown/HTML sources.
+"""Link checker for source docs and generated Hugo content.
 
 Checks local links in:
 - `docs/**`
 - `site/content/**`
-- `site/static/canonical/**`
+- `site/.generated/content/**`
+- `site/.generated/static/canonical/**`
 
-It validates file targets and Hugo-style route links used by the generated docs
-site (for example `/docs/usage-guide/` and `/canonical/transforms.html`).
+Validation includes:
+- file/route existence checks for local links
+- strict guard for authored `site/content/**` links:
+  internal root-absolute links must include the configured Hugo base path
+  (for this repo: `/dagzoo/...`)
 """
 
 from __future__ import annotations
@@ -17,8 +21,11 @@ import re
 import sys
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SITE_ROOT = REPO_ROOT / "site"
+SITE_CONTENT_ROOT = SITE_ROOT / "content"
 
 DEFAULT_ROOTS = [
     "docs",
@@ -27,8 +34,14 @@ DEFAULT_ROOTS = [
     "site/.generated/static/canonical",
 ]
 
+# Markdown inline links/images: [label](target) / ![alt](target)
 MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
-HTML_LINK_RE = re.compile(r"(?:href|src)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+# HTML href/src values (quoted or unquoted)
+HTML_LINK_RE = re.compile(
+    r"(?:\bhref|\bsrc)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))",
+    re.IGNORECASE,
+)
 
 SKIP_PREFIXES = (
     "http://",
@@ -37,7 +50,26 @@ SKIP_PREFIXES = (
     "tel:",
     "javascript:",
     "data:",
+    "//",
 )
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_base_path() -> str:
+    """Extract URL path prefix from Hugo baseURL config."""
+    text = _read_text(SITE_ROOT / "hugo.yaml")
+    match = re.search(r"^baseURL:\s*(.+)$", text, re.MULTILINE)
+    if not match:
+        return ""
+    parsed = urlparse(match.group(1).strip())
+    path = parsed.path.rstrip("/")
+    return "" if path == "/" else path
+
+
+BASE_PATH = _read_base_path()
 
 
 def _iter_doc_files(root: Path) -> Iterable[Path]:
@@ -52,10 +84,24 @@ def _normalize_target(raw_target: str) -> str:
     target = raw_target.strip()
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1].strip()
-    if " " in target and not target.startswith("http"):
+    if target.startswith(("{{<", "{{%")) and target.endswith((">}}", "%}}")):
+        return target
+    if " " in target and not target.startswith(("http://", "https://")):
         # Handles inline title form: path "title"
         target = target.split(" ", 1)[0]
     return target
+
+
+def _strip_base_path(target: str) -> str | None:
+    """Map '/<base>/x' -> '/x'. Return None when target doesn't include base prefix."""
+    if not BASE_PATH:
+        return target
+    if target == BASE_PATH or target == f"{BASE_PATH}/":
+        return "/"
+    prefix = f"{BASE_PATH}/"
+    if target.startswith(prefix):
+        return target[len(BASE_PATH) :]
+    return None
 
 
 def _route_candidates(route: str) -> list[Path]:
@@ -88,9 +134,33 @@ def _route_candidates(route: str) -> list[Path]:
     return candidates
 
 
+def _is_authored_content(path: Path) -> bool:
+    try:
+        path.relative_to(SITE_CONTENT_ROOT)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_root_absolute_policy_violation(source: Path, target: str) -> bool:
+    if not _is_authored_content(source):
+        return False
+    if not BASE_PATH:
+        return False
+    if not target.startswith("/"):
+        return False
+
+    # In authored site content, forbid internal root-absolute links
+    # that ignore the configured base path.
+    return not (target == BASE_PATH or target.startswith(f"{BASE_PATH}/"))
+
+
 def _exists_target(source: Path, target: str) -> bool:
     if target.startswith("/"):
-        return any(candidate.exists() for candidate in _route_candidates(target))
+        normalized = _strip_base_path(target)
+        if normalized is None:
+            normalized = target
+        return any(candidate.exists() for candidate in _route_candidates(normalized))
 
     target_path = source.parent / target
     if target_path.exists():
@@ -110,8 +180,13 @@ def _exists_target(source: Path, target: str) -> bool:
 
 
 def _collect_targets(line: str, suffix: str) -> list[str]:
-    regex = MD_LINK_RE if suffix == ".md" else HTML_LINK_RE
-    return [match.group(1) for match in regex.finditer(line)]
+    if suffix == ".md":
+        return [match.group(1) for match in MD_LINK_RE.finditer(line)]
+
+    targets: list[str] = []
+    for match in HTML_LINK_RE.finditer(line):
+        targets.append(match.group(1) or match.group(2) or match.group(3) or "")
+    return targets
 
 
 def _scan_file(path: Path) -> list[tuple[int, str]]:
@@ -124,9 +199,24 @@ def _scan_file(path: Path) -> list[tuple[int, str]]:
             target = _normalize_target(raw_target)
             if not target or target.startswith(SKIP_PREFIXES) or target.startswith("#"):
                 continue
+            if target.startswith(("{{<", "{{%")):
+                # Hugo shortcode-generated links (e.g. relref) are resolved at render time.
+                continue
 
-            target_path = target.split("#", 1)[0]
+            target_path = target.split("#", 1)[0].split("?", 1)[0]
             if not target_path:
+                continue
+
+            if _is_root_absolute_policy_violation(path, target_path):
+                errors.append(
+                    (
+                        lineno,
+                        (
+                            f"{target} (root-absolute internal links in site/content "
+                            f"must include base path '{BASE_PATH}/' or use relref)"
+                        ),
+                    )
+                )
                 continue
 
             if not _exists_target(path, target_path):

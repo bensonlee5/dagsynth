@@ -77,10 +77,10 @@ WRAPPER_PAGES: dict[str, tuple[str, int, str, str]] = {
         "End-to-end runtime behavior, core concepts, and pipeline walkthrough.",
     ),
     "transforms.md": (
-        "Transforms (Canonical Math)",
+        "Transforms (Math Reference)",
         20,
         "/canonical/transforms.html",
-        "Canonical mathematical specification for generation transforms.",
+        "Mathematical reference for generation transforms.",
     ),
 }
 

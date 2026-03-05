@@ -32,6 +32,8 @@ These wrappers run `dagzoo` from the repo root (typically via `uv run`).
   - Sync canonical docs from `docs/` into generated Hugo inputs under `site/.generated/` (single-source docs model).
 - `scripts/docs/check_links.py [roots...]`
   - Validate local Markdown/HTML links across source docs and generated site content.
+- `scripts/docs/check_built_output_links.py [output_dir]`
+  - Validate internal links in built Hugo output and enforce base-path-safe absolute links.
 
 ## Examples
 
@@ -55,6 +57,7 @@ These wrappers run `dagzoo` from the repo root (typically via `uv run`).
 ./.venv/bin/python scripts/docs/sync_hugo_content.py
 ./.venv/bin/python scripts/docs/sync_hugo_content.py --check
 ./.venv/bin/python scripts/docs/check_links.py
+./.venv/bin/python scripts/docs/check_built_output_links.py public
 uv run dagzoo generate --config configs/preset_diagnostics_on.yaml --num-datasets 25 --diagnostics --out data/run_diag
 uv run dagzoo generate --config configs/default.yaml --rows 1024 --num-datasets 25 --out data/run_rows_1024
 uv run dagzoo generate --config configs/default.yaml --rows 400..60000 --num-datasets 50 --no-dataset-write
