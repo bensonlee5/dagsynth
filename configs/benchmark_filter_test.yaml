@@ -1,0 +1,40 @@
+seed: 53
+
+dataset:
+  task: classification
+  n_train: 512
+  n_test: 128
+  n_features_min: 32
+  n_features_max: 64
+  n_classes_min: 2
+  n_classes_max: 2
+
+graph:
+  n_nodes_min: 2
+  n_nodes_max: 5
+
+runtime:
+  device: cpu
+
+output:
+  out_dir: benchmarks/results/test_filter
+  shard_size: 16
+  compression: zstd
+
+benchmark:
+  preset_name: custom
+  suite: standard
+  num_datasets: 20
+  warmup_datasets: 2
+  warn_threshold_pct: 10.0
+  fail_threshold_pct: 20.0
+  collect_memory: false
+  latency_num_samples: 5
+
+filter:
+  enabled: true
+  n_estimators: 10
+  max_depth: 4
+  threshold: 0.05
+  max_attempts: 20
+  n_jobs: -1

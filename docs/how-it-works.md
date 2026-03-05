@@ -137,10 +137,10 @@ Notable runtime behavior:
 
 ## Mathematical Foundations
 
-Formal equations are canonicalized in [development/transforms.md](development/transforms.md).
+Formal equations are canonicalized in [development/transforms.html](development/transforms.html).
 
-- Canonical equations + implementation map: [development/transforms.md](development/transforms.md)
-- Shared notation and symbol definitions: [development/transforms.md#notation-and-symbols](development/transforms.md#notation-and-symbols)
+- Canonical equations + implementation map: [development/transforms.html](development/transforms.html)
+- Shared notation and symbol definitions: [development/transforms.html#notation-and-symbols](development/transforms.html#notation-and-symbols)
 
 Quick index to the formal sections:
 
@@ -338,7 +338,7 @@ These are related but distinct runtime surfaces.
 
 ## Where to go next
 
-- Canonical transform equations and symbol definitions: `docs/development/transforms.md`
+- Canonical transform equations and symbol definitions: `docs/development/transforms.html`
 - Output schema and metadata contract: `docs/output-format.md`
 - Config precedence and trace details: `docs/config-resolution.md`
 - CLI workflow examples: `docs/usage-guide.md`

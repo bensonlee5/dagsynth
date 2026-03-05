@@ -24,6 +24,8 @@ These wrappers run `dagzoo` from the repo root (typically via `uv run`).
   - Runs `dagzoo benchmark` with suite/preset selection and optional diagnostics.
 - `scripts/benchmark-smoke.sh [preset] [diagnostics] [diagnostics_out_dir]`
   - Quick smoke benchmark for a single preset with optional diagnostics.
+- `scripts/benchmark-issue148-cuda-desktop.sh [options]`
+  - Runs the issue #148 prioritization benchmark/profiling matrix for CUDA desktop hosts and writes a verdict report under a `/tmp/issue148_cuda_desktop_*` artifact root.
 - `scripts/bump-version.sh <major|minor|patch> [--dry-run] [--tag]`
   - Bump the semver version in `pyproject.toml`. Use `--tag` to commit and create a git tag.
 
@@ -45,6 +47,7 @@ These wrappers run `dagzoo` from the repo root (typically via `uv run`).
 ./scripts/benchmark-smoke.sh cpu on benchmarks/results/smoke_diag
 ./scripts/benchmark-suite.sh standard all benchmarks/results/latest
 ./scripts/benchmark-suite.sh smoke cpu benchmarks/results/smoke_cpu_diag on
+./scripts/benchmark-issue148-cuda-desktop.sh --reps 3 --suite standard
 uv run dagzoo generate --config configs/preset_diagnostics_on.yaml --num-datasets 25 --diagnostics --out data/run_diag
 uv run dagzoo generate --config configs/default.yaml --rows 1024 --num-datasets 25 --out data/run_rows_1024
 uv run dagzoo generate --config configs/default.yaml --rows 400..60000 --num-datasets 50 --no-dataset-write
