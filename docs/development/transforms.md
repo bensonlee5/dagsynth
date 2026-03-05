@@ -410,7 +410,7 @@ Number of centers: $K = \mathsf{clamp}(\lfloor \mathsf{LogUniform}(2, 128) \rflo
 
 Sample centers from rows, compute $L_p$-style distances (with sampled $p \sim \mathsf{LogUniform}(0.5, 4)$), assign nearest center, then apply linear map:
 
-$$k^*(i) = \arg\min_k \sum_q |X_{iq} - c_{kq}|^p, \quad Y = \mathsf{Linear}(c_{k^*(i)})$$
+$$k^{\ast}(i) = \arg\min_k \sum_q |X_{iq} - c_{kq}|^p, \quad Y = \mathsf{Linear}(c_{k^{\ast}(i)})$$
 
 ### 5.6 GP/RFF approximation
 
