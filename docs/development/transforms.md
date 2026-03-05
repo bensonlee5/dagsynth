@@ -17,7 +17,7 @@ Equations are implementation-faithful to the current runtime in `src/dagzoo`.
 | $n$                                  | Number of rows sampled for one dataset attempt ($n = n_{\text{train}} + n_{\text{test}}$).                   |
 | $G \in {0,1}^{N \times N}$         | DAG adjacency matrix with convention `G[src, dst]`.                                                              |
 | $i, j$                               | Node indices in ${0,\dots,N-1}$.                                                                                |
-| $\operatorname{pa}(j)$              | Parent index set for node $j$: ${i : G_{ij}=1}$.                                                                |
+| $\mathsf{pa}(j)$              | Parent index set for node $j$: ${i : G_{ij}=1}$.                                                                |
 | $\sigma(x)$                         | Logistic sigmoid $(1 + e^{-x})^{-1}$.                                                                            |
 | $A, B_i, C_j$                        | DAG latent logits: $A$ is global edge propensity, $B_i$ is source-node effect, $C_j$ is destination-node effect. |
 | $\beta_{\text{edge}}$             | Edge logit bias applied in DAG sampling.                                                                         |
@@ -30,7 +30,7 @@ Equations are implementation-faithful to the current runtime in `src/dagzoo`.
 | $\mathcal{F}$                       | Ordered mechanism family set: `(nn, tree, discretization, gp, linear, quadratic, em, product)`.                  |
 | $Z_j \in \mathbb{R}^{n \times d}$ | Node-$j$ latent tensor after node pipeline transforms.                                                           |
 | $d_{\text{req}}$                   | Required latent width from converter specs: $\sum_s \max(1, d_s)$.                                             |
-| $d_{\text{extra}}$                 | Additional sampled latent width: $\max(1, \lfloor \operatorname{LogUniform}(1,32) \rfloor)$.                 |
+| $d_{\text{extra}}$                 | Additional sampled latent width: $\max(1, \lfloor \mathsf{LogUniform}(1,32) \rfloor)$.                 |
 | $d$                                  | Node latent width used for mechanism output: $d = d_{\text{req}} + d_{\text{extra}}$.                        |
 | $d_s$                                | Width requested by converter spec $s$ before max-with-1 clamp.                                                   |
 | $w \in \mathbb{R}^d$               | Positive random weight vector (normalized to sum 1, then permuted).                                              |
@@ -41,7 +41,7 @@ Equations are implementation-faithful to the current runtime in `src/dagzoo`.
 | $\gamma_{\text{var}}$             | Noise variance multiplier: $\gamma_{\text{var}} = \gamma_\sigma^2$.                                        |
 | $\mathcal{D}_{\text{noise}}$      | Active runtime noise family (`gaussian`, `laplace`, or `student_t` after runtime selection).                     |
 | $C$                                  | Categorical cardinality for a converter target.                                                                  |
-| $\operatorname{LSE}$                | LogSumExp along parent axis.                                                                                     |
+| $\mathsf{LSE}$                | LogSumExp along parent axis.                                                                                     |
 | $T$                                  | Number of trees in a sampled tree ensemble.                                                                      |
 | $P$                                  | Number of random features in GP approximation (fixed at 256).                                                    |
 | $s_j$                                | Final node-level multiplicative latent scale.                                                                    |
@@ -51,31 +51,31 @@ Equations are implementation-faithful to the current runtime in `src/dagzoo`.
 
 | Operator                                 | Definition                                                                                 | Input/Output Shape Semantics                                                       | Where Used                        | Output Impact                                                                          |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
-| $\operatorname{pa}(j)$                  | Parent index set of node $j$: ${i: G_{ij}=1}$.                                            | Input: scalar node index $j$ and adjacency $G$; Output: set of parent indices.     | Section 1 and Section 4.          | Determines which upstream node tensors are composed for node $j$.                      |
-| $\operatorname{Agg}(Y_1,\dots,Y_k)$    | Multi-parent aggregation operator sampled from ${\sum,\prod,\max,\operatorname{LSE}}$. | Input: parent-aligned tensors $(n \times d)$; Output: one $(n \times d)$ tensor. | Section 4.2.                      | Changes how parent effects combine before downstream mechanism/converter steps.        |
-| $\operatorname{LSE}(Y_1,\dots,Y_k)$    | LogSumExp over parent axis: $\log\sum_r e^{Y_r}$.                                        | Input: stacked parent outputs; Output: aggregated tensor $(n \times d)$.          | Section 4.2.                      | Smoothly emphasizes larger parent responses while retaining contributions from others. |
+| $\mathsf{pa}(j)$                  | Parent index set of node $j$: ${i: G_{ij}=1}$.                                            | Input: scalar node index $j$ and adjacency $G$; Output: set of parent indices.     | Section 1 and Section 4.          | Determines which upstream node tensors are composed for node $j$.                      |
+| $\mathsf{Agg}(Y_1,\dots,Y_k)$    | Multi-parent aggregation operator sampled from ${\sum,\prod,\max,\mathsf{LSE}}$. | Input: parent-aligned tensors $(n \times d)$; Output: one $(n \times d)$ tensor. | Section 4.2.                      | Changes how parent effects combine before downstream mechanism/converter steps.        |
+| $\mathsf{LSE}(Y_1,\dots,Y_k)$    | LogSumExp over parent axis: $\log\sum_r e^{Y_r}$.                                        | Input: stacked parent outputs; Output: aggregated tensor $(n \times d)$.          | Section 4.2.                      | Smoothly emphasizes larger parent responses while retaining contributions from others. |
 | $\arg\min_k$                           | Index of minimum value over candidate index $k$.                                           | Input: candidate scores/distances; Output: integer index per row.                  | Sections 5.5 and 6.2.             | Produces center assignments that drive discrete or categorical structure.              |
 | $\sum,\prod,\max$                     | Sum/product/max reductions over specified axis.                                            | Input: tensors with reduction axis; Output: reduced tensor.                        | Sections 4.2, 4.3, 5.2, 5.4, 5.7. | Controls interaction form (additive, multiplicative, extremal) in latent construction. |
-| $\operatorname{Converter}_s(V_s)$      | Converter function for spec $s$, returning transformed slice and extracted value.          | Input: latent view $V_s$; Output: $(X'_s, v_s)$.                                  | Section 4.3 and Section 6.        | Directly emits feature/target values that become final `X` and `y`.                    |
-| $\operatorname{Linear}(\cdot)$         | Random linear map to the configured output width.                                          | Input: matrix $(n \times d_{in})$; Output: matrix $(n \times d_{out})$.        | Sections 5.5 and 5.7.             | Projects intermediate representations into node latent channels used by converters.    |
-| $\operatorname{leaf}(X)$                | Oblivious-tree leaf index determined by sampled splits/thresholds.                         | Input: row vector(s) and tree splits; Output: leaf id(s).                          | Section 5.4.                      | Selects leaf values that define piecewise latent behavior.                             |
-| $\operatorname{logit}_{ik}$            | Pre-softmax score for row $i$, component/class $k$.                                        | Input: row-to-center distances and scale terms; Output: score matrix.              | Section 5.7.                      | Determines assignment probabilities that shape EM-style latent outputs.                |
-| $\operatorname{softmax}_k(\cdot)$     | Normalize exponentiated logits over index $k$ to probabilities.                            | Input: logits per row; Output: probabilities summing to 1 across $k$.              | Sections 5.7 and 6.2.             | Converts scores into stochastic assignments that drive categorical/mixture behavior.   |
-| $\operatorname{sample\_noise}(\cdot)$   | Noise sampler with configurable family and scale.                                          | Input: shape + family params; Output: random tensor with requested shape.          | Section 7.1.                      | Injects stochastic variation into points, matrices, weights, and node outputs.         |
-| $\operatorname{clip}(x,a,b)$            | Clamp each entry of $x$ into $[a,b]$.                                                      | Input: tensor; Output: tensor with same shape.                                     | Section 4.3.                      | Prevents extreme values from destabilizing downstream standardization/conversion.      |
-| $\operatorname{nan\_to\_num}(x)$          | Replace NaN/Inf entries with finite values.                                                | Input: tensor; Output: finite tensor with same shape.                              | Section 4.3.                      | Stabilizes latent values before weighting and conversion.                              |
-| $\operatorname{standardize}(x)$         | Column-wise centering and scaling to unit variance (with epsilon guard).                   | Input: matrix $(n \times d)$; Output: matrix $(n \times d)$.                     | Sections 4.3 and 6.2.             | Controls scale so mechanism outputs/converters are numerically comparable.             |
-| $\operatorname{Cauchy}(0,1)$            | Standard Cauchy distribution.                                                              | Input: location/scale; Output: scalar or tensor draws.                             | Section 1.                        | Provides heavy-tailed latent logits for heterogeneous graph connectivity.              |
-| $\operatorname{Bernoulli}(p)$           | Bernoulli draw with success probability $p$.                                               | Input: probability $p \in [0,1]$; Output: binary draw.                            | Section 1.                        | Converts edge probabilities into realized adjacency $G$.                               |
-| $\operatorname{Uniform}(a,b)$           | Continuous uniform distribution on $[a,b]$.                                                | Input: bounds $(a,b)$; Output: scalar/tensor draws.                                | Sections 4.1 and 7.1.             | Drives root sampling and inverse-CDF noise construction.                               |
-| $\operatorname{UniformInt}{m,\dots,n}$ | Discrete uniform integer sampler on inclusive range.                                       | Input: integer bounds; Output: integer draws.                                      | Section 5.4.                      | Samples tree depths and related discrete structure choices.                            |
-| $\operatorname{LogUniform}(a,b)$        | Distribution with $\log x$ uniform on $[\log a,\log b]$.                                | Input: positive bounds $(a,b)$; Output: positive scalar draws.                     | Sections 4.3, 5.5, 6.1, 6.2.      | Controls scales/exponents over multiple orders of magnitude.                           |
-| $\operatorname{Categorical}(p)$         | Discrete draw from class probabilities $p$.                                                | Input: probability vector per row; Output: class/label index.                      | Section 6.2.                      | Emits categorical feature/target labels that populate final outputs.                   |
+| $\mathsf{Converter}_s(V_s)$      | Converter function for spec $s$, returning transformed slice and extracted value.          | Input: latent view $V_s$; Output: $(X'_s, v_s)$.                                  | Section 4.3 and Section 6.        | Directly emits feature/target values that become final `X` and `y`.                    |
+| $\mathsf{Linear}(\cdot)$         | Random linear map to the configured output width.                                          | Input: matrix $(n \times d_{in})$; Output: matrix $(n \times d_{out})$.        | Sections 5.5 and 5.7.             | Projects intermediate representations into node latent channels used by converters.    |
+| $\mathsf{leaf}(X)$                | Oblivious-tree leaf index determined by sampled splits/thresholds.                         | Input: row vector(s) and tree splits; Output: leaf id(s).                          | Section 5.4.                      | Selects leaf values that define piecewise latent behavior.                             |
+| $\mathsf{logit}_{ik}$            | Pre-softmax score for row $i$, component/class $k$.                                        | Input: row-to-center distances and scale terms; Output: score matrix.              | Section 5.7.                      | Determines assignment probabilities that shape EM-style latent outputs.                |
+| $\mathsf{softmax}_k(\cdot)$     | Normalize exponentiated logits over index $k$ to probabilities.                            | Input: logits per row; Output: probabilities summing to 1 across $k$.              | Sections 5.7 and 6.2.             | Converts scores into stochastic assignments that drive categorical/mixture behavior.   |
+| $\mathsf{sample\_noise}(\cdot)$   | Noise sampler with configurable family and scale.                                          | Input: shape + family params; Output: random tensor with requested shape.          | Section 7.1.                      | Injects stochastic variation into points, matrices, weights, and node outputs.         |
+| $\mathsf{clip}(x,a,b)$            | Clamp each entry of $x$ into $[a,b]$.                                                      | Input: tensor; Output: tensor with same shape.                                     | Section 4.3.                      | Prevents extreme values from destabilizing downstream standardization/conversion.      |
+| $\mathsf{nan\_to\_num}(x)$          | Replace NaN/Inf entries with finite values.                                                | Input: tensor; Output: finite tensor with same shape.                              | Section 4.3.                      | Stabilizes latent values before weighting and conversion.                              |
+| $\mathsf{standardize}(x)$         | Column-wise centering and scaling to unit variance (with epsilon guard).                   | Input: matrix $(n \times d)$; Output: matrix $(n \times d)$.                     | Sections 4.3 and 6.2.             | Controls scale so mechanism outputs/converters are numerically comparable.             |
+| $\mathsf{Cauchy}(0,1)$            | Standard Cauchy distribution.                                                              | Input: location/scale; Output: scalar or tensor draws.                             | Section 1.                        | Provides heavy-tailed latent logits for heterogeneous graph connectivity.              |
+| $\mathsf{Bernoulli}(p)$           | Bernoulli draw with success probability $p$.                                               | Input: probability $p \in [0,1]$; Output: binary draw.                            | Section 1.                        | Converts edge probabilities into realized adjacency $G$.                               |
+| $\mathsf{Uniform}(a,b)$           | Continuous uniform distribution on $[a,b]$.                                                | Input: bounds $(a,b)$; Output: scalar/tensor draws.                                | Sections 4.1 and 7.1.             | Drives root sampling and inverse-CDF noise construction.                               |
+| $\mathsf{UniformInt}\{m,\dots,n\}$ | Discrete uniform integer sampler on inclusive range.                                       | Input: integer bounds; Output: integer draws.                                      | Section 5.4.                      | Samples tree depths and related discrete structure choices.                            |
+| $\mathsf{LogUniform}(a,b)$        | Distribution with $\log x$ uniform on $[\log a,\log b]$.                                | Input: positive bounds $(a,b)$; Output: positive scalar draws.                     | Sections 4.3, 5.5, 6.1, 6.2.      | Controls scales/exponents over multiple orders of magnitude.                           |
+| $\mathsf{Categorical}(p)$         | Discrete draw from class probabilities $p$.                                                | Input: probability vector per row; Output: class/label index.                      | Section 6.2.                      | Emits categorical feature/target labels that populate final outputs.                   |
 
 Conventions:
 
 - Unless noted otherwise, operations are row-wise over batch dimension $n$ and preserve row count.
-- In $\operatorname{Agg}$, the aggregation kind is sampled once per multi-parent composition call and then applied elementwise across parents.
+- In $\mathsf{Agg}$, the aggregation kind is sampled once per multi-parent composition call and then applied elementwise across parents.
 - In noise sampling, `mixture` in Section 7.1 samples component assignment per element, while Section 7.2 resolves one family per dataset attempt before downstream draws.
 
 ### End-to-End Primary Variable Map
@@ -93,25 +93,25 @@ $$\left(\beta_{\text{edge}}, A, B_i, C_j\right) \rightarrow G$$
 $$\left(\lambda_f, \tau, \tilde{\ell}_f\right) \rightarrow \pi_f$$
 $$\text{noise\_spec} \rightarrow \epsilon_{\text{family}} \rightarrow \epsilon$$
 $$\left(G, \pi_f, \epsilon, Z_{\text{base}}, Z_{\text{comp}}, Y, Z_{\text{post}}\right) \rightarrow {Z_j}_{j=0}^{N-1}$$
-$$\left({Z_j}, \operatorname{Converter}_s\right) \rightarrow {(X'_s, v_s)}_s \rightarrow (X, y)$$
+$$\left({Z_j}, \mathsf{Converter}_s\right) \rightarrow {(X'_s, v_s)}_s \rightarrow (X, y)$$
 $$\left(G, \pi_f, \text{noise\_spec}, s_{\text{shift}}\right) \rightarrow \text{metadata}$$
 $$\mathcal{O} = (X, y, \text{metadata})$$
 
 Operator role notes:
 
-- $\operatorname{Agg}$ is the bridge from multiple parent tensors to $Z_{\text{comp}}$ (Section 4.2).
-- $\operatorname{Converter}_s$ is the bridge from latent state to emitted observable values (Section 4.3 and Section 6).
+- $\mathsf{Agg}$ is the bridge from multiple parent tensors to $Z_{\text{comp}}$ (Section 4.2).
+- $\mathsf{Converter}_s$ is the bridge from latent state to emitted observable values (Section 4.3 and Section 6).
 
 Primary variable crosswalk:
 
 | Section                             | Primary Variable                      | Immediate Inputs                                                          | Immediate Output                                                              | Contribution to $\mathcal{O}$                                                                       |
 | ----------------------------------- | ------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 1. DAG Structure Sampling           | $G$                                   | $A, B_i, C_j, \beta_{\text{edge}}$                                     | Parent sets $\operatorname{pa}(j)$                                           | Controls execution order and parent flow that shapes $(X,y)$ and graph metadata.                     |
+| 1. DAG Structure Sampling           | $G$                                   | $A, B_i, C_j, \beta_{\text{edge}}$                                     | Parent sets $\mathsf{pa}(j)$                                           | Controls execution order and parent flow that shapes $(X,y)$ and graph metadata.                     |
 | 2. Shift Runtime Parameters         | $s_{\text{shift}}$                  | Resolved shift config                                                     | $(\beta_{\text{edge}}, \tau, \gamma_{\sigma}, \gamma_{\text{var}})$ | Couples drift controls into graph density, mechanism usage, and noise magnitude in outputs/metadata. |
 | 3. Mechanism Family Sampling        | $\pi_f$                              | $\lambda_f, \tau, \tilde{\ell}_f, \mathcal{F}$                      | Family draw distribution per mechanism call                                   | Determines which transform family generates latent structure before conversion to $(X,y)$.           |
 | 4. Node Generation Pipeline         | $Z_j$                                 | Parent/root inputs, width terms, sampled mechanisms, weights, scale       | Node-level latent tensor                                                      | Shared latent state from which converter slices emit observed features/targets.                      |
 | 4.1 Root-node base sampling         | $Z_{\text{base}}$                   | Base-kind selection, distribution params, $\mathcal{D}_{\text{noise}}$ | Initial latent input for root mechanisms                                      | Seeds root latent variability that propagates to downstream nodes and final observables.             |
-| 4.2 Parent composition              | $Z_{\text{comp}}$                   | Parent tensors, concat/aggregation path, $\operatorname{Agg}$            | Composed latent input for node transform                                      | Defines multi-parent interaction pattern that feeds mechanism outputs used in $(X,y)$.               |
+| 4.2 Parent composition              | $Z_{\text{comp}}$                   | Parent tensors, concat/aggregation path, $\mathsf{Agg}$            | Composed latent input for node transform                                      | Defines multi-parent interaction pattern that feeds mechanism outputs used in $(X,y)$.               |
 | 4.3 Post-processing and slicing     | $Z_{\text{post}}$                   | Raw latent, sanitize/standardize, weighting, padding, slice writeback     | Converter-ready latent state                                                  | Directly feeds converter extraction and latent feedback that determines emitted values.              |
 | 5. Mechanism Definitions            | $Y = f(X)$                            | Mechanism parameters and input $X$                                        | Mechanism output tensor                                                       | Family-level nonlinear map that populates latent channels later converted to outputs.                |
 | 5.1 Linear                          | $Y_{\text{linear}}$                 | $X, M$                                                                    | Linear latent channels                                                        | Baseline low-complexity latent effects converted into numeric/categorical outputs.                   |
@@ -133,13 +133,13 @@ Primary variable crosswalk:
 
 **Primary Variable:** $G$ (DAG adjacency matrix).<br>
 **Dependency Map:** $A, B_i, C_j, \beta_{\text{edge}} \rightarrow p_{ij} \rightarrow G_{ij}$.<br>
-**Path to Final Output:** $G \rightarrow \operatorname{pa}(j)$ for each node -> node execution order and parent inputs -> latent tensors -> emitted `X`, `y`, and graph metadata.<br>
+**Path to Final Output:** $G \rightarrow \mathsf{pa}(j)$ for each node -> node execution order and parent inputs -> latent tensors -> emitted `X`, `y`, and graph metadata.<br>
 
 **Rationale.** The latent-logit Cauchy construction yields heterogeneous edge probabilities while strict upper-triangular masking guarantees acyclicity. Writing $p_{ij}$ and $\beta_{\text{edge}}$ explicitly keeps graph-drift behavior inspectable and testable.
 
 `sample_dag` draws a strict upper-triangular adjacency matrix.
 
-$$A \sim \operatorname{Cauchy}(0,1), \quad B_i \sim \operatorname{Cauchy}(0,1), \quad C_j \sim \operatorname{Cauchy}(0,1)$$
+$$A \sim \mathsf{Cauchy}(0,1), \quad B_i \sim \mathsf{Cauchy}(0,1), \quad C_j \sim \mathsf{Cauchy}(0,1)$$
 
 Interpretation:
 
@@ -149,7 +149,7 @@ Interpretation:
 
 For each $i < j$:
 
-$$p_{ij} = \sigma(A + B_i + C_j + \beta_{\text{edge}}), \quad G_{ij} \sim \operatorname{Bernoulli}(p_{ij})$$
+$$p_{ij} = \sigma(A + B_i + C_j + \beta_{\text{edge}}), \quad G_{ij} \sim \mathsf{Bernoulli}(p_{ij})$$
 
 and for $i \ge j$, $G_{ij}=0$.
 
@@ -241,12 +241,12 @@ Implementation note: `product` is only valid when at least one of its component 
 
 **Rationale.** Multiple root base geometries increase latent diversity before any parent effects exist. Passing every sampled base through $f(\cdot)$ keeps root and non-root nodes aligned under the same mechanism-family controls.
 
-For root nodes ($\operatorname{pa}(j) = \varnothing$), one base kind is chosen uniformly from:
+For root nodes ($\mathsf{pa}(j) = \varnothing$), one base kind is chosen uniformly from:
 
 1. `normal`: $Z_{\text{base}} \sim \mathcal{D}_{\text{noise}}^{n \times d}$.
-1. `uniform`: elementwise $\operatorname{Uniform}(-1,1)$.
+1. `uniform`: elementwise $\mathsf{Uniform}(-1,1)$.
 1. `unit_ball`: for each row,
-   $$v \sim \mathcal{N}(0, I_d), \quad u \sim \operatorname{Uniform}(0,1), \quad z = \frac{v}{|v|_2} u^{1/d}$$
+   $$v \sim \mathcal{N}(0, I_d), \quad u \sim \mathsf{Uniform}(0,1), \quad z = \frac{v}{|v|_2} u^{1/d}$$
 1. `normal_cov`:
    $$E \sim \mathcal{D}_{\text{noise}}^{n \times d}, \quad A \sim \mathcal{D}_{\text{noise}}^{d \times d}, \quad Z_{\text{base}} = (E \odot w^\top) A^\top$$
    where $w$ is sampled by `sample_random_weights` (a positive, sum-to-one, randomly permuted weight vector following a noisy power-law decay).
@@ -258,21 +258,21 @@ $$Z_j = f(Z_{\text{base}})$$
 ### 4.2 Parent composition (non-root nodes)
 
 **Primary Variable:** $Z_{\text{comp}}$ (composed parent latent input to node transform).<br>
-**Dependency Map:** parent tensors ${Z_{p_r}}$ + composition path choice + aggregation operator $\operatorname{Agg} \rightarrow Z_{\text{comp}}$.<br>
+**Dependency Map:** parent tensors ${Z_{p_r}}$ + composition path choice + aggregation operator $\mathsf{Agg} \rightarrow Z_{\text{comp}}$.<br>
 **Path to Final Output:** $Z_{\text{comp}} \rightarrow$ node mechanism output -> updated $Z_j$ -> converter extraction -> `X`/`y`.<br>
 
 **Rationale.** The 50/50 concat-versus-aggregation branch injects both feature-mixing and commutative interaction patterns. This broadens functional regimes without changing the node interface contract.
 
-If $|\operatorname{pa}(j)|=1$, apply one random mechanism to that parent tensor.
+If $|\mathsf{pa}(j)|=1$, apply one random mechanism to that parent tensor.
 
-If $|\operatorname{pa}(j)| \ge 2$, choose one path with equal probability:
+If $|\mathsf{pa}(j)| \ge 2$, choose one path with equal probability:
 
 1. **Concatenation path**:
    $$Z_{\text{in}} = [Z_{p_1} | Z_{p_2} | \dots | Z_{p_k}], \quad Z_j = f(Z_{\text{in}})$$
 1. **Aggregation path**:
-   $$Y_r = f_r(Z_{p_r}), \quad Z_j = \operatorname{Agg}(Y_1, \dots, Y_k)$$
-   with $\operatorname{Agg}$ sampled uniformly from:
-   $$\sum_r Y_r, \quad \prod_r Y_r, \quad \max_r Y_r, \quad \operatorname{LSE}(Y_1, \dots, Y_k)$$
+   $$Y_r = f_r(Z_{p_r}), \quad Z_j = \mathsf{Agg}(Y_1, \dots, Y_k)$$
+   with $\mathsf{Agg}$ sampled uniformly from:
+   $$\sum_r Y_r, \quad \prod_r Y_r, \quad \max_r Y_r, \quad \mathsf{LSE}(Y_1, \dots, Y_k)$$
 
 Concatenation semantics (implementation-faithful):
 
@@ -297,12 +297,12 @@ Example:
 
 For each node, converter specs define required width:
 
-$$d_{\text{req}} = \sum_s \max(1, d_s), \quad d = d_{\text{req}} + d_{\text{extra}}, \quad d_{\text{extra}} = \max(1, \lfloor \operatorname{LogUniform}(1, 32) \rfloor)$$
+$$d_{\text{req}} = \sum_s \max(1, d_s), \quad d = d_{\text{req}} + d_{\text{extra}}, \quad d_{\text{extra}} = \max(1, \lfloor \mathsf{LogUniform}(1, 32) \rfloor)$$
 
 After mechanism output:
 
-$$Z_j \leftarrow \operatorname{clip}(\operatorname{nan\_to\_num}(Z_j), -10^6, 10^6)$$
-$$Z_j \leftarrow \operatorname{standardize}(Z_j)$$
+$$Z_j \leftarrow \mathsf{clip}(\mathsf{nan\_to\_num}(Z_j), -10^6, 10^6)$$
+$$Z_j \leftarrow \mathsf{standardize}(Z_j)$$
 $$Z_j \leftarrow Z_j \odot w^\top$$
 $$Z_j \leftarrow \frac{Z_j}{\max\left(\frac{1}{n} \sum_{r=1}^n |Z_{j,r:}|_2, 10^{-6}\right)}$$
 
@@ -310,13 +310,13 @@ Converter loop semantics:
 
 1. Slice per-spec view $V_s$ from current cursor over columns.
 1. Pad missing columns with sampled noise if needed.
-1. Apply converter: $(X'_s, v_s) = \operatorname{Converter}_s(V_s)$.
+1. Apply converter: $(X'_s, v_s) = \mathsf{Converter}_s(V_s)$.
 1. Write $X'_s$ back into the same slice (shape-padded/truncated as needed).
 1. Store $v_s$ as extracted observable value for feature/target key.
 
 Final node scaling:
 
-$$Z_j \leftarrow s_j Z_j, \quad s_j \sim \operatorname{LogUniform}(0.1, 10)$$
+$$Z_j \leftarrow s_j Z_j, \quad s_j \sim \mathsf{LogUniform}(0.1, 10)$$
 
 ## 5. Mechanism Family Definitions
 
@@ -352,7 +352,7 @@ Let $X_{\text{sub}}$ be either all columns or a random 20-column subset if input
 Augment with bias column: $X_{\text{aug}} = [X_{\text{sub}}, \mathbf{1}]$.
 For each output channel $t$:
 
-$$Y_t = \operatorname{diag}(X_{\text{aug}}, M_t, X_{\text{aug}}^\top)$$
+$$Y_t = \mathsf{diag}(X_{\text{aug}}, M_t, X_{\text{aug}}^\top)$$
 
 or equivalently per row: $y_i = x_{\text{aug},i}^\top M_t, x_{\text{aug},i}$ — a general (not necessarily symmetric) quadratic form. The bias augmentation means this captures quadratic + linear + constant terms.
 
@@ -364,7 +364,7 @@ or equivalently per row: $y_i = x_{\text{aug},i}^\top M_t, x_{\text{aug},i}$ —
 
 **Rationale.** Random-depth MLPs provide high-capacity nonlinear transforms with stochastic activation structure. Optional pre/post activation steps increase shape diversity while retaining a simple sampled-layer pipeline.
 
-A random depth/width MLP with number of weight matrices sampled uniformly from ${1, 2, 3}$ (0–2 hidden layers) and hidden width from $\lfloor \operatorname{LogUniform}(1, 127) \rfloor$:
+A random depth/width MLP with number of weight matrices sampled uniformly from ${1, 2, 3}$ (0–2 hidden layers) and hidden width from $\lfloor \mathsf{LogUniform}(1, 127) \rfloor$:
 
 $$Y^{(0)} = X \text{ (optional pre-activation with prob 0.5)}$$
 $$Y^{(\ell+1)} = \phi_\ell(Y^{(\ell)} M_\ell^\top)$$
@@ -384,11 +384,11 @@ Activation sampler includes fixed and parametric families.
 
 **Rationale.** Oblivious trees introduce thresholded piecewise behavior that complements smooth families. Variance-weighted split sampling biases random partitions toward informative dimensions without requiring supervised fitting.
 
-Number of trees: $T = \max(1, \lfloor \operatorname{LogUniform}(1, 32) \rfloor)$.
+Number of trees: $T = \max(1, \lfloor \mathsf{LogUniform}(1, 32) \rfloor)$.
 
 For each tree $t$:
 
-1. Depth $d_t \sim \operatorname{UniformInt}{1, \dots, 7}$.
+1. Depth $d_t \sim \mathsf{UniformInt}\{1, \dots, 7\}$.
 1. Sample split feature indices (variance-weighted probabilities when available).
 1. Sample thresholds by indexing sampled training rows.
 1. Compute leaf index via packed split bits.
@@ -396,7 +396,7 @@ For each tree $t$:
 
 Prediction is averaged:
 
-$$Y = \frac{1}{T} \sum_{t=1}^T V_t[\operatorname{leaf}(X)]$$
+$$Y = \frac{1}{T} \sum_{t=1}^T V_t[\mathsf{leaf}(X)]$$
 
 ### 5.5 Discretization
 
@@ -406,11 +406,11 @@ $$Y = \frac{1}{T} \sum_{t=1}^T V_t[\operatorname{leaf}(X)]$$
 
 **Rationale.** Nearest-center assignment creates clustered discontinuities and quantization effects that smooth mechanisms do not capture. A final linear map preserves shared output-shape contracts across families.
 
-Number of centers: $K = \operatorname{clamp}(\lfloor \operatorname{LogUniform}(2, 128) \rfloor,, 2,, n)$.
+Number of centers: $K = \mathsf{clamp}(\lfloor \mathsf{LogUniform}(2, 128) \rfloor,, 2,, n)$.
 
-Sample centers from rows, compute $L_p$-style distances (with sampled $p \sim \operatorname{LogUniform}(0.5, 4)$), assign nearest center, then apply linear map:
+Sample centers from rows, compute $L_p$-style distances (with sampled $p \sim \mathsf{LogUniform}(0.5, 4)$), assign nearest center, then apply linear map:
 
-$$k^*(i) = \arg\min_k \sum_q |X_{iq} - c_{kq}|^p, \quad Y = \operatorname{Linear}(c_{k^*(i)})$$
+$$k^*(i) = \arg\min_k \sum_q |X_{iq} - c_{kq}|^p, \quad Y = \mathsf{Linear}(c_{k^*(i)})$$
 
 ### 5.6 GP/RFF approximation
 
@@ -437,13 +437,13 @@ where $b$ is random phase and $V$ is sampled from noise.
 
 Sample centers $c_k$, scales $\sigma_k$, and exponents $p, q$:
 
-- Centers: $K = \max(2, \lfloor \operatorname{LogUniform}(2, \max(16,, 2 d_{\text{out}})) \rfloor)$
+- Centers: $K = \max(2, \lfloor \mathsf{LogUniform}(2, \max(16,, 2 d_{\text{out}})) \rfloor)$
 - Scales: $\sigma_k = \exp(\text{noise} \cdot 0.1)$ (log-normal, concentrated near 1)
-- Exponents: $p \sim \operatorname{LogUniform}(1, 4)$, $; q \sim \operatorname{LogUniform}(1, 2)$
+- Exponents: $p \sim \mathsf{LogUniform}(1, 4)$, $; q \sim \mathsf{LogUniform}(1, 2)$
 
 $$d_{ik} = \left(\sum_q |X_{iq} - c_{kq}|^p\right)^{1/p}$$
-$$\operatorname{logit}_{ik} = -\frac{1}{2} \log(2\pi\sigma_k^2) - \left(\frac{d_{ik}}{\max(\sigma_k, 10^{-6})}\right)^q$$
-$$P_{ik} = \operatorname{softmax}_k(\operatorname{logit}_{ik}), \quad Y = \operatorname{Linear}(P)$$
+$$\mathsf{logit}_{ik} = -\frac{1}{2} \log(2\pi\sigma_k^2) - \left(\frac{d_{ik}}{\max(\sigma_k, 10^{-6})}\right)^q$$
+$$P_{ik} = \mathsf{softmax}_k(\mathsf{logit}_{ik}), \quad Y = \mathsf{Linear}(P)$$
 
 ### 5.8 Product family
 
@@ -477,10 +477,10 @@ $$Y = f(X) \odot g(X)$$
 Given input slice $X$ and raw extracted scalar $v = X_{:,0}$:
 
 - with probability 0.5: identity output (no warp),
-- otherwise sample $a,b \sim \operatorname{LogUniform}(0.2,5)$ and apply columnwise min-max + warp:
+- otherwise sample $a,b \sim \mathsf{LogUniform}(0.2,5)$ and apply columnwise min-max + warp:
 
 $$\hat{X} = \frac{X - X_{\min}}{\max(X_{\max} - X_{\min}, 10^{-6})}$$
-$$X' = 1 - \left(1 - \operatorname{clip}(\hat{X}, 0, 1)^a\right)^b$$
+$$X' = 1 - \left(1 - \mathsf{clip}(\hat{X}, 0, 1)^a\right)^b$$
 
 Converter returns $(X', v)$.
 
@@ -501,12 +501,12 @@ Let target cardinality be $C = \max(2, n_{\text{categories}})$.
 
 Neighbor method:
 
-$$\text{label}_i = \arg\min_k \sum_q |X_{iq} - c_{kq}|^p, \quad p \sim \operatorname{LogUniform}(0.5, 4)$$
+$$\text{label}_i = \arg\min_k \sum_q |X_{iq} - c_{kq}|^p, \quad p \sim \mathsf{LogUniform}(0.5, 4)$$
 
 Softmax method:
 
-$$L = a \operatorname{standardize}(X_{\text{proj}}) + b, \quad a \sim \operatorname{LogUniform}(0.1, 10), \quad b_k = \ln(u_k + 10^{-4})$$
-$$\text{label}_i \sim \operatorname{Categorical}(\operatorname{softmax}(L_i))$$
+$$L = a \mathsf{standardize}(X_{\text{proj}}) + b, \quad a \sim \mathsf{LogUniform}(0.1, 10), \quad b_k = \ln(u_k + 10^{-4})$$
+$$\text{label}_i \sim \mathsf{Categorical}(\mathsf{softmax}(L_i))$$
 
 Output representation $X'$ is variant-dependent (input copy, repeated index, center lookup, center transformed by random function, or random softmax points). Labels are finally reduced modulo $C$.
 
@@ -526,11 +526,11 @@ Output representation $X'$ is variant-dependent (input copy, repeated index, cen
 
 **Rationale.** Multiple primitive families cover light-tail, double-exponential, and heavy-tail regimes under one API surface. Explicit formulas keep distributional assumptions auditable across backends.
 
-For $\operatorname{sample\_noise}(\text{shape, family, scale, \dots})$:
+For $\mathsf{sample\_noise}(\text{shape, family, scale, \dots})$:
 
 - **Gaussian**: i.i.d. $\mathcal{N}(0, 1)$
 - **Laplace** (inverse CDF):
-  $$U \sim \operatorname{Uniform}(\epsilon, 1-\epsilon), \quad X = \begin{cases} \ln(2U), & U < 0.5 \\ -\ln(2(1-U)), & U \ge 0.5 \end{cases}$$
+  $$U \sim \mathsf{Uniform}(\epsilon, 1-\epsilon), \quad X = \begin{cases} \ln(2U), & U < 0.5 \\ -\ln(2(1-U)), & U \ge 0.5 \end{cases}$$
 - **Student-t**:
   $$X = \frac{Z}{\sqrt{\chi^2_\nu / \nu}}, \quad Z \sim \mathcal{N}(0, 1), \\ \nu > 2$$
 - **Mixture**: sample component assignment per element from normalized weights over
