@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import math
+import time
 from typing import Any
 
 import torch
@@ -208,6 +210,9 @@ def _generate_torch(
     shift_params = shift_params or resolve_shift_runtime_params(config)
     attempts = max(1, int(config.filter.max_attempts))
     last_reason = "unknown"
+    attempts_used = 0
+    filter_attempts = 0
+    filter_rejections = 0
     dtype = _torch_dtype(config)
     n_rows = n_train + n_test
     noise_runtime_selection = noise_runtime_selection or _resolve_noise_runtime_selection(
@@ -217,6 +222,7 @@ def _generate_torch(
     noise_spec = _noise_sampling_spec(noise_runtime_selection)
 
     for attempt in range(attempts):
+        attempts_used += 1
         try:
             x, y, aux_meta = _generate_graph_dataset_torch(
                 config,
@@ -232,6 +238,13 @@ def _generate_torch(
         except Exception as exc:
             last_reason = f"generation_exception:{exc.__class__.__name__}:{exc}"
             continue
+
+        filter_meta = aux_meta.get("filter", {})
+        if isinstance(filter_meta, dict) and bool(filter_meta.get("enabled")):
+            filter_attempts += 1
+            if not bool(filter_meta.get("accepted", False)):
+                filter_rejections += 1
+
         if not bool(aux_meta.get("accepted", True)):
             last_reason = "filtered_out"
             continue
@@ -313,6 +326,17 @@ def _generate_torch(
             shift_params=shift_params,
             function_family_mix=config.mechanism.function_family_mix,
         )
+        filter_metadata = aux_meta.get("filter", {})
+        runtime_metrics: dict[str, Any] = {}
+        if isinstance(filter_metadata, dict):
+            filter_metadata = dict(filter_metadata)
+            elapsed_seconds = filter_metadata.pop("elapsed_seconds", None)
+            if isinstance(elapsed_seconds, (int, float)):
+                elapsed = float(elapsed_seconds)
+                if math.isfinite(elapsed) and elapsed >= 0.0:
+                    runtime_metrics["filter_elapsed_seconds"] = elapsed
+        else:
+            filter_metadata = {}
 
         config_payload = asdict(config)
         dataset_payload = config_payload.get("dataset")
@@ -337,9 +361,20 @@ def _generate_torch(
             "lineage": _build_lineage_metadata(layout, feature_index_map=feature_index_map),
             "seed": seed,
             "attempt_used": attempt,
-            "filter": aux_meta.get("filter", {}),
+            "filter": filter_metadata,
             "shift": shift_metadata,
             "noise_distribution": _build_noise_distribution_metadata(noise_runtime_selection),
+            "generation_attempts": {
+                "total_attempts": int(attempts_used),
+                "retry_count": int(max(0, attempts_used - 1)),
+                "filter_attempts": int(filter_attempts),
+                "filter_rejections": int(filter_rejections),
+                "filter_rejection_rate": (
+                    float(filter_rejections) / float(filter_attempts)
+                    if filter_attempts > 0
+                    else None
+                ),
+            },
             "config": config_payload,
         }
         if missingness_summary is not None:
@@ -353,6 +388,7 @@ def _generate_torch(
             y_test=y_test,
             feature_types=feature_types,
             metadata=metadata,
+            runtime_metrics=runtime_metrics,
         )
 
     raise ValueError(
@@ -373,6 +409,7 @@ def _apply_filter(
     if not config.filter.enabled:
         return True, details
 
+    start = time.perf_counter()
     accepted, filter_details = apply_extra_trees_filter(
         x,
         y,
@@ -387,8 +424,10 @@ def _apply_filter(
         threshold=config.filter.threshold,
         n_jobs=config.filter.n_jobs,
     )
+    elapsed_seconds = time.perf_counter() - start
     details.update(filter_details)
     details["accepted"] = accepted
+    details["elapsed_seconds"] = float(max(0.0, elapsed_seconds))
     return accepted, details
 
 

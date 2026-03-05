@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-03-04
+
+### Fixed
+
+- Benchmark runtime guardrail control runs now execute the same per-bundle
+  callback instrumentation (stage-sample update + throughput-pressure
+  collection) as the primary throughput run, removing callback-overhead skew
+  from missingness/shift/noise runtime degradation comparisons.
+- Benchmark stage-sample bundles are now released immediately after write/filter
+  stage probes, reducing avoidable bundle/tensor retention before latency
+  collection and guardrail control runs.
+- Filter stage throughput now uses benchmark-only runtime timing captured on
+  pre-filter tensors (`bundle.runtime_metrics.filter_elapsed_seconds`), keeping
+  emitted metadata deterministic while avoiding replay skew from postprocessing
+  and missingness-transformed outputs.
+
+## [0.4.8] - 2026-03-04
+
+### Fixed
+
+- Scalar RNG draws (`torch.randint`, `torch.rand`) now explicitly target the
+  generator's device via new `rand_scalar`/`randint_scalar` helpers, fixing
+  failures when the generator lives on a non-CPU device.
+- Generation retry exception logging now includes the exception message for
+  easier debugging.
+
+### Changed
+
+- Benchmark suite summaries now emit stage-level throughput metrics for
+  generation, parquet writing, and filter replay:
+  `generation_datasets_per_minute`, `write_datasets_per_minute`, and
+  `filter_datasets_per_minute` (nullable when filtering is disabled).
+- Benchmark suite summaries now emit throughput-pressure metrics required for
+  end-to-end interpretation, including attempt pressure and both filter
+  rejection views:
+  `filter_rejection_rate_attempt_level` and `filter_retry_dataset_rate`.
+- Benchmark baseline defaults now gate on stage throughput metrics in addition
+  to `datasets_per_minute`.
+- Benchmark CLI single-line preset summaries and markdown reports now include
+  stage throughput and filter rejection telemetry columns.
+- Added RTX 3060 to the hardware peak FLOPS lookup table.
+
+### Breaking
+
+- Generated bundle metadata now includes a new additive
+  `metadata.generation_attempts` object. Consumers with strict metadata schemas
+  must allow this field.
+
 ## [0.4.7] - 2026-03-04
 
 ### Fixed
@@ -58,20 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** Lineage schema name changed from `dagsynth.dag_lineage` to
   `dagzoo.dag_lineage`. Existing Parquet files with the old schema name will not
   validate against the new constant.
-
-## [0.4.6] - 2026-03-04
-
-### Fixed
-
-- Scalar RNG draws (`torch.randint`, `torch.rand`) now explicitly target the
-  generator's device via new `rand_scalar`/`randint_scalar` helpers, fixing
-  failures when the generator lives on a non-CPU device.
-- Generation retry exception logging now includes the exception message for
-  easier debugging.
-
-### Changed
-
-- Added RTX 3060 to the hardware peak FLOPS lookup table.
 
 ## [0.4.5] - 2026-03-04
 
