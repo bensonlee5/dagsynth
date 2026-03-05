@@ -1,7 +1,7 @@
 import pytest
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.core.dataset import generate_batch_iter
+from dagzoo.core.dataset import generate_batch_iter, generate_worker_batch_iter
 from dagzoo.core.worker_partition import (
     iter_worker_dataset_indices,
     iter_worker_dataset_seeds,
@@ -84,7 +84,7 @@ def test_worker_partition_rejects_invalid_inputs(
         )
 
 
-def test_generate_batch_iter_respects_worker_partitioning(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_batch_iter_ignores_worker_partitioning(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     cfg.runtime.worker_count = 3
     cfg.runtime.worker_index = 1
@@ -106,7 +106,40 @@ def test_generate_batch_iter_respects_worker_partitioning(monkeypatch: pytest.Mo
         _stub_generate_one_seeded,
     )
 
-    produced = list(generate_batch_iter(cfg, num_datasets=10, seed=777, device="cpu"))
+    produced = list(generate_batch_iter(cfg, num_datasets=4, seed=777, device="cpu"))
+    expected_indices = [0, 1, 2, 3]
+    manager = SeedManager(777)
+    expected_seeds = [manager.child("dataset", idx) for idx in expected_indices]
+
+    assert observed_seeds == expected_seeds
+    assert produced == expected_seeds
+
+
+def test_generate_worker_batch_iter_respects_worker_partitioning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 3
+    cfg.runtime.worker_index = 1
+    cfg.runtime.device = "cpu"
+
+    observed_seeds: list[int] = []
+
+    def _stub_generate_one_seeded(
+        config, *, seed: int, requested_device: str, resolved_device: str
+    ):
+        _ = config
+        _ = requested_device
+        _ = resolved_device
+        observed_seeds.append(seed)
+        return seed
+
+    monkeypatch.setattr(
+        "dagzoo.core.dataset._generation_engine._generate_one_seeded",
+        _stub_generate_one_seeded,
+    )
+
+    produced = list(generate_worker_batch_iter(cfg, num_datasets=10, seed=777, device="cpu"))
     expected_indices = [1, 4, 7]
     manager = SeedManager(777)
     expected_seeds = [manager.child("dataset", idx) for idx in expected_indices]

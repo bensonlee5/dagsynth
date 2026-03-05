@@ -28,7 +28,7 @@ from dagzoo.config import (
     MISSINGNESS_MECHANISM_NONE,
     normalize_missing_mechanism,
 )
-from dagzoo.core.dataset import generate_batch_iter
+from dagzoo.core.dataset import generate_batch_iter, generate_worker_batch_iter
 from dagzoo.core.config_resolution import (
     resolve_generate_config,
     serialize_resolution_events,
@@ -644,6 +644,21 @@ def _write_generate_diagnostics_artifacts(
     print(f"Wrote diagnostics artifacts: {json_path} and {md_path}")
 
 
+def _raise_if_worker_partitioning_unsupported(
+    config: GeneratorConfig,
+    *,
+    command: str,
+) -> None:
+    """Reject worker-partition configs in entrypoints that are not partition-aware."""
+
+    if int(config.runtime.worker_count) <= 1:
+        return
+    _raise_usage_error(
+        f"runtime.worker_count > 1 is not supported for dagzoo {command}. "
+        "Worker partitioning currently applies only to `dagzoo generate --no-dataset-write`."
+    )
+
+
 def _run_generate(args: argparse.Namespace) -> int:
     """Execute the ``generate`` command."""
 
@@ -721,7 +736,10 @@ def _run_generate(args: argparse.Namespace) -> int:
             "set runtime.worker_count=1 for write-enabled runs."
         )
 
-    stream: Iterator[Any] = generate_batch_iter(
+    stream_factory = (
+        generate_worker_batch_iter if int(config.runtime.worker_count) > 1 else generate_batch_iter
+    )
+    stream: Iterator[Any] = stream_factory(
         config,
         num_datasets=args.num_datasets,
         seed=seed,
@@ -956,6 +974,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     diagnostics_root_dir = _benchmark_diagnostics_root_dir(args, artifact_dir=artifact_dir)
 
     default_cfg = _default_benchmark_config(args)
+    _raise_if_worker_partitioning_unsupported(default_cfg, command="benchmark")
     suite = (args.suite or default_cfg.benchmark.suite).strip().lower()
     warn_pct = (
         float(args.warn_threshold_pct)
@@ -972,6 +991,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         preset_keys=args.preset,
         config_path=args.config,
     )
+    for spec in preset_specs:
+        _raise_if_worker_partitioning_unsupported(spec.config, command="benchmark")
     if args.device and len(preset_specs) == 1:
         preset_specs[0].device = args.device
 
@@ -1054,6 +1075,7 @@ def _run_diversity_audit(args: argparse.Namespace) -> int:
     base_config = GeneratorConfig.from_yaml(args.config) if args.config else GeneratorConfig()
     if args.device is not None:
         base_config.runtime.device = str(args.device)
+    _raise_if_worker_partitioning_unsupported(base_config, command="diversity-audit")
 
     thresholds = AuditThresholds(
         exact_affine_rmse=float(args.exact_affine_rmse),

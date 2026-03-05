@@ -14,6 +14,7 @@ from dagzoo.core.fixed_layout import (
     sample_fixed_layout,
 )
 from dagzoo.core.worker_partition import iter_worker_dataset_seeds
+from dagzoo.rng import SeedManager
 from dagzoo.types import DatasetBundle
 
 __all__ = [
@@ -73,6 +74,35 @@ def generate_batch_iter(
     device: str | None = None,
 ) -> Iterator[DatasetBundle]:
     """Yield datasets lazily using deterministic per-dataset child seeds."""
+
+    if num_datasets < 0:
+        raise ValueError(f"num_datasets must be >= 0, got {num_datasets}")
+    if num_datasets == 0:
+        return
+
+    requested_device = (device or config.runtime.device or "auto").lower()
+    resolved_device = _generation_context._resolve_device(config, device)
+    run_seed = _generation_context._resolve_run_seed(config, seed)
+
+    manager = SeedManager(run_seed)
+    for dataset_index in range(num_datasets):
+        dataset_seed = manager.child("dataset", dataset_index)
+        yield _generation_engine._generate_one_seeded(
+            config,
+            seed=dataset_seed,
+            requested_device=requested_device,
+            resolved_device=resolved_device,
+        )
+
+
+def generate_worker_batch_iter(
+    config: GeneratorConfig,
+    *,
+    num_datasets: int,
+    seed: int | None = None,
+    device: str | None = None,
+) -> Iterator[DatasetBundle]:
+    """Yield only this runtime worker's partition of the global dataset index space."""
 
     if num_datasets < 0:
         raise ValueError(f"num_datasets must be >= 0, got {num_datasets}")

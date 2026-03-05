@@ -147,7 +147,7 @@ def test_generate_cli_allows_worker_partition_with_no_dataset_write(
         captured["worker_index"] = int(config.runtime.worker_index)
         yield object()
 
-    monkeypatch.setattr("dagzoo.cli.generate_batch_iter", _stub_generate_batch_iter)
+    monkeypatch.setattr("dagzoo.cli.generate_worker_batch_iter", _stub_generate_batch_iter)
 
     code = main(
         [
@@ -168,6 +168,47 @@ def test_generate_cli_allows_worker_partition_with_no_dataset_write(
     assert code == 0
     assert captured["worker_count"] == 2
     assert captured["worker_index"] == 1
+
+
+def test_benchmark_cli_rejects_worker_partition_config(tmp_path) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 1
+    config_path = tmp_path / "benchmark_multi_worker.yaml"
+    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "benchmark",
+                "--config",
+                str(config_path),
+                "--preset",
+                "custom",
+                "--suite",
+                "smoke",
+                "--no-memory",
+            ]
+        )
+    assert int(exc.value.code) == 2
+
+
+def test_diversity_audit_cli_rejects_worker_partition_config(tmp_path) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 1
+    config_path = tmp_path / "diversity_multi_worker.yaml"
+    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "diversity-audit",
+                "--config",
+                str(config_path),
+            ]
+        )
+    assert int(exc.value.code) == 2
 
 
 def test_filter_cli_rejects_invalid_n_jobs() -> None:
