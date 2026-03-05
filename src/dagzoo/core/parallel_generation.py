@@ -94,9 +94,12 @@ def generate_parallel_batch_iter(
         maxsize=max(1, int(max_buffered_results or (worker_count * 2)))
     )
     stop_event = threading.Event()
+    consumer_closed_event = threading.Event()
 
     def _put(item: _QueueItem) -> bool:
         while True:
+            if consumer_closed_event.is_set():
+                return False
             if stop_event.is_set() and isinstance(item, _BundleResult):
                 return False
             try:
@@ -159,6 +162,7 @@ def generate_parallel_batch_iter(
                     continue
                 completed_workers += 1
         finally:
+            consumer_closed_event.set()
             stop_event.set()
             for future in futures:
                 future.result()

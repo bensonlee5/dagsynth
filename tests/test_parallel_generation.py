@@ -1,3 +1,7 @@
+import queue
+import threading
+import time
+
 import pytest
 
 from dagzoo.config import GeneratorConfig
@@ -91,3 +95,59 @@ def test_generate_parallel_batch_iter_rejects_non_cpu_resolved_device(
 
     with pytest.raises(ValueError, match=r"supports resolved device 'cpu' only"):
         list(generate_parallel_batch_iter(cfg, num_datasets=2, seed=7, device="auto"))
+
+
+def test_generate_parallel_batch_iter_close_does_not_hang_with_full_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+
+    observed_seeds: list[int] = []
+
+    def _stub_generate_one_seeded(
+        config, *, seed: int, requested_device: str, resolved_device: str
+    ):
+        _ = config
+        _ = requested_device
+        _ = resolved_device
+        observed_seeds.append(seed)
+        return seed
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
+        _stub_generate_one_seeded,
+    )
+
+    iterator = generate_parallel_batch_iter(
+        cfg,
+        num_datasets=6,
+        seed=777,
+        device="cpu",
+        max_buffered_results=1,
+    )
+    _ = next(iterator)
+    deadline = time.monotonic() + 1.0
+    while len(observed_seeds) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert len(observed_seeds) >= 2
+
+    close_result: queue.Queue[BaseException | None] = queue.Queue()
+
+    def _close_iterator() -> None:
+        try:
+            iterator.close()
+        except BaseException as exc:  # pragma: no cover - surfaced via queue assertion
+            close_result.put(exc)
+            return
+        close_result.put(None)
+
+    close_thread = threading.Thread(target=_close_iterator, daemon=True)
+    close_thread.start()
+    close_thread.join(timeout=1.0)
+
+    assert not close_thread.is_alive()
+    assert close_result.get_nowait() is None
