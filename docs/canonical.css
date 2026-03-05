@@ -2,31 +2,61 @@
   color-scheme: light;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   background: #ffffff;
   color: #111827;
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 body {
-  max-width: none !important;
-  width: auto !important;
-  margin: 0 auto !important;
-  padding: 2rem 2.5rem !important;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2rem 2rem 3rem;
 }
 
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4 {
   line-height: 1.25;
 }
 
-p, li {
+h1 {
+  margin: 0 0 1rem;
+}
+
+h2 {
+  margin-top: 2rem;
+}
+
+p,
+li {
   max-width: 120ch;
 }
 
-.doc-toc {
+a {
+  color: #0f4c81;
+}
+
+code,
+pre {
+  font-family: Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+pre {
+  overflow-x: auto;
+  background: #f8fafc;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.doc-toc,
+#TOC {
   margin: 1.5rem 0 2rem;
   padding: 1rem 1.2rem;
   border: 1px solid #d1d5db;
@@ -34,19 +64,22 @@ p, li {
   background: #f9fafb;
 }
 
-.doc-toc h2 {
+.doc-toc h2,
+#TOC > h2 {
   margin: 0 0 0.75rem;
   font-size: 1.1rem;
 }
 
-.doc-toc ul {
+.doc-toc ul,
+#TOC ul {
   margin: 0;
   padding-left: 1.2rem;
   columns: 2;
   column-gap: 2rem;
 }
 
-.doc-toc li {
+.doc-toc li,
+#TOC li {
   margin: 0.12rem 0;
   break-inside: avoid;
 }
@@ -70,13 +103,14 @@ table {
   margin: 1rem 0 1.25rem;
 }
 
-th, td {
+th,
+td {
   border: 1px solid #d1d5db;
   padding: 0.45rem 0.55rem;
   vertical-align: top;
   overflow-wrap: anywhere;
   word-break: break-word;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
 }
 
 th {
@@ -84,8 +118,10 @@ th {
   font-weight: 600;
 }
 
-code {
-  font-family: Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+.mermaid {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
 }
 
 mjx-container {
@@ -94,8 +130,19 @@ mjx-container {
   max-width: 100%;
 }
 
-@media (max-width: 900px) {
-  .doc-toc ul {
+hr {
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  margin: 1.5rem 0;
+}
+
+@media (max-width: 960px) {
+  body {
+    padding: 1.2rem 1rem 2rem;
+  }
+
+  .doc-toc ul,
+  #TOC ul {
     columns: 1;
   }
 }
