@@ -97,6 +97,79 @@ def test_generate_cli_rejects_inline_filter_enabled(tmp_path) -> None:
     assert int(exc.value.code) == 2
 
 
+def test_generate_cli_rejects_worker_partition_when_dataset_write_enabled(tmp_path) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 1
+    config_path = tmp_path / "multi_worker.yaml"
+    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "generate",
+                "--config",
+                str(config_path),
+                "--num-datasets",
+                "3",
+                "--device",
+                "cpu",
+                "--hardware-policy",
+                "none",
+                "--out",
+                str(tmp_path / "out"),
+            ]
+        )
+    assert int(exc.value.code) == 2
+
+
+def test_generate_cli_allows_worker_partition_with_no_dataset_write(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 1
+    config_path = tmp_path / "multi_worker_no_write.yaml"
+    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+
+    captured: dict[str, int] = {}
+
+    def _stub_generate_batch_iter(
+        config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        captured["worker_count"] = int(config.runtime.worker_count)
+        captured["worker_index"] = int(config.runtime.worker_index)
+        yield object()
+
+    monkeypatch.setattr("dagzoo.cli.generate_batch_iter", _stub_generate_batch_iter)
+
+    code = main(
+        [
+            "generate",
+            "--config",
+            str(config_path),
+            "--num-datasets",
+            "3",
+            "--device",
+            "cpu",
+            "--hardware-policy",
+            "none",
+            "--no-dataset-write",
+            "--out",
+            str(tmp_path / "out_no_write"),
+        ]
+    )
+    assert code == 0
+    assert captured["worker_count"] == 2
+    assert captured["worker_index"] == 1
+
+
 def test_filter_cli_rejects_invalid_n_jobs() -> None:
     with pytest.raises(SystemExit) as exc:
         main(

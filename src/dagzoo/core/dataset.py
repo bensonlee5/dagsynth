@@ -13,7 +13,7 @@ from dagzoo.core.fixed_layout import (
     generate_batch_fixed_layout_iter,
     sample_fixed_layout,
 )
-from dagzoo.rng import SeedManager
+from dagzoo.core.worker_partition import iter_worker_dataset_seeds
 from dagzoo.types import DatasetBundle
 
 __all__ = [
@@ -83,9 +83,12 @@ def generate_batch_iter(
     resolved_device = _generation_context._resolve_device(config, device)
     run_seed = _generation_context._resolve_run_seed(config, seed)
 
-    manager = SeedManager(run_seed)
-    for i in range(num_datasets):
-        dataset_seed = manager.child("dataset", i)
+    for _dataset_index, dataset_seed in iter_worker_dataset_seeds(
+        run_seed=run_seed,
+        num_datasets=num_datasets,
+        worker_count=int(config.runtime.worker_count),
+        worker_index=int(config.runtime.worker_index),
+    ):
         yield _generation_engine._generate_one_seeded(
             config,
             seed=dataset_seed,

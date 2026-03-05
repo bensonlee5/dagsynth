@@ -714,6 +714,13 @@ def _run_generate(args: argparse.Namespace) -> int:
         f"hardware_policy={args.hardware_policy}"
     )
 
+    if int(config.runtime.worker_count) > 1 and not bool(args.no_dataset_write):
+        _raise_usage_error(
+            "runtime.worker_count > 1 currently supports generate --no-dataset-write only. "
+            "Parallel shard-writing coordination is not implemented yet; "
+            "set runtime.worker_count=1 for write-enabled runs."
+        )
+
     stream: Iterator[Any] = generate_batch_iter(
         config,
         num_datasets=args.num_datasets,
