@@ -1814,6 +1814,105 @@ def test_collect_reproducibility_uses_streaming_generation(
     assert calls[0] == calls[1]
 
 
+def test_collect_reproducibility_uses_parallel_generation_when_multi_worker_cpu(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[int, int, str | None]] = []
+
+    def _bundle(value: int) -> DatasetBundle:
+        x_train = np.full((2, 2), float(value), dtype=np.float32)
+        y_train = np.array([0, 1], dtype=np.int64)
+        x_test = np.full((1, 2), float(value), dtype=np.float32)
+        y_test = np.array([1], dtype=np.int64)
+        return DatasetBundle(
+            X_train=x_train,
+            y_train=y_train,
+            X_test=x_test,
+            y_test=y_test,
+            feature_types=["num", "num"],
+            metadata={"seed": value, "attempt_used": 0},
+        )
+
+    def _stub_generate_parallel_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        calls.append((num_datasets, int(seed or 0), device))
+        for i in range(num_datasets):
+            yield _bundle(int(seed or 0) + i)
+
+    def _unexpected_generate_batch_iter(*args, **kwargs):
+        raise AssertionError(
+            "sequential generator should not be used for multi-worker reproducibility"
+        )
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.generate_parallel_batch_iter",
+        _stub_generate_parallel_batch_iter,
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.generate_batch_iter",
+        _unexpected_generate_batch_iter,
+    )
+
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    out = suite_mod._collect_reproducibility(cfg, device="cpu", num_datasets=3)
+    assert out["reproducibility_datasets"] == 3
+    assert out["reproducibility_match"] is True
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+
+
+def test_run_preset_benchmark_rejects_multi_worker_non_cpu_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cuda")
+
+    resolved = SimpleNamespace(
+        config=cfg,
+        requested_device="cuda",
+        hardware=SimpleNamespace(
+            backend="cuda",
+            device_name="Test GPU",
+            total_memory_gb=8.0,
+            peak_flops=1.0,
+            tier="desktop",
+        ),
+        trace_events=[],
+    )
+
+    monkeypatch.setattr("dagzoo.bench.suite.resolve_benchmark_preset_config", lambda **_: resolved)
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime\.worker_count > 1 benchmark runs currently support resolved CPU presets only",
+    ):
+        suite_mod.run_preset_benchmark(
+            spec,
+            suite="smoke",
+            num_datasets_override=2,
+            warmup_override=0,
+            collect_memory=False,
+            collect_reproducibility=False,
+            include_micro=False,
+            hardware_policy="none",
+            collect_diagnostics=False,
+            diagnostics_root_dir=None,
+            warn_threshold_pct=10.0,
+            fail_threshold_pct=20.0,
+            diagnostics_occurrence_index=0,
+            diagnostics_occurrence_total=1,
+        )
+
+
 def test_run_benchmark_suite_sanitizes_preset_key_for_diagnostics_paths(tmp_path) -> None:
     cfg = _tiny_cpu_config()
     spec = PresetRunSpec(key="../../escape", config=cfg, device="cpu")

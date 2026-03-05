@@ -79,6 +79,10 @@ from dagzoo.core.config_resolution import (
     serialize_resolution_events,
 )
 from dagzoo.core.dataset import generate_batch_iter, generate_one
+from dagzoo.core.parallel_generation import (
+    ParallelGenerationConfigError,
+    generate_parallel_batch_iter,
+)
 from dagzoo.core.shift import resolve_shift_runtime_params
 from dagzoo.diagnostics import (
     CoverageAggregator,
@@ -186,11 +190,16 @@ def _collect_reproducibility(
 
     n = max(1, num_datasets)
     run_seed = offset_seed32(config.seed, REPRODUCIBILITY_SEED_OFFSET)
+    generator = (
+        generate_parallel_batch_iter
+        if int(config.runtime.worker_count) > 1
+        else generate_batch_iter
+    )
     sig_a = reproducibility_signature(
-        generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
+        generator(config, num_datasets=n, seed=run_seed, device=device)
     )
     sig_b = reproducibility_signature(
-        generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
+        generator(config, num_datasets=n, seed=run_seed, device=device)
     )
     return {
         "reproducibility_datasets": n,
@@ -334,6 +343,11 @@ def run_preset_benchmark(
     config = resolved_preset.config
     requested_device = resolved_preset.requested_device
     hw = resolved_preset.hardware
+    if int(config.runtime.worker_count) > 1 and hw.backend != "cpu":
+        raise ParallelGenerationConfigError(
+            "runtime.worker_count > 1 benchmark runs currently support resolved CPU presets only. "
+            f"Preset '{spec.key}' resolved backend '{hw.backend}'."
+        )
 
     num_datasets, warmup = _preset_counts(
         config,

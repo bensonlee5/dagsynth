@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-03-05
+
+### Added
+
+- Added a local CPU multi-worker benchmark generation path that orchestrates
+  `runtime.worker_count` worker partitions in one benchmark run while preserving
+  deterministic global dataset ordering and seed lineage.
+
+### Changed
+
+- `dagzoo benchmark` now accepts `runtime.worker_count > 1` when
+  `runtime.worker_index == 0` and the resolved preset device is CPU.
+- Benchmark reproducibility checks now use the same local multi-worker
+  generation path as throughput runs when multi-worker benchmark mode is active.
+
+### Breaking
+
+- **BREAKING:** Multi-worker `dagzoo benchmark` remains unsupported for
+  resolved `cuda` / `mps` presets in this release.
+- **BREAKING:** `dagzoo generate` still does not auto-orchestrate peer workers;
+  multi-worker generate remains explicit standalone-worker execution, and
+  write-enabled multi-worker runs remain blocked until shard coordination lands.
+
 ## [0.5.3] - 2026-03-05
 
 ### Added
