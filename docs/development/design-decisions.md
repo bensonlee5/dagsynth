@@ -297,15 +297,15 @@ Student-t components only.
 
 ______________________________________________________________________
 
-## 8. Single-source docs with Hugo wrapper pages
+## 8. Single-source docs with Hugo-rendered reference pages
 
 ### Context
 
-The docs site combines authored Markdown guides, two canonical HTML reference
-pages (`how-it-works` and `transforms`), and a Hugo/Docsy frontend. Without a
-clear boundary between authored sources, generated Hugo inputs, and deployable
-build output, contributors can end up editing the wrong files or validating the
-wrong build tree.
+The docs site combines authored Markdown guides, two heavyweight technical
+reference pages (`how-it-works` and `transforms`), and a Hugo/Docsy frontend.
+Without a clear boundary between authored sources, generated Hugo inputs, and
+deployable build output, contributors can end up editing the wrong files or
+validating the wrong build tree.
 
 ### Decision
 
@@ -313,9 +313,9 @@ Maintain a single-source docs model with explicit generated boundaries:
 
 - canonical authored docs live under `docs/`
 - generated Hugo inputs live under `site/.generated/`
-- `how-it-works.html` and `transforms.html` remain canonical HTML sources in
+- `how-it-works.md` and `transforms.md` remain canonical reference sources in
   `docs/`
-- Hugo serves those two pages through generated Markdown wrappers
+- Hugo renders those two pages directly as normal docs pages
 - canonical built output is `site/public/`
 
 Top-level `public/` is treated as stale local output from the older build flow,
@@ -325,9 +325,9 @@ not the deployment source of truth.
 
 - **Clear edit boundaries** — contributors know whether they should edit
   `docs/`, generated Hugo inputs, or only local build artifacts.
-- **Preserve canonical HTML references** — the two heavyweight reference pages
-  stay authored once and are surfaced in the docs site without a second manual
-  translation layer.
+- **Preserve canonical technical references** — the two heavyweight reference
+  pages stay authored once and render inside the normal docs site without a
+  separate static/iframe layer.
 - **Deterministic docs automation** — `scripts/docs/sync_hugo_content.py` owns
   generated inputs and CI validates the same canonical build tree used for
   Pages deploys.
@@ -337,9 +337,8 @@ not the deployment source of truth.
 - **Keep both `public/` and `site/public/` as equivalent outputs** — rejected
   because it creates ambiguity about link checking, deploy inputs, and local
   validation.
-- **Rewrite the canonical HTML references directly in Hugo content** — rejected
-  for now because it would duplicate the maintained HTML sources and widen the
-  docs maintenance surface.
+- **Keep a separate static canonical HTML layer** — rejected because it
+  duplicates deployment paths and creates unnecessary wrapper/static plumbing.
 
 ______________________________________________________________________
 

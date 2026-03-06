@@ -23,7 +23,7 @@ directly.
 - `scripts/fetch-additional-references.sh`
   - Downloads a curated hardcoded list of additional arXiv papers used for local reference refreshes.
 - `scripts/effective_diversity_audit.py`
-  - Convenience wrapper around the effective-diversity audit library path and CLI-facing artifacts.
+  - Convenience wrapper that forwards to `dagzoo diversity-audit`; the packaged CLI is the canonical interface.
 - `scripts/benchmark-suite.sh [suite] [preset] [out_dir] [diagnostics] [diagnostics_out_dir]`
   - Runs `dagzoo benchmark` with suite/preset selection and optional diagnostics.
 - `scripts/benchmark-smoke.sh [preset] [diagnostics] [diagnostics_out_dir]`
@@ -87,7 +87,7 @@ When diagnostics is enabled for benchmark scripts, coverage artifacts are writte
 The diagnostics preset directory is sanitized and hash-suffixed (for example, `cpu_ca49ca4b`) to keep paths unique and filesystem-safe.
 
 Docs workflow note: built Hugo output is `site/public/`. For the full
-single-source docs/wrapper model, see
+single-source docs/rendered-reference model, see
 `docs/development/design-decisions.md` and `site/README.md`.
 
 When missingness is enabled in benchmark configs, summary JSON includes

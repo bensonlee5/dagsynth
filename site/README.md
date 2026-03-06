@@ -4,9 +4,9 @@ This directory contains the Hugo docs app.
 
 Source-of-truth docs remain in `../docs/` (single-source model).
 Generated Hugo inputs are written to `site/.generated/` and are not tracked by git.
-For the full wrapper/source-of-truth rationale, see
-`docs/development/design-decisions.md` ("Single-source docs with Hugo wrapper
-pages").
+For the full rendered-docs/source-of-truth rationale, see
+`docs/development/design-decisions.md` ("Single-source docs with Hugo-rendered
+reference pages").
 For internal docs links, use Hugo `relref`/`absURL` helpers; do not hardcode `/docs/...` paths.
 Sync generated inputs with:
 

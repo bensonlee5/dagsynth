@@ -53,10 +53,9 @@ Infrastructure that ensures reproducibility, deterministic behavior, and data qu
   - canonical details live in [`design-decisions.md`](design-decisions.md)
   - built Hugo output is `site/public/`; top-level `public/` is stale local output from the older build flow
 - Docs architecture:
-  - `docs/how-it-works.html` and `docs/transforms.html` are canonical HTML sources surfaced through Hugo wrapper pages
+  - `docs/how-it-works.md` and `docs/transforms.md` are canonical reference docs rendered as normal Hugo pages
 - Coverage reporting:
-  - the current coverage configuration omits `src/dagzoo/bench/*`
-  - benchmark code remains outside the headline threshold; CLI coverage is included
+  - CLI and benchmark orchestration are now part of the headline coverage threshold
 - Hardware policy nuance:
   - `runtime.device: mps` is detected and preserved as an MPS backend
   - hardware tiering still maps MPS to the `cpu` tier because only CUDA has tiered policy rules today
