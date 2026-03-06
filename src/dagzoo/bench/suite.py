@@ -81,7 +81,7 @@ from dagzoo.core.config_resolution import (
 from dagzoo.core.dataset import generate_batch_iter, generate_one
 from dagzoo.core.parallel_generation import (
     ParallelGenerationConfigError,
-    active_worker_count,
+    effective_local_parallel_worker_count,
     generate_parallel_batch_iter,
 )
 from dagzoo.core.shift import resolve_shift_runtime_params
@@ -193,7 +193,7 @@ def _collect_reproducibility(
     run_seed = offset_seed32(config.seed, REPRODUCIBILITY_SEED_OFFSET)
     generator = (
         generate_parallel_batch_iter
-        if active_worker_count(int(config.runtime.worker_count), n) > 1
+        if effective_local_parallel_worker_count(int(config.runtime.worker_count), n) > 1
         else generate_batch_iter
     )
     sig_a = reproducibility_signature(
@@ -408,7 +408,11 @@ def run_preset_benchmark(
     generation_config = _copy_runtime_config(config)
     generation_config.filter.enabled = False
     multi_worker_benchmark = (
-        active_worker_count(int(generation_config.runtime.worker_count), num_datasets) > 1
+        effective_local_parallel_worker_count(
+            int(generation_config.runtime.worker_count),
+            num_datasets,
+        )
+        > 1
     )
 
     def _build_throughput_on_bundle_callback(

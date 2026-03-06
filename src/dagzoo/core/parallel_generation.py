@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
+import os
 import queue
 import sys
 import threading
@@ -34,6 +35,26 @@ def active_worker_count(worker_count: int, num_datasets: int) -> int:
     """Return the number of worker partitions that can emit work for a run."""
 
     return min(int(worker_count), int(num_datasets))
+
+
+def _local_parallel_worker_capacity() -> int:
+    """Return the host-local CPU capacity available to the benchmark coordinator."""
+
+    sched_getaffinity = getattr(os, "sched_getaffinity", None)
+    if sched_getaffinity is not None:
+        try:
+            return max(1, len(sched_getaffinity(0)))
+        except OSError:
+            pass
+
+    cpu_count = os.cpu_count()
+    return max(1, int(cpu_count or 1))
+
+
+def effective_local_parallel_worker_count(worker_count: int, num_datasets: int) -> int:
+    """Return the local worker count after capping to host CPU capacity."""
+
+    return min(active_worker_count(worker_count, num_datasets), _local_parallel_worker_capacity())
 
 
 @contextmanager
@@ -106,21 +127,17 @@ def generate_parallel_batch_iter(
         config,
         device=device,
     )
-    active_worker_count_value = active_worker_count(worker_count, num_datasets)
+    local_worker_count = effective_local_parallel_worker_count(worker_count, num_datasets)
     run_seed = _generation_context._resolve_run_seed(config, seed)
-    buffer_budget = max(1, int(max_buffered_results or (active_worker_count_value * 2)))
-    per_worker_capacity = max(
-        1, (buffer_budget + active_worker_count_value - 1) // active_worker_count_value
-    )
+    buffer_budget = max(1, int(max_buffered_results or (local_worker_count * 2)))
+    per_worker_capacity = max(1, (buffer_budget + local_worker_count - 1) // local_worker_count)
     bundle_queues = [
-        queue.Queue[_BundleResult](maxsize=per_worker_capacity)
-        for _ in range(active_worker_count_value)
+        queue.Queue[_BundleResult](maxsize=per_worker_capacity) for _ in range(local_worker_count)
     ]
     queue_slots = [
-        threading.BoundedSemaphore(value=per_worker_capacity)
-        for _ in range(active_worker_count_value)
+        threading.BoundedSemaphore(value=per_worker_capacity) for _ in range(local_worker_count)
     ]
-    worker_errors: list[BaseException | None] = [None] * active_worker_count_value
+    worker_errors: list[BaseException | None] = [None] * local_worker_count
     first_recorded_error: list[BaseException | None] = [None]
     first_recorded_error_lock = threading.Lock()
     stop_event = threading.Event()
@@ -198,7 +215,7 @@ def generate_parallel_batch_iter(
             for dataset_index, dataset_seed in iter_worker_dataset_seeds(
                 run_seed=run_seed,
                 num_datasets=num_datasets,
-                worker_count=active_worker_count_value,
+                worker_count=local_worker_count,
                 worker_index=local_worker_index,
             ):
                 if stop_event.is_set():
@@ -232,18 +249,17 @@ def generate_parallel_batch_iter(
                     first_recorded_error[0] = exc
             stop_event.set()
 
-    with _cap_torch_intraop_threads(active_worker_count_value):
+    with _cap_torch_intraop_threads(local_worker_count):
         with ThreadPoolExecutor(
-            max_workers=active_worker_count_value,
+            max_workers=local_worker_count,
             thread_name_prefix="dagzoo-parallel-gen",
         ) as executor:
             futures = [
-                executor.submit(_run_worker, worker_idx)
-                for worker_idx in range(active_worker_count_value)
+                executor.submit(_run_worker, worker_idx) for worker_idx in range(local_worker_count)
             ]
             try:
                 for next_dataset_index in range(num_datasets):
-                    target_worker_index = next_dataset_index % active_worker_count_value
+                    target_worker_index = next_dataset_index % local_worker_count
                     target_queue = bundle_queues[target_worker_index]
                     target_future = futures[target_worker_index]
                     while True:

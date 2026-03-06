@@ -166,15 +166,67 @@ def test_run_throughput_benchmark_uses_sequential_generation_for_one_active_work
     result = run_throughput_benchmark(
         cfg,
         num_datasets=1,
-        warmup_datasets=1,
+        warmup_datasets=2,
         device="cpu",
     )
 
     assert calls == [
-        (1, offset_seed32(cfg.seed, 1), "cpu"),
+        (2, offset_seed32(cfg.seed, 1), "cpu"),
         (1, offset_seed32(cfg.seed, 2), "cpu"),
     ]
     assert result["num_datasets"] == 1
+
+
+def test_run_throughput_benchmark_uses_sequential_generation_when_local_worker_cap_is_one(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[int, int, str | None]] = []
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        calls.append((num_datasets, int(seed or 0), device))
+        yield from range(num_datasets)
+
+    def _unexpected_generate_parallel_batch_iter(*args, **kwargs):
+        raise AssertionError(
+            "parallel generator should not be used when the local worker cap reduces the run to one worker"
+        )
+
+    monkeypatch.setattr(
+        "dagzoo.bench.throughput.generate_batch_iter",
+        _stub_generate_batch_iter,
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.throughput.generate_parallel_batch_iter",
+        _unexpected_generate_parallel_batch_iter,
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.throughput.effective_local_parallel_worker_count",
+        lambda _worker_count, _num_datasets: 1,
+    )
+
+    cfg = GeneratorConfig()
+    cfg.runtime.worker_count = 64
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+
+    result = run_throughput_benchmark(
+        cfg,
+        num_datasets=4,
+        warmup_datasets=2,
+        device="cpu",
+    )
+
+    assert calls == [
+        (2, offset_seed32(cfg.seed, 1), "cpu"),
+        (4, offset_seed32(cfg.seed, 2), "cpu"),
+    ]
+    assert result["num_datasets"] == 4
 
 
 def test_run_throughput_benchmark_callback_exception_does_not_hang_parallel_path(
