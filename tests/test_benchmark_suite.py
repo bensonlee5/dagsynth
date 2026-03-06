@@ -365,7 +365,7 @@ def test_run_benchmark_suite_keeps_single_worker_metrics_when_local_worker_cap_i
     assert include_generate_one_flags == [True]
 
 
-def test_run_preset_benchmark_re_resolves_true_multi_worker_auto_to_cpu(
+def test_run_preset_benchmark_re_resolves_true_multi_worker_auto_to_cpu_on_accelerator_host(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = _tiny_cpu_config()
@@ -458,6 +458,102 @@ def test_run_preset_benchmark_re_resolves_true_multi_worker_auto_to_cpu(
 
     assert resolve_devices == ["auto", "cpu"]
     assert result["device"] == "cpu"
+    assert result["effective_config"]["runtime"]["device"] == "cpu"
+
+
+def test_run_preset_benchmark_re_resolves_true_multi_worker_auto_to_cpu_on_cpu_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "auto"
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="auto")
+    resolve_devices: list[str | None] = []
+
+    def _stub_resolve_benchmark_preset_config(
+        *,
+        preset_key: str,
+        config: GeneratorConfig,
+        preset_device: str | None,
+        suite: str,
+        hardware_policy: str,
+        smoke_caps,
+    ):
+        _ = config
+        _ = suite
+        _ = hardware_policy
+        _ = smoke_caps
+        assert preset_key == "cpu_test"
+        resolve_devices.append(preset_device)
+        resolved_cfg = _tiny_cpu_config()
+        resolved_cfg.runtime.worker_count = 2
+        resolved_cfg.runtime.worker_index = 0
+        resolved_cfg.runtime.device = str(preset_device)
+        return SimpleNamespace(
+            config=resolved_cfg,
+            requested_device=str(preset_device),
+            hardware=SimpleNamespace(
+                backend="cpu",
+                device_name="cpu",
+                total_memory_gb=None,
+                peak_flops=float("inf"),
+                tier="cpu",
+            ),
+            trace_events=[],
+        )
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.resolve_benchmark_preset_config",
+        _stub_resolve_benchmark_preset_config,
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_throughput_benchmark",
+        lambda config, *, num_datasets, warmup_datasets=10, device=None, on_bundle=None: {
+            "preset": config.benchmark.preset_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": float(num_datasets),
+            "datasets_per_minute": float(num_datasets) * 60.0,
+            "slo_pass_100_datasets_per_min": True,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_latency",
+        lambda _config, *, device=None, num_samples=1: {
+            "latency_samples": float(num_samples),
+            "latency_mean_ms": 1.0,
+            "latency_p95_ms": 2.0,
+            "latency_min_ms": 0.5,
+            "latency_max_ms": 3.0,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+
+    result = suite_mod.run_preset_benchmark(
+        spec,
+        suite="smoke",
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        include_micro=False,
+        hardware_policy="none",
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        diagnostics_occurrence_index=0,
+        diagnostics_occurrence_total=1,
+    )
+
+    assert resolve_devices == ["auto", "cpu"]
+    assert result["device"] == "cpu"
+    assert result["effective_config"]["runtime"]["device"] == "cpu"
 
 
 def test_run_preset_benchmark_preserves_auto_for_effectively_single_worker_run(
@@ -553,6 +649,7 @@ def test_run_preset_benchmark_preserves_auto_for_effectively_single_worker_run(
     assert resolve_devices == ["auto"]
     assert result["device"] == "auto"
     assert result["hardware_backend"] == "cuda"
+    assert result["effective_config"]["runtime"]["device"] == "auto"
 
 
 def test_run_preset_benchmark_allows_explicit_cuda_when_local_worker_cap_is_one(

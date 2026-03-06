@@ -379,7 +379,7 @@ def run_preset_benchmark(
             f"Preset '{spec.key}' requested_device='{requested_device}' resolved backend "
             f"'{hw.backend}'."
         )
-    if multi_worker_benchmark and explicit_requested_device == "auto" and hw.backend != "cpu":
+    if multi_worker_benchmark and explicit_requested_device == "auto":
         resolved_preset = _resolve_preset_for_requested_device("cpu")
         config = resolved_preset.config
         requested_device = resolved_preset.requested_device
