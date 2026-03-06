@@ -14,6 +14,7 @@ from dagzoo.bench.constants import (
 )
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_batch_iter
+from dagzoo.core.parallel_generation import generate_parallel_batch_iter
 from dagzoo.rng import offset_seed32
 from dagzoo.types import DatasetBundle
 
@@ -28,7 +29,12 @@ def _consume_generation(
 ) -> None:
     """Run generation for ``num_datasets`` items while discarding outputs."""
 
-    for bundle in generate_batch_iter(
+    generator = (
+        generate_parallel_batch_iter
+        if int(config.runtime.worker_count) > 1
+        else generate_batch_iter
+    )
+    for bundle in generator(
         config,
         num_datasets=num_datasets,
         seed=seed,

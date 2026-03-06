@@ -10,7 +10,7 @@ import re
 import resource
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +79,11 @@ from dagzoo.core.config_resolution import (
     serialize_resolution_events,
 )
 from dagzoo.core.dataset import generate_batch_iter, generate_one
+from dagzoo.core.parallel_generation import (
+    ParallelGenerationConfigError,
+    active_worker_count,
+    generate_parallel_batch_iter,
+)
 from dagzoo.core.shift import resolve_shift_runtime_params
 from dagzoo.diagnostics import (
     CoverageAggregator,
@@ -186,11 +191,16 @@ def _collect_reproducibility(
 
     n = max(1, num_datasets)
     run_seed = offset_seed32(config.seed, REPRODUCIBILITY_SEED_OFFSET)
+    generator = (
+        generate_parallel_batch_iter
+        if int(config.runtime.worker_count) > 1
+        else generate_batch_iter
+    )
     sig_a = reproducibility_signature(
-        generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
+        generator(config, num_datasets=n, seed=run_seed, device=device)
     )
     sig_b = reproducibility_signature(
-        generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
+        generator(config, num_datasets=n, seed=run_seed, device=device)
     )
     return {
         "reproducibility_datasets": n,
@@ -334,6 +344,15 @@ def run_preset_benchmark(
     config = resolved_preset.config
     requested_device = resolved_preset.requested_device
     hw = resolved_preset.hardware
+    explicit_requested_device = str(requested_device).strip().lower()
+    if int(config.runtime.worker_count) > 1 and (
+        hw.backend != "cpu" or explicit_requested_device in {"cuda", "mps"}
+    ):
+        raise ParallelGenerationConfigError(
+            "runtime.worker_count > 1 benchmark runs currently support resolved CPU presets only. "
+            f"Preset '{spec.key}' requested_device='{requested_device}' resolved backend "
+            f"'{hw.backend}'."
+        )
 
     num_datasets, warmup = _preset_counts(
         config,
@@ -371,6 +390,9 @@ def run_preset_benchmark(
 
     generation_config = _copy_runtime_config(config)
     generation_config.filter.enabled = False
+    multi_worker_benchmark = (
+        active_worker_count(int(generation_config.runtime.worker_count), num_datasets) > 1
+    )
 
     def _build_throughput_on_bundle_callback(
         *,
@@ -505,11 +527,21 @@ def run_preset_benchmark(
     # control-run guardrail benchmarks to avoid unnecessary memory retention.
     sampled_bundles.clear()
 
-    latency_stats = _collect_latency(
-        generation_config,
-        device=requested_device,
-        num_samples=_latency_sample_count(config, suite, num_datasets),
-    )
+    latency_stats: Mapping[str, float | None]
+    if multi_worker_benchmark:
+        latency_stats = {
+            "latency_samples": None,
+            "latency_mean_ms": None,
+            "latency_p95_ms": None,
+            "latency_min_ms": None,
+            "latency_max_ms": None,
+        }
+    else:
+        latency_stats = _collect_latency(
+            generation_config,
+            device=requested_device,
+            num_samples=_latency_sample_count(config, suite, num_datasets),
+        )
     result.update(latency_stats)
 
     if collect_memory:
@@ -538,6 +570,7 @@ def run_preset_benchmark(
                 generation_config,
                 device=requested_device,
                 repeats=MICROBENCH_REPEATS,
+                include_generate_one=not multi_worker_benchmark,
             )
         )
 

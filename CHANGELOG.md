@@ -10,6 +10,31 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.5.5] - 2026-03-06
+
+### Added
+
+- Added local CPU multi-worker benchmark orchestration for `dagzoo benchmark`
+  when `runtime.worker_count > 1`, `runtime.worker_index == 0`, and
+  `--preset custom` is used.
+
+### Changed
+
+- Benchmark throughput, reproducibility, and lineage guardrail generation paths
+  now use the local multi-worker iterator when multi-worker benchmark mode is
+  active.
+- Multi-worker benchmark summaries now report latency fields and
+  `micro_generate_one_ms` as unavailable when the run actually uses multiple
+  active worker partitions, avoiding misleading single-worker timings.
+
+### Breaking
+
+- **BREAKING:** Multi-worker `dagzoo benchmark` remains CPU-only in this
+  release; explicit `cuda`/`mps` multi-worker benchmark runs are rejected.
+- **BREAKING:** `dagzoo generate` still does not orchestrate peer workers, and
+  write-enabled multi-worker generate runs remain blocked until shard-writing
+  coordination lands.
+
 ## [0.5.4] - 2026-03-06
 
 ### Changed

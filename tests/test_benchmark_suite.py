@@ -112,6 +112,184 @@ def test_run_benchmark_suite_smoke_single_profile() -> None:
     assert lineage_guardrails["status"] in {"pass", "warn", "fail"}
 
 
+def test_run_benchmark_suite_marks_latency_unavailable_for_multi_worker_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cpu")
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_throughput_benchmark",
+        lambda config, *, num_datasets, warmup_datasets=10, device=None, on_bundle=None: {
+            "preset": config.benchmark.preset_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": float(num_datasets),
+            "datasets_per_minute": float(num_datasets) * 60.0,
+            "slo_pass_100_datasets_per_min": True,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_latency",
+        lambda *_args, **_kwargs: pytest.fail("latency should be skipped for multi-worker"),
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        fail_on_regression=False,
+        hardware_policy="none",
+    )
+
+    result = summary["preset_results"][0]
+    assert result["latency_samples"] is None
+    assert result["latency_mean_ms"] is None
+    assert result["latency_p95_ms"] is None
+    assert result["latency_min_ms"] is None
+    assert result["latency_max_ms"] is None
+
+
+def test_run_benchmark_suite_marks_generate_one_micro_unavailable_for_multi_worker_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cpu")
+    include_generate_one_flags: list[bool] = []
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_throughput_benchmark",
+        lambda config, *, num_datasets, warmup_datasets=10, device=None, on_bundle=None: {
+            "preset": config.benchmark.preset_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": float(num_datasets),
+            "datasets_per_minute": float(num_datasets) * 60.0,
+            "slo_pass_100_datasets_per_min": True,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_latency",
+        lambda *_args, **_kwargs: pytest.fail("latency should be skipped for multi-worker"),
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_microbenchmarks",
+        lambda _config, *, device=None, repeats=1, include_generate_one=True: (
+            include_generate_one_flags.append(bool(include_generate_one))
+            or {
+                "micro_repeats": int(repeats),
+                "micro_random_function_linear_ms": 1.0,
+                "micro_node_pipeline_ms": 2.0,
+                "micro_generate_one_ms": 3.0 if include_generate_one else None,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="full",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        fail_on_regression=False,
+        hardware_policy="none",
+    )
+
+    result = summary["preset_results"][0]
+    assert result["micro_repeats"] >= 1
+    assert result["micro_random_function_linear_ms"] == pytest.approx(1.0)
+    assert result["micro_node_pipeline_ms"] == pytest.approx(2.0)
+    assert result["micro_generate_one_ms"] is None
+    assert include_generate_one_flags == [False]
+
+
+def test_run_benchmark_suite_keeps_latency_for_tiny_multi_worker_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 4
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cpu")
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_throughput_benchmark",
+        lambda config, *, num_datasets, warmup_datasets=10, device=None, on_bundle=None: {
+            "preset": config.benchmark.preset_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": float(num_datasets),
+            "datasets_per_minute": float(num_datasets) * 60.0,
+            "slo_pass_100_datasets_per_min": True,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_latency",
+        lambda _config, *, device=None, num_samples=1: {
+            "latency_samples": float(num_samples),
+            "latency_mean_ms": 1.0,
+            "latency_p95_ms": 2.0,
+            "latency_min_ms": 0.5,
+            "latency_max_ms": 3.0,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=1,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        fail_on_regression=False,
+        hardware_policy="none",
+    )
+
+    result = summary["preset_results"][0]
+    assert result["latency_samples"] == pytest.approx(1.0)
+    assert result["latency_mean_ms"] == pytest.approx(1.0)
+    assert result["latency_p95_ms"] == pytest.approx(2.0)
+    assert result["latency_min_ms"] == pytest.approx(0.5)
+    assert result["latency_max_ms"] == pytest.approx(3.0)
+
+
 def test_run_benchmark_suite_emits_stage_and_filter_pressure_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -327,8 +505,15 @@ def test_run_benchmark_suite_filter_enabled_uses_filter_disabled_generation_conf
             "reproducibility_match": True,
         }
 
-    def _stub_micro(config, *, device: str | None, repeats: int) -> dict[str, float | int]:
+    def _stub_micro(
+        config,
+        *,
+        device: str | None,
+        repeats: int,
+        include_generate_one: bool = True,
+    ) -> dict[str, float | int | None]:
         _ = device
+        _ = include_generate_one
         micro_filter_flags.append(bool(config.filter.enabled))
         return {
             "micro_repeats": int(repeats),
@@ -1771,6 +1956,15 @@ def test_run_microbenchmarks_returns_expected_keys() -> None:
     assert "micro_generate_one_ms" in res
 
 
+def test_run_microbenchmarks_can_skip_generate_one() -> None:
+    cfg = _tiny_cpu_config()
+    res = run_microbenchmarks(cfg, device="cpu", repeats=1, include_generate_one=False)
+    assert res["micro_repeats"] == 1
+    assert "micro_random_function_linear_ms" in res
+    assert "micro_node_pipeline_ms" in res
+    assert res["micro_generate_one_ms"] is None
+
+
 def test_collect_reproducibility_uses_streaming_generation(
     monkeypatch,
 ) -> None:
@@ -1807,6 +2001,58 @@ def test_collect_reproducibility_uses_streaming_generation(
     )
 
     cfg = _tiny_cpu_config()
+    out = suite_mod._collect_reproducibility(cfg, device="cpu", num_datasets=3)
+    assert out["reproducibility_datasets"] == 3
+    assert out["reproducibility_match"] is True
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+
+
+def test_collect_reproducibility_uses_parallel_generation_when_multi_worker_cpu(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[int, int, str | None]] = []
+
+    def _bundle(value: int) -> DatasetBundle:
+        x_train = np.full((2, 2), float(value), dtype=np.float32)
+        y_train = np.array([0, 1], dtype=np.int64)
+        x_test = np.full((1, 2), float(value), dtype=np.float32)
+        y_test = np.array([1], dtype=np.int64)
+        return DatasetBundle(
+            X_train=x_train,
+            y_train=y_train,
+            X_test=x_test,
+            y_test=y_test,
+            feature_types=["num", "num"],
+            metadata={"seed": value, "attempt_used": 0},
+        )
+
+    def _stub_generate_parallel_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        calls.append((num_datasets, int(seed or 0), device))
+        for i in range(num_datasets):
+            yield _bundle(int(seed or 0) + i)
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.generate_parallel_batch_iter",
+        _stub_generate_parallel_batch_iter,
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.generate_batch_iter",
+        lambda *_args, **_kwargs: pytest.fail(
+            "sequential generator should not be used for multi-worker reproducibility"
+        ),
+    )
+
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+
     out = suite_mod._collect_reproducibility(cfg, device="cpu", num_datasets=3)
     assert out["reproducibility_datasets"] == 3
     assert out["reproducibility_match"] is True
