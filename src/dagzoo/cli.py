@@ -1010,7 +1010,6 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     diagnostics_root_dir = _benchmark_diagnostics_root_dir(args, artifact_dir=artifact_dir)
 
     default_cfg = _default_benchmark_config(args)
-    _raise_if_benchmark_multi_worker_preflight_invalid(default_cfg, device_override=args.device)
     suite = (args.suite or default_cfg.benchmark.suite).strip().lower()
     warn_pct = (
         float(args.warn_threshold_pct)
@@ -1027,14 +1026,15 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         preset_keys=args.preset,
         config_path=args.config,
     )
+    effective_device_override = args.device if args.device and len(preset_specs) == 1 else None
     for spec in preset_specs:
         _raise_if_benchmark_multi_worker_preflight_invalid(
             spec.config,
-            device_override=args.device,
+            device_override=effective_device_override,
             preset_device=spec.device,
         )
-    if args.device and len(preset_specs) == 1:
-        preset_specs[0].device = args.device
+    if effective_device_override is not None:
+        preset_specs[0].device = effective_device_override
 
     baseline_payload = load_baseline(args.baseline) if args.baseline else None
 

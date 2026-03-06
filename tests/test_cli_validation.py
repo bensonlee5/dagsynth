@@ -317,6 +317,52 @@ def test_benchmark_cli_rejects_multi_worker_explicit_cuda_device(tmp_path) -> No
     assert int(exc.value.code) == 2
 
 
+def test_benchmark_cli_ignores_device_override_for_multi_preset_preflight(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+    config_path = tmp_path / "benchmark_multi_worker_multi_preset.yaml"
+    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def _stub_run_benchmark_suite(
+        preset_specs,
+        **kwargs,
+    ):
+        captured["preset_specs"] = preset_specs
+        captured.update(kwargs)
+        return {"preset_results": [], "regression": {"status": "pass", "issues": []}}
+
+    monkeypatch.setattr("dagzoo.cli.run_benchmark_suite", _stub_run_benchmark_suite)
+
+    code = main(
+        [
+            "benchmark",
+            "--config",
+            str(config_path),
+            "--preset",
+            "custom",
+            "--preset",
+            "cpu",
+            "--suite",
+            "smoke",
+            "--no-memory",
+            "--device",
+            "cuda",
+        ]
+    )
+
+    assert code == 0
+    preset_specs = captured["preset_specs"]
+    assert isinstance(preset_specs, list)
+    assert len(preset_specs) == 2
+    assert all(getattr(spec, "device", None) != "cuda" for spec in preset_specs)
+
+
 def test_diversity_audit_cli_rejects_worker_partition_config(tmp_path) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     cfg.runtime.worker_count = 2

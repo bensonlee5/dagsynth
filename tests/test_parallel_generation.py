@@ -6,8 +6,12 @@ import dagzoo.core.parallel_generation as parallel_generation_mod
 import pytest
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.core.parallel_generation import generate_parallel_batch_iter
+from dagzoo.core.parallel_generation import (
+    ParallelGenerationConfigError,
+    generate_parallel_batch_iter,
+)
 from dagzoo.rng import SeedManager
+from dagzoo.types import DatasetBundle
 
 
 def _patch_torch_thread_settings(
@@ -61,6 +65,41 @@ def test_generate_parallel_batch_iter_preserves_global_seed_order(
     assert produced == expected
     assert sorted(observed_seeds) == sorted(expected)
     assert set_calls == [2, 8]
+
+
+def test_generate_parallel_batch_iter_preserves_root_worker_index_in_bundle_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 3
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+    _ = _patch_torch_thread_settings(monkeypatch, num_threads=6)
+
+    def _stub_generate_one_seeded(
+        config, *, seed: int, requested_device: str, resolved_device: str
+    ):
+        _ = seed
+        _ = requested_device
+        _ = resolved_device
+        return DatasetBundle(
+            X_train=None,
+            y_train=None,
+            X_test=None,
+            y_test=None,
+            feature_types=[],
+            metadata={"config": {"runtime": {"worker_index": int(config.runtime.worker_index)}}},
+        )
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
+        _stub_generate_one_seeded,
+    )
+
+    produced = list(generate_parallel_batch_iter(cfg, num_datasets=5, seed=777, device="cpu"))
+
+    assert len(produced) == 5
+    assert all(bundle.metadata["config"]["runtime"]["worker_index"] == 0 for bundle in produced)
 
 
 def test_generate_parallel_batch_iter_yields_nothing_for_zero_datasets() -> None:
@@ -167,7 +206,7 @@ def test_generate_parallel_batch_iter_rejects_non_cpu_resolved_device(
         list(generate_parallel_batch_iter(cfg, num_datasets=2, seed=7, device="auto"))
 
 
-def test_generate_parallel_batch_iter_skips_torch_thread_cap_when_already_single_thread(
+def test_generate_parallel_batch_iter_rejects_thread_limited_cpu_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
@@ -179,14 +218,14 @@ def test_generate_parallel_batch_iter_skips_torch_thread_cap_when_already_single
 
     monkeypatch.setattr(
         "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
-        lambda _config, *, seed, requested_device, resolved_device: seed,
+        lambda *_args, **_kwargs: pytest.fail("generation should not start when thread-limited"),
     )
 
-    expected_seed = SeedManager(777).child("dataset", 0)
-
-    assert list(generate_parallel_batch_iter(cfg, num_datasets=1, seed=777, device="cpu")) == [
-        expected_seed
-    ]
+    with pytest.raises(
+        ParallelGenerationConfigError,
+        match=r"torch\.get_num_threads\(\) >= runtime\.worker_count",
+    ):
+        list(generate_parallel_batch_iter(cfg, num_datasets=1, seed=777, device="cpu"))
     assert set_calls == []
 
 
@@ -280,6 +319,73 @@ def test_generate_parallel_batch_iter_close_does_not_hang_with_full_queue(
     assert set_calls == [4, 8]
 
 
+def test_generate_parallel_batch_iter_rechecks_queue_after_poll_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+    _ = _patch_torch_thread_settings(monkeypatch, num_threads=2)
+
+    forced_empty = False
+    allow_seed0_emit = threading.Event()
+    dataset0_buffered = threading.Event()
+    original_put = parallel_generation_mod.queue.Queue.put
+    original_get = parallel_generation_mod.queue.Queue.get
+
+    def _patched_put(self, item, block: bool = True, timeout: float | None = None):
+        result = original_put(self, item, block=block, timeout=timeout)
+        if getattr(item, "dataset_index", None) == 0:
+            dataset0_buffered.set()
+        return result
+
+    def _patched_get(self, block: bool = True, timeout: float | None = None):
+        nonlocal forced_empty
+        if timeout == 0.05 and self.maxsize == 1 and not forced_empty:
+            allow_seed0_emit.set()
+            assert dataset0_buffered.wait(timeout=1.0)
+            forced_empty = True
+            raise queue.Empty
+        return original_get(self, block=block, timeout=timeout)
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation.queue.Queue.put",
+        _patched_put,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation.queue.Queue.get",
+        _patched_get,
+    )
+
+    def _stub_generate_one_seeded(
+        config, *, seed: int, requested_device: str, resolved_device: str
+    ):
+        _ = config
+        _ = requested_device
+        _ = resolved_device
+        assert allow_seed0_emit.wait(timeout=1.0)
+        return int(seed)
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
+        _stub_generate_one_seeded,
+    )
+
+    expected_seed = SeedManager(777).child("dataset", 0)
+
+    assert list(
+        generate_parallel_batch_iter(
+            cfg,
+            num_datasets=1,
+            seed=777,
+            device="cpu",
+            max_buffered_results=1,
+        )
+    ) == [expected_seed]
+    assert forced_empty
+
+
 def test_generate_parallel_batch_iter_bounds_faster_worker_runahead(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -348,6 +454,81 @@ def test_generate_parallel_batch_iter_bounds_faster_worker_runahead(
 
     assert not consumer_thread.is_alive()
     assert next_result.get_nowait() == seed0
+    iterator.close()
+
+
+def test_generate_parallel_batch_iter_defers_later_worker_error_until_target_index_is_due(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+    _ = _patch_torch_thread_settings(monkeypatch, num_threads=2)
+
+    manager = SeedManager(777)
+    seed0 = manager.child("dataset", 0)
+    seed1 = manager.child("dataset", 1)
+    seed2 = manager.child("dataset", 2)
+    seed3 = manager.child("dataset", 3)
+
+    dataset2_started = threading.Event()
+    release_dataset2 = threading.Event()
+    worker_one_failed = threading.Event()
+
+    def _stub_generate_one_seeded(
+        config, *, seed: int, requested_device: str, resolved_device: str
+    ):
+        _ = config
+        _ = requested_device
+        _ = resolved_device
+        if seed == seed2:
+            dataset2_started.set()
+            assert release_dataset2.wait(timeout=1.0)
+            return seed
+        if seed == seed3:
+            assert dataset2_started.wait(timeout=1.0)
+            worker_one_failed.set()
+            raise RuntimeError("boom")
+        return seed
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
+        _stub_generate_one_seeded,
+    )
+
+    iterator = generate_parallel_batch_iter(
+        cfg,
+        num_datasets=4,
+        seed=777,
+        device="cpu",
+        max_buffered_results=2,
+    )
+    assert next(iterator) == seed0
+    assert next(iterator) == seed1
+
+    next_result: queue.Queue[int | BaseException] = queue.Queue()
+
+    def _consume_next() -> None:
+        try:
+            next_result.put(next(iterator))
+        except BaseException as exc:  # pragma: no cover - surfaced via queue assertion
+            next_result.put(exc)
+
+    consumer_thread = threading.Thread(target=_consume_next, daemon=True)
+    consumer_thread.start()
+
+    assert dataset2_started.wait(timeout=1.0)
+    assert worker_one_failed.wait(timeout=1.0)
+    assert consumer_thread.is_alive()
+
+    release_dataset2.set()
+    consumer_thread.join(timeout=1.0)
+
+    assert not consumer_thread.is_alive()
+    assert next_result.get_nowait() == seed2
+    with pytest.raises(RuntimeError, match="boom"):
+        next(iterator)
     iterator.close()
 
 

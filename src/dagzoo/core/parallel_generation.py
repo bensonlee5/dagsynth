@@ -39,10 +39,14 @@ def _cap_torch_intraop_threads(worker_count: int) -> Iterator[None]:
         return
 
     original_threads = int(torch.get_num_threads())
+    if original_threads < worker_count:
+        raise ParallelGenerationConfigError(
+            "Local parallel generation requires torch.get_num_threads() >= "
+            f"runtime.worker_count. Got torch_threads={original_threads} < "
+            f"worker_count={worker_count}; lower runtime.worker_count or increase "
+            "Torch CPU threads."
+        )
     capped_threads = max(1, original_threads // worker_count)
-    if capped_threads >= original_threads:
-        yield
-        return
 
     # Torch thread settings are process-global, so keep the cap scoped to the local
     # multi-worker benchmark path and restore it after all worker threads have joined.
@@ -110,23 +114,41 @@ def generate_parallel_batch_iter(
     ]
     # Each worker writes its own slot at most once; the consumer only reads stable references.
     worker_errors: list[BaseException | None] = [None] * worker_count
+    first_recorded_error: list[BaseException | None] = [None]
+    first_recorded_error_lock = threading.Lock()
+    # Worker failures stop new dataset generation, but in-flight bundles may still be queued.
     stop_event = threading.Event()
     consumer_closed_event = threading.Event()
 
-    def _recorded_worker_error(target_worker_index: int) -> BaseException | None:
-        target_error = worker_errors[target_worker_index]
-        if target_error is not None:
-            return target_error
-        for error in worker_errors:
-            if error is not None:
-                return error
-        return None
+    def _target_worker_error(target_worker_index: int) -> BaseException | None:
+        return worker_errors[target_worker_index]
+
+    def _first_recorded_worker_error() -> BaseException | None:
+        return first_recorded_error[0]
+
+    def _try_get_buffered_item(target_queue: queue.Queue[_BundleResult]) -> _BundleResult | None:
+        try:
+            return target_queue.get_nowait()
+        except queue.Empty:
+            return None
+
+    def _bundle_from_item(
+        item: _BundleResult,
+        *,
+        target_worker_index: int,
+        next_dataset_index: int,
+    ) -> DatasetBundle:
+        if item.dataset_index != next_dataset_index:
+            raise RuntimeError(
+                "Parallel generation yielded an unexpected dataset index from worker "
+                f"{target_worker_index}: expected {next_dataset_index}, "
+                f"got {item.dataset_index}."
+            )
+        return item.bundle
 
     def _put_bundle(worker_index: int, item: _BundleResult) -> bool:
         while True:
             if consumer_closed_event.is_set():
-                return False
-            if stop_event.is_set():
                 return False
             try:
                 bundle_queues[worker_index].put(item, timeout=0.05)
@@ -137,7 +159,6 @@ def generate_parallel_batch_iter(
     def _run_worker(local_worker_index: int) -> None:
         try:
             worker_config = copy.deepcopy(config)
-            worker_config.runtime.worker_index = local_worker_index
             for dataset_index, dataset_seed in iter_worker_dataset_seeds(
                 run_seed=run_seed,
                 num_datasets=num_datasets,
@@ -158,10 +179,11 @@ def generate_parallel_batch_iter(
                 ):
                     break
         except BaseException as exc:  # pragma: no cover - exercised via consumer raise path
-            stop_event.set()
             worker_errors[local_worker_index] = exc
-
-    first_error: BaseException | None = None
+            with first_recorded_error_lock:
+                if first_recorded_error[0] is None:
+                    first_recorded_error[0] = exc
+            stop_event.set()
 
     with _cap_torch_intraop_threads(worker_count):
         with ThreadPoolExecutor(
@@ -177,46 +199,61 @@ def generate_parallel_batch_iter(
                     target_queue = bundle_queues[target_worker_index]
                     target_future = futures[target_worker_index]
                     while True:
-                        if first_error is None:
-                            worker_error = _recorded_worker_error(target_worker_index)
-                            if worker_error is not None:
-                                first_error = worker_error
-                                stop_event.set()
-                        if first_error is not None:
-                            raise first_error
+                        item = _try_get_buffered_item(target_queue)
+                        if item is not None:
+                            yield _bundle_from_item(
+                                item,
+                                target_worker_index=target_worker_index,
+                                next_dataset_index=next_dataset_index,
+                            )
+                            break
+                        target_worker_error = _target_worker_error(target_worker_index)
+                        if target_worker_error is not None:
+                            raise target_worker_error
                         try:
                             item = target_queue.get(timeout=0.05)
                         except queue.Empty:
-                            if first_error is None:
-                                worker_error = _recorded_worker_error(target_worker_index)
-                                if worker_error is not None:
-                                    first_error = worker_error
-                                    stop_event.set()
-                            if first_error is not None:
-                                raise first_error
+                            item = _try_get_buffered_item(target_queue)
+                            if item is not None:
+                                yield _bundle_from_item(
+                                    item,
+                                    target_worker_index=target_worker_index,
+                                    next_dataset_index=next_dataset_index,
+                                )
+                                break
+                            target_worker_error = _target_worker_error(target_worker_index)
+                            if target_worker_error is not None:
+                                raise target_worker_error
                             if target_future.done():
+                                item = _try_get_buffered_item(target_queue)
+                                if item is not None:
+                                    yield _bundle_from_item(
+                                        item,
+                                        target_worker_index=target_worker_index,
+                                        next_dataset_index=next_dataset_index,
+                                    )
+                                    break
+                                target_worker_error = _target_worker_error(target_worker_index)
+                                if target_worker_error is not None:
+                                    raise target_worker_error
+                                worker_error = _first_recorded_worker_error()
+                                if worker_error is not None:
+                                    raise worker_error
                                 # Defensive fallback for unexpected thread-body failures that bypass
                                 # the recorded worker error path.
                                 worker_exc = target_future.exception()
                                 if worker_exc is not None:
-                                    stop_event.set()
                                     raise worker_exc
-                                worker_error = _recorded_worker_error(target_worker_index)
-                                if worker_error is not None:
-                                    stop_event.set()
-                                    raise worker_error
                                 raise RuntimeError(
                                     "Parallel generation worker ended before producing the expected "
                                     f"dataset index {next_dataset_index}."
                                 )
                             continue
-                        if item.dataset_index != next_dataset_index:
-                            raise RuntimeError(
-                                "Parallel generation yielded an unexpected dataset index from worker "
-                                f"{target_worker_index}: expected {next_dataset_index}, "
-                                f"got {item.dataset_index}."
-                            )
-                        yield item.bundle
+                        yield _bundle_from_item(
+                            item,
+                            target_worker_index=target_worker_index,
+                            next_dataset_index=next_dataset_index,
+                        )
                         break
             finally:
                 consumer_closed_event.set()
@@ -227,14 +264,7 @@ def generate_parallel_batch_iter(
                     try:
                         future.result()
                     except BaseException as exc:  # pragma: no cover - requires teardown timing
-                        if (
-                            current_exception is None
-                            and first_error is None
-                            and teardown_error is None
-                        ):
+                        if current_exception is None and teardown_error is None:
                             teardown_error = exc
-                if current_exception is None and first_error is None and teardown_error is not None:
+                if current_exception is None and teardown_error is not None:
                     raise teardown_error
-
-    if first_error is not None:
-        raise first_error
