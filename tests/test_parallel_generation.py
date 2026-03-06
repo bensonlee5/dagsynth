@@ -7,7 +7,6 @@ import pytest
 
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.parallel_generation import (
-    ParallelGenerationConfigError,
     generate_parallel_batch_iter,
 )
 from dagzoo.rng import SeedManager
@@ -206,7 +205,7 @@ def test_generate_parallel_batch_iter_rejects_non_cpu_resolved_device(
         list(generate_parallel_batch_iter(cfg, num_datasets=2, seed=7, device="auto"))
 
 
-def test_generate_parallel_batch_iter_rejects_thread_limited_active_worker_count(
+def test_generate_parallel_batch_iter_allows_thread_limited_active_worker_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
@@ -215,18 +214,22 @@ def test_generate_parallel_batch_iter_rejects_thread_limited_active_worker_count
     cfg.runtime.device = "cpu"
 
     set_calls = _patch_torch_thread_settings(monkeypatch, num_threads=2)
+    observed_seeds: list[int] = []
 
     monkeypatch.setattr(
         "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
-        lambda *_args, **_kwargs: pytest.fail("generation should not start when thread-limited"),
+        lambda _config, *, seed, requested_device, resolved_device: (
+            observed_seeds.append(int(seed)) or int(seed)
+        ),
     )
 
-    with pytest.raises(
-        ParallelGenerationConfigError,
-        match=r"active worker count",
-    ):
-        list(generate_parallel_batch_iter(cfg, num_datasets=3, seed=777, device="cpu"))
-    assert set_calls == []
+    produced = list(generate_parallel_batch_iter(cfg, num_datasets=3, seed=777, device="cpu"))
+    manager = SeedManager(777)
+    expected = [manager.child("dataset", idx) for idx in range(3)]
+
+    assert produced == expected
+    assert sorted(observed_seeds) == sorted(expected)
+    assert set_calls == [1, 2]
 
 
 def test_generate_parallel_batch_iter_handles_single_dataset_with_many_workers(

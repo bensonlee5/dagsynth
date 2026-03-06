@@ -3,11 +3,9 @@ import threading
 import typing
 
 import dagzoo.core.parallel_generation as parallel_generation_mod
-import pytest
 from dagzoo.bench.throughput import run_throughput_benchmark
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.parallel_generation import (
-    ParallelGenerationConfigError,
     generate_parallel_batch_iter,
 )
 from dagzoo.rng import SeedManager, offset_seed32
@@ -314,7 +312,7 @@ def test_run_throughput_benchmark_preserves_ordered_prefix_before_later_worker_e
     assert observed == [seed0, seed1, seed2]
 
 
-def test_run_throughput_benchmark_rejects_thread_limited_multi_worker_cpu(
+def test_run_throughput_benchmark_allows_thread_limited_multi_worker_cpu(
     monkeypatch,
 ) -> None:
     cfg = GeneratorConfig()
@@ -335,19 +333,21 @@ def test_run_throughput_benchmark_rejects_thread_limited_multi_worker_cpu(
     )
     monkeypatch.setattr(
         "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
-        lambda *_args, **_kwargs: pytest.fail("generation should not start when thread-limited"),
+        lambda _config, *, seed, requested_device, resolved_device: int(seed),
     )
 
-    with pytest.raises(
-        ParallelGenerationConfigError,
-        match=r"active worker count",
-    ):
-        run_throughput_benchmark(
-            cfg,
-            num_datasets=4,
-            warmup_datasets=0,
-            device="cpu",
-        )
+    observed: list[int] = []
+    result = run_throughput_benchmark(
+        cfg,
+        num_datasets=4,
+        warmup_datasets=0,
+        device="cpu",
+        on_bundle=lambda bundle: observed.append(int(bundle)),
+    )
+
+    assert len(observed) == 4
+    assert result["num_datasets"] == 4
+    assert result["warmup_datasets"] == 0
     assert set_calls == []
 
 

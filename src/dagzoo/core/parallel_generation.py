@@ -39,17 +39,15 @@ def _cap_torch_intraop_threads(active_worker_count: int) -> Iterator[None]:
         return
 
     original_threads = int(torch.get_num_threads())
-    if original_threads < active_worker_count:
-        raise ParallelGenerationConfigError(
-            "Local parallel generation requires torch.get_num_threads() >= the active "
-            "worker count. Got "
-            f"torch_threads={original_threads} < active_worker_count={active_worker_count}; "
-            "lower runtime.worker_count, lower num_datasets, or increase Torch CPU threads."
-        )
     capped_threads = max(1, original_threads // active_worker_count)
 
     # Torch thread settings are process-global, so keep the cap scoped to the local
     # multi-worker benchmark path and restore it after all worker threads have joined.
+    # Low-thread environments remain valid; they naturally run with a per-worker cap of 1.
+    if capped_threads == original_threads:
+        yield
+        return
+
     torch.set_num_threads(capped_threads)
     try:
         yield
