@@ -7,18 +7,10 @@ from typing import Literal
 
 import torch
 
+from dagzoo.types import MechanismFamily
+
 FeatureType = Literal["num", "cat"]
 ConverterKind = Literal["cat", "num", "target_cls", "target_reg"]
-MechanismFamily = Literal[
-    "nn",
-    "tree",
-    "discretization",
-    "gp",
-    "linear",
-    "quadratic",
-    "em",
-    "product",
-]
 AggregationKind = Literal["sum", "product", "max", "logsumexp"]
 
 

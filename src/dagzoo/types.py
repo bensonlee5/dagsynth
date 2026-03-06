@@ -3,7 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+
+MechanismFamily = Literal[
+    "nn",
+    "tree",
+    "discretization",
+    "gp",
+    "linear",
+    "quadratic",
+    "em",
+    "product",
+]
 
 
 @dataclass(slots=True)

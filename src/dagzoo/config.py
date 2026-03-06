@@ -12,17 +12,7 @@ import yaml
 
 from dagzoo.math_utils import normalize_positive_weights
 from dagzoo.rng import SEED32_MAX, SEED32_MIN, derive_seed
-
-MechanismFamily = Literal[
-    "nn",
-    "tree",
-    "discretization",
-    "gp",
-    "linear",
-    "quadratic",
-    "em",
-    "product",
-]
+from dagzoo.types import MechanismFamily
 
 MissingnessMechanism = Literal["none", "mcar", "mar", "mnar"]
 MISSINGNESS_MECHANISM_NONE: Literal["none"] = "none"
