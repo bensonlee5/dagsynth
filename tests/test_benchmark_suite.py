@@ -231,6 +231,137 @@ def test_run_benchmark_suite_marks_generate_one_micro_unavailable_for_multi_work
     assert include_generate_one_flags == [False]
 
 
+def test_run_benchmark_suite_keeps_latency_for_tiny_multi_worker_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 4
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cpu")
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_throughput_benchmark",
+        lambda config, *, num_datasets, warmup_datasets=10, device=None, on_bundle=None: {
+            "preset": config.benchmark.preset_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": float(num_datasets),
+            "datasets_per_minute": float(num_datasets) * 60.0,
+            "slo_pass_100_datasets_per_min": True,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_latency",
+        lambda _config, *, device=None, num_samples=1: {
+            "latency_samples": float(num_samples),
+            "latency_mean_ms": 1.0,
+            "latency_p95_ms": 2.0,
+            "latency_min_ms": 0.5,
+            "latency_max_ms": 3.0,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="smoke",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=1,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        fail_on_regression=False,
+        hardware_policy="none",
+    )
+
+    result = summary["preset_results"][0]
+    assert result["latency_samples"] == pytest.approx(1.0)
+    assert result["latency_mean_ms"] == pytest.approx(1.0)
+    assert result["latency_p95_ms"] == pytest.approx(2.0)
+    assert result["latency_min_ms"] == pytest.approx(0.5)
+    assert result["latency_max_ms"] == pytest.approx(3.0)
+
+
+def test_run_benchmark_suite_keeps_generate_one_micro_for_tiny_multi_worker_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 4
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cpu")
+    include_generate_one_flags: list[bool] = []
+
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_throughput_benchmark",
+        lambda config, *, num_datasets, warmup_datasets=10, device=None, on_bundle=None: {
+            "preset": config.benchmark.preset_name,
+            "num_datasets": num_datasets,
+            "warmup_datasets": warmup_datasets,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": float(num_datasets),
+            "datasets_per_minute": float(num_datasets) * 60.0,
+            "slo_pass_100_datasets_per_min": True,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_latency",
+        lambda _config, *, device=None, num_samples=1: {
+            "latency_samples": float(num_samples),
+            "latency_mean_ms": 1.0,
+            "latency_p95_ms": 2.0,
+            "latency_min_ms": 0.5,
+            "latency_max_ms": 3.0,
+        },
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite.run_microbenchmarks",
+        lambda _config, *, device=None, repeats=1, include_generate_one=True: (
+            include_generate_one_flags.append(bool(include_generate_one))
+            or {
+                "micro_repeats": int(repeats),
+                "micro_random_function_linear_ms": 1.0,
+                "micro_node_pipeline_ms": 2.0,
+                "micro_generate_one_ms": 3.0 if include_generate_one else None,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.suite._collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+
+    summary = run_benchmark_suite(
+        [spec],
+        suite="full",
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        baseline_payload=None,
+        num_datasets_override=1,
+        warmup_override=0,
+        collect_memory=False,
+        collect_reproducibility=False,
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        fail_on_regression=False,
+        hardware_policy="none",
+    )
+
+    result = summary["preset_results"][0]
+    assert result["micro_repeats"] >= 1
+    assert result["micro_random_function_linear_ms"] == pytest.approx(1.0)
+    assert result["micro_node_pipeline_ms"] == pytest.approx(2.0)
+    assert result["micro_generate_one_ms"] == pytest.approx(3.0)
+    assert include_generate_one_flags == [True]
+
+
 def test_run_benchmark_suite_emits_stage_and_filter_pressure_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

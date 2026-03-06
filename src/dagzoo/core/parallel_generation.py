@@ -30,6 +30,12 @@ class _BundleResult:
     bundle: DatasetBundle
 
 
+def active_worker_count(worker_count: int, num_datasets: int) -> int:
+    """Return the number of worker partitions that can emit work for a run."""
+
+    return min(int(worker_count), int(num_datasets))
+
+
 @contextmanager
 def _cap_torch_intraop_threads(active_worker_count: int) -> Iterator[None]:
     """Prevent local worker threads from oversubscribing Torch CPU kernels."""
@@ -104,15 +110,18 @@ def generate_parallel_batch_iter(
         config,
         device=device,
     )
-    active_worker_count = min(worker_count, num_datasets)
+    active_worker_count_value = active_worker_count(worker_count, num_datasets)
     run_seed = _generation_context._resolve_run_seed(config, seed)
-    buffer_budget = max(1, int(max_buffered_results or (active_worker_count * 2)))
-    per_worker_capacity = max(1, (buffer_budget + active_worker_count - 1) // active_worker_count)
+    buffer_budget = max(1, int(max_buffered_results or (active_worker_count_value * 2)))
+    per_worker_capacity = max(
+        1, (buffer_budget + active_worker_count_value - 1) // active_worker_count_value
+    )
     bundle_queues = [
-        queue.Queue[_BundleResult](maxsize=per_worker_capacity) for _ in range(active_worker_count)
+        queue.Queue[_BundleResult](maxsize=per_worker_capacity)
+        for _ in range(active_worker_count_value)
     ]
     # Each worker writes its own slot at most once; the consumer only reads stable references.
-    worker_errors: list[BaseException | None] = [None] * active_worker_count
+    worker_errors: list[BaseException | None] = [None] * active_worker_count_value
     first_recorded_error: list[BaseException | None] = [None]
     first_recorded_error_lock = threading.Lock()
     # Worker failures stop new dataset generation, but in-flight bundles may still be queued.
@@ -161,7 +170,7 @@ def generate_parallel_batch_iter(
             for dataset_index, dataset_seed in iter_worker_dataset_seeds(
                 run_seed=run_seed,
                 num_datasets=num_datasets,
-                worker_count=active_worker_count,
+                worker_count=active_worker_count_value,
                 worker_index=local_worker_index,
             ):
                 if stop_event.is_set():
@@ -184,18 +193,18 @@ def generate_parallel_batch_iter(
                     first_recorded_error[0] = exc
             stop_event.set()
 
-    with _cap_torch_intraop_threads(active_worker_count):
+    with _cap_torch_intraop_threads(active_worker_count_value):
         with ThreadPoolExecutor(
-            max_workers=active_worker_count,
+            max_workers=active_worker_count_value,
             thread_name_prefix="dagzoo-parallel-gen",
         ) as executor:
             futures = [
                 executor.submit(_run_worker, worker_idx)
-                for worker_idx in range(active_worker_count)
+                for worker_idx in range(active_worker_count_value)
             ]
             try:
                 for next_dataset_index in range(num_datasets):
-                    target_worker_index = next_dataset_index % active_worker_count
+                    target_worker_index = next_dataset_index % active_worker_count_value
                     target_queue = bundle_queues[target_worker_index]
                     target_future = futures[target_worker_index]
                     while True:

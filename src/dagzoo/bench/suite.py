@@ -81,6 +81,7 @@ from dagzoo.core.config_resolution import (
 from dagzoo.core.dataset import generate_batch_iter, generate_one
 from dagzoo.core.parallel_generation import (
     ParallelGenerationConfigError,
+    active_worker_count,
     generate_parallel_batch_iter,
 )
 from dagzoo.core.shift import resolve_shift_runtime_params
@@ -389,7 +390,9 @@ def run_preset_benchmark(
 
     generation_config = _copy_runtime_config(config)
     generation_config.filter.enabled = False
-    multi_worker_benchmark = int(generation_config.runtime.worker_count) > 1
+    multi_worker_benchmark = (
+        active_worker_count(int(generation_config.runtime.worker_count), num_datasets) > 1
+    )
 
     def _build_throughput_on_bundle_callback(
         *,
