@@ -14,9 +14,9 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
 
 ### Added
 
-- Added local CPU multi-worker benchmark orchestration for `dagzoo benchmark`
-  when `runtime.worker_count > 1`, `runtime.worker_index == 0`, and
-  `--preset custom` is used.
+- Added process-based local CPU multi-worker benchmark orchestration for
+  `dagzoo benchmark` when `runtime.worker_count > 1`,
+  `runtime.worker_index == 0`, and `--preset custom` is used.
 
 ### Changed
 
@@ -24,7 +24,7 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
   now use the local multi-worker iterator when multi-worker benchmark mode is
   active.
 - Local multi-worker benchmark fan-out now caps to host CPU capacity before the
-  benchmark coordinator allocates worker threads and queues.
+  benchmark coordinator spawns worker processes and bounded IPC queues.
 - True local multi-worker benchmark runs now coerce `runtime.device: auto` to
   CPU after effective fan-out resolution, while effectively single-worker runs
   keep their requested device behavior.

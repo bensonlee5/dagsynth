@@ -2,11 +2,26 @@ import queue
 import threading
 import typing
 
-import dagzoo.core.parallel_generation as parallel_generation_mod
 from dagzoo.bench.throughput import run_throughput_benchmark
 from dagzoo.config import GeneratorConfig
-from dagzoo.core.parallel_generation import generate_parallel_batch_iter
 from dagzoo.rng import offset_seed32
+
+
+def _tiny_parallel_config() -> GeneratorConfig:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.dataset.task = "regression"
+    cfg.dataset.n_train = 32
+    cfg.dataset.n_test = 8
+    cfg.dataset.n_features_min = 4
+    cfg.dataset.n_features_max = 6
+    cfg.graph.n_nodes_min = 3
+    cfg.graph.n_nodes_max = 5
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+    cfg.filter.enabled = False
+    cfg.benchmark.preset_name = "parallel_test"
+    return cfg
 
 
 def test_run_throughput_benchmark_uses_streaming_generation(
@@ -75,7 +90,7 @@ def test_run_throughput_benchmark_updates_callback_on_measured_generation(
         num_datasets=4,
         warmup_datasets=2,
         device="cpu",
-        on_bundle=lambda bundle: observed.append(int(bundle)),
+        on_bundle=lambda bundle: observed.append(typing.cast(int, bundle)),
     )
     assert observed == [0, 1, 2, 3]
 
@@ -118,7 +133,7 @@ def test_run_throughput_benchmark_uses_parallel_generation_for_multi_worker_cpu(
         num_datasets=4,
         warmup_datasets=2,
         device="cpu",
-        on_bundle=lambda bundle: observed.append(int(bundle)),
+        on_bundle=lambda bundle: observed.append(typing.cast(int, bundle)),
     )
 
     assert calls == [
@@ -229,55 +244,8 @@ def test_run_throughput_benchmark_uses_sequential_generation_when_local_worker_c
     assert result["num_datasets"] == 4
 
 
-def test_run_throughput_benchmark_callback_exception_does_not_hang_parallel_path(
-    monkeypatch,
-) -> None:
-    def _stub_generate_parallel_batch_iter(
-        config,
-        *,
-        num_datasets: int,
-        seed: int | None = None,
-        device: str | None = None,
-    ):
-        yield from generate_parallel_batch_iter(
-            config,
-            num_datasets=num_datasets,
-            seed=seed,
-            device=device,
-            max_buffered_results=1,
-        )
-
-    def _stub_generate_one_seeded(
-        config, *, seed: int, requested_device: str, resolved_device: str
-    ):
-        _ = config
-        _ = requested_device
-        _ = resolved_device
-        return int(seed)
-
-    monkeypatch.setattr(
-        "dagzoo.bench.throughput.generate_parallel_batch_iter",
-        _stub_generate_parallel_batch_iter,
-    )
-    monkeypatch.setattr(
-        parallel_generation_mod.torch,
-        "get_num_threads",
-        lambda: 2,
-    )
-    monkeypatch.setattr(
-        parallel_generation_mod.torch,
-        "set_num_threads",
-        lambda _value: None,
-    )
-    monkeypatch.setattr(
-        "dagzoo.core.parallel_generation._generation_engine._generate_one_seeded",
-        _stub_generate_one_seeded,
-    )
-
-    cfg = GeneratorConfig()
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 0
-    cfg.runtime.device = "cpu"
+def test_run_throughput_benchmark_callback_exception_does_not_hang_parallel_path() -> None:
+    cfg = _tiny_parallel_config()
 
     result_queue: queue.Queue[BaseException | None] = queue.Queue()
 
@@ -297,7 +265,7 @@ def test_run_throughput_benchmark_callback_exception_does_not_hang_parallel_path
 
     benchmark_thread = threading.Thread(target=_run_benchmark, daemon=True)
     benchmark_thread.start()
-    benchmark_thread.join(timeout=1.0)
+    benchmark_thread.join(timeout=5.0)
 
     assert not benchmark_thread.is_alive()
     error = result_queue.get_nowait()
