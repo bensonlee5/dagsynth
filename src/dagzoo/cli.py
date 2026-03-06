@@ -692,6 +692,25 @@ def _raise_if_benchmark_multi_worker_preflight_invalid(
         )
 
 
+def _raise_if_benchmark_multi_worker_config_is_ignored(
+    config: GeneratorConfig,
+    *,
+    requested_preset_keys: list[str] | None,
+    config_path: str | None,
+) -> None:
+    """Reject benchmark flows where multi-worker config from --config would be ignored."""
+
+    if config_path is None or int(config.runtime.worker_count) <= 1:
+        return
+    selected_preset_keys = list(requested_preset_keys or ["custom"])
+    if all(key == "custom" for key in selected_preset_keys):
+        return
+    _raise_usage_error(
+        "dagzoo benchmark multi-worker settings from --config are only honored with "
+        "`--preset custom`. Use `--preset custom` for multi-worker benchmark configs."
+    )
+
+
 def _run_generate(args: argparse.Namespace) -> int:
     """Execute the ``generate`` command."""
 
@@ -1024,6 +1043,11 @@ def _run_benchmark(args: argparse.Namespace) -> int:
 
     preset_specs = resolve_preset_run_specs(
         preset_keys=args.preset,
+        config_path=args.config,
+    )
+    _raise_if_benchmark_multi_worker_config_is_ignored(
+        default_cfg,
+        requested_preset_keys=args.preset,
         config_path=args.config,
     )
     effective_device_override = args.device if args.device and len(preset_specs) == 1 else None

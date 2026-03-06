@@ -343,10 +343,14 @@ def run_preset_benchmark(
     config = resolved_preset.config
     requested_device = resolved_preset.requested_device
     hw = resolved_preset.hardware
-    if int(config.runtime.worker_count) > 1 and hw.backend != "cpu":
+    explicit_requested_device = str(requested_device).strip().lower()
+    if int(config.runtime.worker_count) > 1 and (
+        hw.backend != "cpu" or explicit_requested_device in {"cuda", "mps"}
+    ):
         raise ParallelGenerationConfigError(
             "runtime.worker_count > 1 benchmark runs currently support resolved CPU presets only. "
-            f"Preset '{spec.key}' resolved backend '{hw.backend}'."
+            f"Preset '{spec.key}' requested_device='{requested_device}' resolved backend "
+            f"'{hw.backend}'."
         )
 
     num_datasets, warmup = _preset_counts(

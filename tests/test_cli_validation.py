@@ -268,6 +268,39 @@ def test_benchmark_cli_accepts_cpu_multi_worker_root_config(
     assert len(preset_specs) == 1
 
 
+def test_benchmark_cli_rejects_ignored_multi_worker_config_for_builtin_preset(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    cfg.runtime.device = "cpu"
+    config_path = tmp_path / "benchmark_multi_worker_builtin_preset.yaml"
+    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+
+    monkeypatch.setattr(
+        "dagzoo.cli.run_benchmark_suite",
+        lambda *_args, **_kwargs: pytest.fail("run_benchmark_suite should not be called"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "benchmark",
+                "--config",
+                str(config_path),
+                "--preset",
+                "cpu",
+                "--suite",
+                "smoke",
+                "--no-memory",
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+    assert "--preset custom" in capsys.readouterr().err
+
+
 def test_benchmark_cli_rejects_multi_worker_nonzero_worker_index(tmp_path) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     cfg.runtime.worker_count = 2
@@ -321,7 +354,7 @@ def test_benchmark_cli_ignores_device_override_for_multi_preset_preflight(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_count = 1
     cfg.runtime.worker_index = 0
     cfg.runtime.device = "cpu"
     config_path = tmp_path / "benchmark_multi_worker_multi_preset.yaml"

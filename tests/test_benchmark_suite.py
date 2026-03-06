@@ -1913,6 +1913,51 @@ def test_run_preset_benchmark_rejects_multi_worker_non_cpu_backend(
         )
 
 
+def test_run_preset_benchmark_rejects_multi_worker_unavailable_accelerator_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.worker_count = 2
+    cfg.runtime.worker_index = 0
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cuda")
+
+    resolved = SimpleNamespace(
+        config=cfg,
+        requested_device="cuda",
+        hardware=SimpleNamespace(
+            backend="cpu",
+            device_name="CPU fallback",
+            total_memory_gb=None,
+            peak_flops=None,
+            tier="desktop",
+        ),
+        trace_events=[],
+    )
+
+    monkeypatch.setattr("dagzoo.bench.suite.resolve_benchmark_preset_config", lambda **_: resolved)
+
+    with pytest.raises(
+        ValueError,
+        match=r"runtime\.worker_count > 1 benchmark runs currently support resolved CPU presets only",
+    ):
+        suite_mod.run_preset_benchmark(
+            spec,
+            suite="smoke",
+            num_datasets_override=2,
+            warmup_override=0,
+            collect_memory=False,
+            collect_reproducibility=False,
+            include_micro=False,
+            hardware_policy="none",
+            collect_diagnostics=False,
+            diagnostics_root_dir=None,
+            warn_threshold_pct=10.0,
+            fail_threshold_pct=20.0,
+            diagnostics_occurrence_index=0,
+            diagnostics_occurrence_total=1,
+        )
+
+
 def test_run_benchmark_suite_sanitizes_preset_key_for_diagnostics_paths(tmp_path) -> None:
     cfg = _tiny_cpu_config()
     spec = PresetRunSpec(key="../../escape", config=cfg, device="cpu")
