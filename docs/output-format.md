@@ -134,8 +134,7 @@ For canonical generation (`generate_one`, `generate_batch`, `generate_batch_iter
 and `dagzoo generate`), replay later bundles with the shared `seed`,
 `run_num_datasets`, and `dataset_index` by regenerating the canonical batch and
 selecting that index. `dataset_seed` preserves the per-bundle child seed for
-internal replay and diagnostics. Explicit fixed-layout generation keeps using
-the saved plan plus its per-dataset `seed`.
+internal replay and diagnostics.
 
 ### Shift sub-object
 
@@ -205,8 +204,7 @@ Present only for classification datasets.
 
 Present for all canonical generation outputs. These bundles share one sampled
 layout per run and preserve emitted column alignment (feature count, column
-order, and lineage feature-to-node mapping) within that run. Explicit
-fixed-layout replay uses the same metadata contract.
+order, and lineage feature-to-node mapping) within that run.
 
 | Key                          | Type | Description                                                   |
 | ---------------------------- | ---- | ------------------------------------------------------------- |
@@ -217,15 +215,9 @@ fixed-layout replay uses the same metadata contract.
 | `layout_plan_schema_version` | int  | Serialized fixed-layout plan schema version                   |
 | `layout_execution_contract`  | str  | Fixed-layout execution contract (`chunk_batched_v1`)          |
 
-Explicit fixed-layout replay validates that the provided `config` remains
-compatible with the sampled plan before generation. This prevents plan-driven
-emitted tensors from disagreeing with `metadata.config` on layout-driving
-fields.
-Under `chunk_batched_v1`, fixed-layout outputs are deterministic for the same
-plan, run seed, and fixed-layout batch size; changing the batch size may change
-the emitted values. The plan's stored device fields are provenance; replay uses
-the current request/config backend and may record a CPU fallback when `auto`
-hits a partial MPS runtime.
+Under `chunk_batched_v1`, canonical fixed-layout outputs are deterministic for
+the same run seed and realized run shape. Internal plan metadata records the
+shared sampled layout and execution-plan fingerprint used for that run.
 
 ### Missingness sub-object (optional)
 

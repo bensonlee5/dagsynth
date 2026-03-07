@@ -6,23 +6,16 @@ from collections.abc import Iterator
 
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.fixed_layout import (
-    FixedLayoutPlan,
-    generate_batch_fixed_layout,
     generate_batch_fixed_layout_iter,
     prepare_canonical_fixed_layout_run,
-    sample_fixed_layout,
 )
 from dagzoo.rng import SeedManager
 from dagzoo.types import DatasetBundle
 
 __all__ = [
-    "FixedLayoutPlan",
     "generate_batch",
-    "generate_batch_fixed_layout",
-    "generate_batch_fixed_layout_iter",
     "generate_batch_iter",
     "generate_one",
-    "sample_fixed_layout",
 ]
 
 

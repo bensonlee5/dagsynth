@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import torch
 import math
+import dagzoo
+import dagzoo.core
 
 from dagzoo.config import (
     GeneratorConfig,
@@ -15,17 +17,17 @@ from dagzoo.core.constants import (
     SPLIT_PERMUTATION_SEED_OFFSET,
 )
 from dagzoo.core.dataset import (
-    FixedLayoutPlan,
     generate_batch,
-    generate_batch_fixed_layout,
-    generate_batch_fixed_layout_iter,
     generate_batch_iter,
     generate_one,
-    sample_fixed_layout,
 )
 from dagzoo.core.fixed_layout import (
+    FixedLayoutPlan,
     _resolve_fixed_layout_batch_size,
+    generate_batch_fixed_layout,
+    generate_batch_fixed_layout_iter,
     prepare_canonical_fixed_layout_run,
+    sample_fixed_layout,
 )
 from dagzoo.core.generation_context import _attempt_seed, _node_spec_seed, _split_permutation_seed
 from dagzoo.core.generation_engine import _generate_torch, _parent_node_indices
@@ -49,6 +51,17 @@ def _tiny_config() -> GeneratorConfig:
     cfg.graph.n_nodes_min = 2
     cfg.graph.n_nodes_max = 6
     return cfg
+
+
+def test_public_package_hides_explicit_fixed_layout_exports() -> None:
+    assert "sample_fixed_layout" not in dagzoo.__all__
+    assert "generate_batch_fixed_layout" not in dagzoo.__all__
+    assert "generate_batch_fixed_layout_iter" not in dagzoo.__all__
+    assert "FixedLayoutPlan" not in dagzoo.__all__
+    assert "sample_fixed_layout" not in dagzoo.core.__all__
+    assert "generate_batch_fixed_layout" not in dagzoo.core.__all__
+    assert "generate_batch_fixed_layout_iter" not in dagzoo.core.__all__
+    assert "FixedLayoutPlan" not in dagzoo.core.__all__
 
 
 def _tiny_regression_config() -> GeneratorConfig:
