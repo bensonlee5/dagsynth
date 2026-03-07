@@ -30,6 +30,7 @@ from dagzoo.config import (
 )
 from dagzoo.core.dataset import generate_batch_iter
 from dagzoo.core.config_resolution import (
+    append_config_diff_events,
     resolve_generate_config,
     serialize_resolution_events,
 )
@@ -807,7 +808,14 @@ def _run_generate(args: argparse.Namespace) -> int:
             "`dagzoo filter --in <shard_dir> --out <out_dir>` after generation."
         )
     hw = resolved.hardware
-    trace_payload = serialize_resolution_events(resolved.trace_events)
+    trace_events = list(resolved.trace_events)
+    append_config_diff_events(
+        resolved.config,
+        config,
+        source="generate.run_realization",
+        events=trace_events,
+    )
+    trace_payload = serialize_resolution_events(trace_events)
     out_dir = args.out or config.output.out_dir
     effective_config_root = out_dir
     if effective_config_root is None:

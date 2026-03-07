@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.core import generation_context as _generation_context
 from dagzoo.core.fixed_layout import (
     FixedLayoutPlan,
     generate_batch_fixed_layout,
@@ -13,6 +12,7 @@ from dagzoo.core.fixed_layout import (
     prepare_canonical_fixed_layout_run,
     sample_fixed_layout,
 )
+from dagzoo.rng import SeedManager
 from dagzoo.types import DatasetBundle
 
 __all__ = [
@@ -36,6 +36,25 @@ def _validate_public_generation_config(config: GeneratorConfig) -> None:
         )
 
 
+def _annotate_canonical_batch_metadata(
+    bundle: DatasetBundle,
+    *,
+    run_seed: int,
+    dataset_index: int,
+    run_num_datasets: int,
+) -> DatasetBundle:
+    """Rewrite canonical bundle metadata to preserve run-level replay information."""
+
+    dataset_seed = bundle.metadata.get("seed")
+    if not isinstance(dataset_seed, int) or isinstance(dataset_seed, bool):
+        dataset_seed = SeedManager(int(run_seed)).child("dataset", int(dataset_index))
+    bundle.metadata["seed"] = int(run_seed)
+    bundle.metadata["dataset_seed"] = int(dataset_seed)
+    bundle.metadata["dataset_index"] = int(dataset_index)
+    bundle.metadata["run_num_datasets"] = int(run_num_datasets)
+    return bundle
+
+
 def generate_one(
     config: GeneratorConfig,
     *,
@@ -44,10 +63,7 @@ def generate_one(
 ) -> DatasetBundle:
     """Generate one dataset bundle using the canonical fixed-layout run model."""
 
-    run_seed = _generation_context._resolve_run_seed(config, seed)
-    bundle = next(generate_batch_iter(config, num_datasets=1, seed=seed, device=device))
-    bundle.metadata["seed"] = int(run_seed)
-    return bundle
+    return next(generate_batch_iter(config, num_datasets=1, seed=seed, device=device))
 
 
 def generate_batch(
@@ -90,11 +106,19 @@ def generate_batch_iter(
         seed=seed,
         device=device,
     )
-    yield from generate_batch_fixed_layout_iter(
-        prepared.config,
-        plan=prepared.plan,
-        num_datasets=num_datasets,
-        seed=prepared.run_seed,
-        batch_size=prepared.batch_size,
-        device=prepared.requested_device,
-    )
+    for dataset_index, bundle in enumerate(
+        generate_batch_fixed_layout_iter(
+            prepared.config,
+            plan=prepared.plan,
+            num_datasets=num_datasets,
+            seed=prepared.run_seed,
+            batch_size=prepared.batch_size,
+            device=prepared.requested_device,
+        )
+    ):
+        yield _annotate_canonical_batch_metadata(
+            bundle,
+            run_seed=prepared.run_seed,
+            dataset_index=dataset_index,
+            run_num_datasets=num_datasets,
+        )

@@ -93,7 +93,7 @@ def test_run_benchmark_suite_smoke_single_profile() -> None:
 
     result = summary["preset_results"][0]
     assert result["preset_key"] == "cpu_test"
-    assert result["generation_mode"] == "dynamic"
+    assert result["generation_mode"] == "fixed_batched"
     assert result["datasets_per_minute"] > 0
     assert result["generation_datasets_per_minute"] == pytest.approx(result["datasets_per_minute"])
     assert result["write_datasets_per_minute"] >= 0.0
@@ -216,6 +216,8 @@ def test_run_benchmark_suite_emits_stage_and_filter_pressure_metrics(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -344,6 +346,8 @@ def test_run_benchmark_suite_filter_enabled_uses_filter_disabled_generation_conf
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -506,6 +510,8 @@ def test_run_benchmark_suite_filter_retry_rate_uses_stage_sample_denominator_whe
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -638,6 +644,8 @@ def test_missingness_control_run_uses_equivalent_callback_instrumentation(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -742,6 +750,8 @@ def test_run_benchmark_suite_releases_stage_samples_before_latency(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -857,6 +867,8 @@ def test_run_benchmark_suite_missingness_runtime_guardrail_updates_regression_st
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -986,6 +998,8 @@ def test_run_benchmark_suite_shift_runtime_guardrail_updates_regression_status(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -1097,6 +1111,8 @@ def test_run_benchmark_suite_shift_directional_guardrail_failure_updates_status(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -1230,6 +1246,8 @@ def test_run_benchmark_suite_noise_runtime_guardrail_updates_regression_status(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets
@@ -1332,6 +1350,8 @@ def test_run_benchmark_suite_noise_metadata_coverage_failure_updates_status(
         num_datasets: int,
         warmup_datasets: int = 10,
         device: str | None = None,
+        fixed_layout_plan=None,
+        fixed_layout_batch_size: int | None = None,
         on_bundle=None,
     ):
         _ = warmup_datasets

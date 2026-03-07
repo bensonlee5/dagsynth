@@ -484,6 +484,28 @@ def test_generate_cli_applies_rows_override_no_write(
     )
     assert effective_config["dataset"]["rows"]["mode"] == "fixed"
     assert int(effective_config["dataset"]["rows"]["value"]) == int(rows_spec.value)
+    trace_payload = yaml.safe_load(
+        (out_dir / "effective_config_trace.yaml").read_text(encoding="utf-8")
+    )
+    assert isinstance(trace_payload, list)
+    realization_events = [
+        item
+        for item in trace_payload
+        if isinstance(item, dict) and item.get("source") == "generate.run_realization"
+    ]
+    assert realization_events
+    assert any(
+        isinstance(item, dict)
+        and item.get("path") == "dataset.n_train"
+        and int(item["new_value"]) == int(effective_config["dataset"]["n_train"])
+        for item in realization_events
+    )
+    assert any(
+        isinstance(item, dict)
+        and item.get("path") == "dataset.rows.value"
+        and int(item["new_value"]) == int(effective_config["dataset"]["rows"]["value"])
+        for item in realization_events
+    )
 
 
 def test_generate_cli_writes_resolution_trace_artifact_no_write(

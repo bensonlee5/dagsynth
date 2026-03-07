@@ -332,11 +332,9 @@ def _should_use_fixed_layout_benchmark_mode(
 ) -> bool:
     """Return whether this benchmark run should use fixed-layout batched generation."""
 
-    return bool(
-        _is_builtin_cpu_fixed_layout_key(preset_key)
-        and str(hardware_backend) == "cpu"
-        and int(num_datasets) > 0
-    )
+    _ = config
+    _ = hardware_backend
+    return int(num_datasets) > 0 and _is_builtin_cpu_fixed_layout_key(preset_key)
 
 
 def _sample_benchmark_fixed_layout_plan(

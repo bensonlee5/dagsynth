@@ -813,6 +813,9 @@ def test_generate_batch_iter_matches_batch_ordering() -> None:
     for a, b in zip(batch, streamed, strict=True):
         np.testing.assert_allclose(np.asarray(a.X_train), np.asarray(b.X_train), atol=1e-6)
         assert a.metadata["seed"] == b.metadata["seed"]
+        assert a.metadata["dataset_seed"] == b.metadata["dataset_seed"]
+        assert a.metadata["dataset_index"] == b.metadata["dataset_index"]
+        assert a.metadata["run_num_datasets"] == b.metadata["run_num_datasets"]
         assert a.metadata["layout_plan_signature"] == b.metadata["layout_plan_signature"]
 
 
@@ -828,8 +831,62 @@ def test_generate_one_matches_first_dataset_of_generate_batch() -> None:
     np.testing.assert_allclose(np.asarray(single.y_train), np.asarray(batch[0].y_train), atol=1e-6)
     np.testing.assert_allclose(np.asarray(single.y_test), np.asarray(batch[0].y_test), atol=1e-6)
     assert int(single.metadata["seed"]) == 4321
-    assert int(single.metadata["seed"]) != int(batch[0].metadata["seed"])
+    assert int(batch[0].metadata["seed"]) == 4321
+    assert int(single.metadata["dataset_seed"]) == int(batch[0].metadata["dataset_seed"])
+    assert int(single.metadata["dataset_index"]) == 0
+    assert int(batch[0].metadata["dataset_index"]) == 0
+    assert int(single.metadata["run_num_datasets"]) == 1
+    assert int(batch[0].metadata["run_num_datasets"]) == 1
     assert single.metadata["layout_plan_signature"] == batch[0].metadata["layout_plan_signature"]
+
+
+def test_generate_batch_metadata_preserves_run_seed_and_dataset_indices() -> None:
+    cfg = _tiny_regression_config()
+
+    batch = generate_batch(cfg, num_datasets=3, seed=4321, device="cpu")
+
+    assert [int(bundle.metadata["seed"]) for bundle in batch] == [4321, 4321, 4321]
+    assert [int(bundle.metadata["dataset_index"]) for bundle in batch] == [0, 1, 2]
+    assert [int(bundle.metadata["run_num_datasets"]) for bundle in batch] == [3, 3, 3]
+    dataset_seeds = [int(bundle.metadata["dataset_seed"]) for bundle in batch]
+    assert len(set(dataset_seeds)) == 3
+
+
+def test_generate_batch_bundle_replays_from_run_metadata() -> None:
+    cfg = _tiny_regression_config()
+
+    batch = generate_batch(cfg, num_datasets=3, seed=4321, device="cpu")
+
+    for bundle in (batch[0], batch[2]):
+        dataset_index = int(bundle.metadata["dataset_index"])
+        replayed = generate_batch(
+            cfg,
+            num_datasets=int(bundle.metadata["run_num_datasets"]),
+            seed=int(bundle.metadata["seed"]),
+            device="cpu",
+        )[dataset_index]
+
+        np.testing.assert_allclose(
+            np.asarray(bundle.X_train), np.asarray(replayed.X_train), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            np.asarray(bundle.X_test), np.asarray(replayed.X_test), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            np.asarray(bundle.y_train), np.asarray(replayed.y_train), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            np.asarray(bundle.y_test), np.asarray(replayed.y_test), atol=1e-6
+        )
+        assert int(bundle.metadata["seed"]) == int(replayed.metadata["seed"])
+        assert int(bundle.metadata["dataset_seed"]) == int(replayed.metadata["dataset_seed"])
+        assert int(bundle.metadata["dataset_index"]) == int(replayed.metadata["dataset_index"])
+        assert int(bundle.metadata["run_num_datasets"]) == int(
+            replayed.metadata["run_num_datasets"]
+        )
+        assert (
+            bundle.metadata["layout_plan_signature"] == replayed.metadata["layout_plan_signature"]
+        )
 
 
 def test_sample_fixed_layout_rejects_variable_rows_spec() -> None:

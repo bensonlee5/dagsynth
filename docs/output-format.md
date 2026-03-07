@@ -92,7 +92,7 @@ Each line contains:
 | `feature_types` | list[str] | Per-feature type annotations (`num`/`cat`)   |
 | `metadata`      | object    | The dataset metadata payload described below |
 
-`metadata` contains the same object fields as before.
+`metadata` contains the dataset-level generation metadata described below.
 
 ### Top-level keys
 
@@ -111,7 +111,10 @@ Each line contains:
 | `graph_edges`                | int         | Number of edges in the DAG                                                                         |
 | `graph_depth_nodes`          | int         | Longest path length in the DAG                                                                     |
 | `graph_edge_density`         | float       | Edge count / max possible edges                                                                    |
-| `seed`                       | int         | Base seed for this dataset                                                                         |
+| `seed`                       | int         | Replay seed recorded by the emitting API. Canonical generation stores the shared run seed here.    |
+| `dataset_seed`               | int         | Optional canonical per-dataset child seed derived from `seed`                                      |
+| `dataset_index`              | int         | Optional canonical dataset position within the run (0-based)                                       |
+| `run_num_datasets`           | int         | Optional canonical run length used to replay the saved bundle                                      |
 | `attempt_used`               | int         | Generation attempt index (0-based)                                                                 |
 | `lineage`                    | object      | DAG lineage record (see Lineage below)                                                             |
 | `shift`                      | object      | Resolved shift settings and realized observability signals                                         |
@@ -126,6 +129,13 @@ Each line contains:
 | `layout_plan_signature`      | str         | Optional deterministic fingerprint for the frozen fixed-layout execution plan                      |
 | `layout_plan_schema_version` | int         | Optional fixed-layout plan schema version used to sample the shared plan                           |
 | `layout_execution_contract`  | str         | Optional fixed-layout execution contract for deterministic replay                                  |
+
+For canonical generation (`generate_one`, `generate_batch`, `generate_batch_iter`,
+and `dagzoo generate`), replay later bundles with the shared `seed`,
+`run_num_datasets`, and `dataset_index` by regenerating the canonical batch and
+selecting that index. `dataset_seed` preserves the per-bundle child seed for
+internal replay and diagnostics. Explicit fixed-layout generation keeps using
+the saved plan plus its per-dataset `seed`.
 
 ### Shift sub-object
 

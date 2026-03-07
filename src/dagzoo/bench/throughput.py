@@ -114,5 +114,5 @@ def run_throughput_benchmark(
         "datasets_per_second": dps,
         "datasets_per_minute": dpm,
         "slo_pass_100_datasets_per_min": dpm >= THROUGHPUT_SLO_DATASETS_PER_MINUTE,
-        "generation_mode": "fixed_batched" if fixed_layout_plan is not None else "dynamic",
+        "generation_mode": "fixed_batched",
     }
