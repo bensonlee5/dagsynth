@@ -10,26 +10,6 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
-## [0.5.8] - 2026-03-07
-
-### Changed
-
-- Fixed-layout raw generation now uses a chunk-scoped batched RNG contract and
-  grouped converter execution in the fixed-layout batched engine.
-- Built-in CPU benchmark fixed-layout runs now pin one internal fixed-layout
-  batch size per preset run so throughput, reproducibility, and lineage
-  guardrail generation use the same chunking contract.
-- Emitted fixed-layout bundles now include `metadata.layout_plan_schema_version`
-  and `metadata.layout_execution_contract`.
-
-### Breaking
-
-- **BREAKING:** Fixed-layout plan artifacts now serialize `schema_version: 3`
-  and `execution_contract: "chunk_batched_v1"`.
-- **BREAKING:** Fixed-layout outputs are no longer batch-size independent. The
-  current contract is deterministic for the same `plan + run seed + batch_size`,
-  but changing `batch_size` may change the emitted dataset values.
-
 ## [0.5.7] - 2026-03-07
 
 ### Added
@@ -44,13 +24,21 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
   plan artifact and generate raw graph tensors in batched `N x rows x features`
   chunks before per-dataset finalization.
 - Fixed-layout plan artifacts now serialize `node_plans`,
-  `plan_signature`, and `schema_version: 2`, and emitted fixed-layout bundles
-  now include `metadata.layout_plan_signature`.
+  `plan_signature`, `execution_contract`, and `schema_version: 3`, and
+  emitted fixed-layout bundles now include `metadata.layout_plan_signature`.
 - Built-in CPU benchmark runs (`dagzoo benchmark --preset cpu`) now expand into
   explicit `1024`, `4096`, and `8192` total-row profiles, use the fixed-layout
   batched generator by default for those row profiles, and report
   `generation_mode="fixed_batched"` plus explicit dataset row counts in
   benchmark results.
+- Fixed-layout raw generation now uses a chunk-scoped batched RNG contract and
+  grouped converter execution in the fixed-layout batched engine.
+- Built-in CPU benchmark fixed-layout runs now pin one internal fixed-layout
+  batch size per preset run so throughput, reproducibility, and lineage
+  guardrail generation use the same chunking contract.
+- Emitted fixed-layout bundles now include
+  `metadata.layout_plan_schema_version` and
+  `metadata.layout_execution_contract`.
 
 ### Breaking
 
@@ -63,6 +51,11 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
   result row. It now emits `cpu_rows1024`, `cpu_rows4096`, and `cpu_rows8192`
   results; benchmark artifacts distinguish `generation_mode="fixed_batched"`
   and `generation_mode="dynamic"` and include explicit dataset row counts.
+- **BREAKING:** Fixed-layout plan artifacts now serialize `schema_version: 3`
+  and `execution_contract: "chunk_batched_v1"`.
+- **BREAKING:** Fixed-layout outputs are no longer batch-size independent. The
+  current contract is deterministic for the same `plan + run seed + batch_size`,
+  but changing `batch_size` may change the emitted dataset values.
 
 ## [0.5.6] - 2026-03-07
 
