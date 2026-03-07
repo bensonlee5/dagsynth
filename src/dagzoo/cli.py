@@ -29,7 +29,6 @@ from dagzoo.config import (
     normalize_missing_mechanism,
 )
 from dagzoo.core.dataset import generate_batch_iter
-from dagzoo.core.parallel_generation import ParallelGenerationConfigError
 from dagzoo.core.config_resolution import (
     resolve_generate_config,
     serialize_resolution_events,
@@ -766,78 +765,20 @@ def _write_generate_diagnostics_artifacts(
     print(f"Wrote diagnostics artifacts: {json_path} and {md_path}")
 
 
-def _worker_artifact_dir(config: GeneratorConfig) -> str:
-    """Return the deterministic worker artifact directory segment."""
+def _load_config_or_usage_error(path: str) -> GeneratorConfig:
+    """Load one config file or raise a CLI usage error with its parse message."""
 
-    return (
-        f"worker_{int(config.runtime.worker_index):05d}_of_{int(config.runtime.worker_count):05d}"
-    )
-
-
-def _raise_if_worker_partitioning_unsupported(
-    config: GeneratorConfig,
-    *,
-    command: str,
-) -> None:
-    """Reject worker-partition configs in entrypoints that are not partition-aware."""
-
-    if int(config.runtime.worker_count) <= 1:
-        return
-    _raise_usage_error(
-        f"runtime.worker_count > 1 is not supported for dagzoo {command}. "
-        "Multi-worker generation is temporarily disabled while canonical fixed-layout "
-        "batch optimization is in progress."
-    )
-
-
-def _raise_if_benchmark_multi_worker_preflight_invalid(
-    config: GeneratorConfig,
-) -> None:
-    """Reject benchmark worker configs while local orchestration is disabled."""
-
-    if int(config.runtime.worker_count) <= 1:
-        return
-    _raise_usage_error(
-        "runtime.worker_count > 1 is not supported for dagzoo benchmark. "
-        "Local benchmark parallel generation is temporarily disabled while canonical "
-        "fixed-layout batch optimization is in progress."
-    )
-
-
-def _normalized_benchmark_requested_device(
-    config: GeneratorConfig,
-    *,
-    device_override: str | None = None,
-    preset_device: str | None = None,
-) -> str:
-    """Normalize benchmark device selection for local multi-worker mode."""
-
-    return (device_override or preset_device or config.runtime.device or "auto").lower()
-
-
-def _raise_if_benchmark_multi_worker_config_is_ignored(
-    config: GeneratorConfig,
-    *,
-    requested_preset_keys: list[str] | None,
-    config_path: str | None,
-) -> None:
-    """Reject benchmark flows where multi-worker config from --config would be ignored."""
-
-    if config_path is None or int(config.runtime.worker_count) <= 1:
-        return
-    selected_preset_keys = list(requested_preset_keys or ["custom"])
-    if all(key == "custom" for key in selected_preset_keys):
-        return
-    _raise_usage_error(
-        "dagzoo benchmark multi-worker settings from --config are only honored with "
-        "`--preset custom`. Use `--preset custom` for multi-worker benchmark configs."
-    )
+    try:
+        return GeneratorConfig.from_yaml(path)
+    except (TypeError, ValueError) as exc:
+        _raise_usage_error(str(exc))
+    raise AssertionError("unreachable")
 
 
 def _run_generate(args: argparse.Namespace) -> int:
     """Execute the ``generate`` command."""
 
-    config = GeneratorConfig.from_yaml(args.config)
+    config = _load_config_or_usage_error(args.config)
     try:
         resolved = resolve_generate_config(
             config,
@@ -865,8 +806,6 @@ def _run_generate(args: argparse.Namespace) -> int:
             "Inline filtering has been removed from generate. Set filter.enabled=false and run "
             "`dagzoo filter --in <shard_dir> --out <out_dir>` after generation."
         )
-    _raise_if_worker_partitioning_unsupported(config, command="generate")
-
     hw = resolved.hardware
     trace_payload = serialize_resolution_events(resolved.trace_events)
     out_dir = args.out or config.output.out_dir
@@ -952,7 +891,7 @@ def _run_generate(args: argparse.Namespace) -> int:
 def _run_fixed_layout_sample(args: argparse.Namespace) -> int:
     """Execute the ``fixed-layout sample`` command."""
 
-    config = GeneratorConfig.from_yaml(args.config)
+    config = _load_config_or_usage_error(args.config)
     try:
         resolved = resolve_generate_config(
             config,
@@ -992,7 +931,7 @@ def _run_fixed_layout_sample(args: argparse.Namespace) -> int:
 def _run_fixed_layout_generate(args: argparse.Namespace) -> int:
     """Execute the ``fixed-layout generate`` command."""
 
-    config = GeneratorConfig.from_yaml(args.config)
+    config = _load_config_or_usage_error(args.config)
     try:
         resolved = resolve_generate_config(
             config,
@@ -1014,10 +953,6 @@ def _run_fixed_layout_generate(args: argparse.Namespace) -> int:
         _raise_usage_error(
             "Inline filtering has been removed from generate. Set filter.enabled=false and run "
             "`dagzoo filter --in <shard_dir> --out <out_dir>` after generation."
-        )
-    if int(config.runtime.worker_count) > 1:
-        _raise_usage_error(
-            "Fixed-layout generation currently supports runtime.worker_count == 1 only."
         )
 
     try:
@@ -1072,7 +1007,7 @@ def _run_filter(args: argparse.Namespace) -> int:
     """Execute the ``filter`` command."""
 
     try:
-        fallback_config = GeneratorConfig.from_yaml(args.config) if args.config else None
+        fallback_config = _load_config_or_usage_error(args.config) if args.config else None
         result = run_deferred_filter(
             in_dir=args.in_dir,
             out_dir=args.out,
@@ -1101,7 +1036,7 @@ def _default_benchmark_config(args: argparse.Namespace) -> GeneratorConfig:
     """Load benchmark defaults from custom config, falling back to dataclass defaults."""
 
     if args.config:
-        return GeneratorConfig.from_yaml(args.config)
+        return _load_config_or_usage_error(args.config)
     return GeneratorConfig()
 
 
@@ -1270,7 +1205,6 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     diagnostics_root_dir = _benchmark_diagnostics_root_dir(args, artifact_dir=artifact_dir)
 
     default_cfg = _default_benchmark_config(args)
-    _raise_if_benchmark_multi_worker_preflight_invalid(default_cfg)
     suite = (args.suite or default_cfg.benchmark.suite).strip().lower()
     warn_pct = (
         float(args.warn_threshold_pct)
@@ -1294,39 +1228,32 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         )
     effective_device_override = args.device if args.device and len(preset_specs) == 1 else None
     for spec in preset_specs:
-        normalized_requested_device = _normalized_benchmark_requested_device(
-            spec.config,
-            device_override=effective_device_override,
-            preset_device=spec.device,
-        )
-        _raise_if_benchmark_multi_worker_preflight_invalid(spec.config)
-        if int(spec.config.runtime.worker_count) > 1 or effective_device_override is not None:
+        normalized_requested_device = (
+            effective_device_override or spec.device or spec.config.runtime.device or "auto"
+        ).lower()
+        if effective_device_override is not None:
             spec.device = normalized_requested_device
 
     baseline_payload = load_baseline(args.baseline) if args.baseline else None
 
-    try:
-        summary = run_benchmark_suite(
-            preset_specs,
-            suite=suite,
-            warn_threshold_pct=warn_pct,
-            fail_threshold_pct=fail_pct,
-            baseline_payload=baseline_payload,
-            num_datasets_override=args.num_datasets,
-            warmup_override=args.warmup,
-            collect_memory=not bool(args.no_memory),
-            collect_reproducibility=(
-                bool(args.collect_reproducibility)
-                or bool(default_cfg.benchmark.collect_reproducibility)
-            ),
-            collect_diagnostics=bool(args.diagnostics),
-            diagnostics_root_dir=diagnostics_root_dir,
-            fail_on_regression=bool(args.fail_on_regression),
-            hardware_policy=str(args.hardware_policy),
-        )
-    except ParallelGenerationConfigError as exc:
-        _raise_usage_error(str(exc))
-
+    summary = run_benchmark_suite(
+        preset_specs,
+        suite=suite,
+        warn_threshold_pct=warn_pct,
+        fail_threshold_pct=fail_pct,
+        baseline_payload=baseline_payload,
+        num_datasets_override=args.num_datasets,
+        warmup_override=args.warmup,
+        collect_memory=not bool(args.no_memory),
+        collect_reproducibility=(
+            bool(args.collect_reproducibility)
+            or bool(default_cfg.benchmark.collect_reproducibility)
+        ),
+        collect_diagnostics=bool(args.diagnostics),
+        diagnostics_root_dir=diagnostics_root_dir,
+        fail_on_regression=bool(args.fail_on_regression),
+        hardware_policy=str(args.hardware_policy),
+    )
     if args.print_effective_config:
         for result in summary.get("preset_results", []):
             if not isinstance(result, dict):
@@ -1382,10 +1309,9 @@ def _run_benchmark(args: argparse.Namespace) -> int:
 def _run_diversity_audit(args: argparse.Namespace) -> int:
     """Execute the ``diversity-audit`` command."""
 
-    base_config = GeneratorConfig.from_yaml(args.config) if args.config else GeneratorConfig()
+    base_config = _load_config_or_usage_error(args.config) if args.config else GeneratorConfig()
     if args.device is not None:
         base_config.runtime.device = str(args.device)
-    _raise_if_worker_partitioning_unsupported(base_config, command="diversity-audit")
 
     thresholds = AuditThresholds(
         exact_affine_rmse=float(args.exact_affine_rmse),

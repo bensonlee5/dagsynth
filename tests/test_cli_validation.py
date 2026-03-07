@@ -97,12 +97,12 @@ def test_generate_cli_rejects_inline_filter_enabled(tmp_path) -> None:
     assert int(exc.value.code) == 2
 
 
-def test_generate_cli_rejects_worker_partition_when_dataset_write_enabled(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 1
-    config_path = tmp_path / "multi_worker.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+def test_generate_cli_rejects_removed_parallel_generation_runtime_keys(tmp_path) -> None:
+    config_path = tmp_path / "removed_parallel_runtime.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"runtime": {"worker_count": 2, "worker_index": 1}}),
+        encoding="utf-8",
+    )
 
     with pytest.raises(SystemExit) as exc:
         main(
@@ -123,33 +123,6 @@ def test_generate_cli_rejects_worker_partition_when_dataset_write_enabled(tmp_pa
     assert int(exc.value.code) == 2
     assert not (tmp_path / "out" / "effective_config.yaml").exists()
     assert not (tmp_path / "out" / "effective_config_trace.yaml").exists()
-
-
-def test_generate_cli_rejects_worker_partition_with_no_dataset_write(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 1
-    config_path = tmp_path / "multi_worker_no_write.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
-
-    with pytest.raises(SystemExit) as exc:
-        main(
-            [
-                "generate",
-                "--config",
-                str(config_path),
-                "--num-datasets",
-                "3",
-                "--device",
-                "cpu",
-                "--hardware-policy",
-                "none",
-                "--no-dataset-write",
-                "--out",
-                str(tmp_path / "out_no_write"),
-            ]
-        )
-    assert int(exc.value.code) == 2
 
 
 def test_fixed_layout_sample_cli_writes_plan_artifact(tmp_path: Path) -> None:
@@ -288,15 +261,14 @@ def test_fixed_layout_generate_cli_forwards_device_override(
     assert captured["device"] == "cpu"
 
 
-def test_benchmark_cli_rejects_cpu_multi_worker_root_config(
+def test_benchmark_cli_rejects_removed_parallel_generation_runtime_keys(
     tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 0
-    cfg.runtime.device = "auto"
-    config_path = tmp_path / "benchmark_multi_worker.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = tmp_path / "benchmark_removed_parallel_runtime.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"runtime": {"worker_count": 2, "worker_index": 0}}),
+        encoding="utf-8",
+    )
 
     with pytest.raises(SystemExit) as exc:
         main(
@@ -314,99 +286,8 @@ def test_benchmark_cli_rejects_cpu_multi_worker_root_config(
 
     assert int(exc.value.code) == 2
     assert (
-        "runtime.worker_count > 1 is not supported for dagzoo benchmark" in capsys.readouterr().err
-    )
-
-
-def test_benchmark_cli_rejects_ignored_multi_worker_config_for_builtin_preset(
-    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 0
-    cfg.runtime.device = "cpu"
-    config_path = tmp_path / "benchmark_multi_worker_builtin_preset.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
-
-    monkeypatch.setattr(
-        "dagzoo.cli.run_benchmark_suite",
-        lambda *_args, **_kwargs: pytest.fail("run_benchmark_suite should not be called"),
-    )
-
-    with pytest.raises(SystemExit) as exc:
-        main(
-            [
-                "benchmark",
-                "--config",
-                str(config_path),
-                "--preset",
-                "cpu",
-                "--suite",
-                "smoke",
-                "--no-memory",
-            ]
-        )
-
-    assert int(exc.value.code) == 2
-    assert (
-        "runtime.worker_count > 1 is not supported for dagzoo benchmark" in capsys.readouterr().err
-    )
-
-
-def test_benchmark_cli_rejects_multi_worker_nonzero_worker_index(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 1
-    config_path = tmp_path / "benchmark_multi_worker.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
-
-    with pytest.raises(SystemExit) as exc:
-        main(
-            [
-                "benchmark",
-                "--config",
-                str(config_path),
-                "--preset",
-                "custom",
-                "--suite",
-                "smoke",
-                "--no-memory",
-            ]
-        )
-    assert int(exc.value.code) == 2
-
-
-def test_benchmark_cli_rejects_multi_worker_explicit_cuda_preflight(
-    tmp_path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 0
-    cfg.runtime.device = "cpu"
-    config_path = tmp_path / "benchmark_multi_worker_cuda.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
-
-    with pytest.raises(SystemExit) as exc:
-        main(
-            [
-                "benchmark",
-                "--config",
-                str(config_path),
-                "--preset",
-                "custom",
-                "--suite",
-                "smoke",
-                "--no-memory",
-                "--num-datasets",
-                "1",
-                "--device",
-                "cuda",
-            ]
-        )
-
-    assert int(exc.value.code) == 2
-    assert (
-        "runtime.worker_count > 1 is not supported for dagzoo benchmark" in capsys.readouterr().err
+        "runtime.worker_count, runtime.worker_index is no longer supported"
+        in capsys.readouterr().err
     )
 
 
@@ -442,12 +323,12 @@ def test_benchmark_cli_rejects_device_override_with_multiple_presets(
     assert "multiple --preset values" in captured.err
 
 
-def test_diversity_audit_cli_rejects_worker_partition_config(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.worker_count = 2
-    cfg.runtime.worker_index = 1
-    config_path = tmp_path / "diversity_multi_worker.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+def test_diversity_audit_cli_rejects_removed_parallel_generation_runtime_keys(tmp_path) -> None:
+    config_path = tmp_path / "diversity_removed_parallel_runtime.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"runtime": {"worker_count": 2, "worker_index": 1}}),
+        encoding="utf-8",
+    )
 
     with pytest.raises(SystemExit) as exc:
         main(

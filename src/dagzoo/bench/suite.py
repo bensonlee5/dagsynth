@@ -87,11 +87,6 @@ from dagzoo.core.fixed_layout import (
     generate_batch_fixed_layout_iter,
     sample_fixed_layout,
 )
-from dagzoo.core.parallel_generation import (
-    ParallelGenerationConfigError,
-    effective_local_parallel_worker_count,
-    generate_parallel_batch_iter,
-)
 from dagzoo.core.shift import resolve_shift_runtime_params
 from dagzoo.diagnostics import (
     CoverageAggregator,
@@ -236,17 +231,6 @@ def _latency_sample_count(config: GeneratorConfig, suite: str, num_datasets: int
     return n
 
 
-def _serial_generation_config(config: GeneratorConfig) -> GeneratorConfig:
-    """Return a config copy normalized to one local worker for serial generation calls."""
-
-    if int(config.runtime.worker_count) <= 1 and int(config.runtime.worker_index) == 0:
-        return config
-    normalized = _copy_runtime_config(config)
-    normalized.runtime.worker_count = 1
-    normalized.runtime.worker_index = 0
-    return normalized
-
-
 def _collect_latency(
     config: GeneratorConfig,
     *,
@@ -257,7 +241,6 @@ def _collect_latency(
     """Collect per-dataset latency samples by repeatedly calling ``generate_one``."""
 
     manager = SeedManager(offset_seed32(config.seed, LATENCY_SEED_OFFSET))
-    serial_config = _serial_generation_config(config)
     samples: list[float] = []
     for i in range(max(1, num_samples)):
         seed = manager.child("latency", i)
@@ -272,7 +255,7 @@ def _collect_latency(
                 device=device,
             )[0]
         else:
-            _ = generate_one(serial_config, seed=seed, device=device)
+            _ = generate_one(config, seed=seed, device=device)
         samples.append(time.perf_counter() - start)
     return summarize_latencies(samples)
 
@@ -311,21 +294,11 @@ def _collect_reproducibility(
             )
         )
     else:
-        generator = (
-            generate_parallel_batch_iter
-            if effective_local_parallel_worker_count(int(config.runtime.worker_count), n) > 1
-            else generate_batch_iter
-        )
-        generation_config = (
-            config
-            if generator is generate_parallel_batch_iter
-            else _serial_generation_config(config)
-        )
         sig_a = reproducibility_signature(
-            generator(generation_config, num_datasets=n, seed=run_seed, device=device)
+            generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
         )
         sig_b = reproducibility_signature(
-            generator(generation_config, num_datasets=n, seed=run_seed, device=device)
+            generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
         )
     return {
         "reproducibility_datasets": n,
@@ -350,16 +323,6 @@ def _artifact_pointer(path: Path) -> str:
     return str(path.resolve())
 
 
-def _normalize_multi_worker_benchmark_requested_device(
-    config: GeneratorConfig,
-    *,
-    requested_device: str | None,
-) -> str:
-    """Normalize benchmark device requests before preset resolution."""
-
-    return (requested_device or config.runtime.device or "auto").lower()
-
-
 def _should_use_fixed_layout_benchmark_mode(
     *,
     preset_key: str,
@@ -372,8 +335,7 @@ def _should_use_fixed_layout_benchmark_mode(
     return bool(
         _is_builtin_cpu_fixed_layout_key(preset_key)
         and str(hardware_backend) == "cpu"
-        and effective_local_parallel_worker_count(int(config.runtime.worker_count), num_datasets)
-        <= 1
+        and int(num_datasets) > 0
     )
 
 
@@ -530,10 +492,7 @@ def run_preset_benchmark(
             smoke_caps=_smoke_caps_for_spec(spec),
         )
 
-    normalized_preset_device = _normalize_multi_worker_benchmark_requested_device(
-        spec.config,
-        requested_device=spec.device,
-    )
+    normalized_preset_device = (spec.device or spec.config.runtime.device or "auto").lower()
     resolved_preset = _resolve_preset_for_requested_device(normalized_preset_device)
     config = resolved_preset.config
     requested_device = resolved_preset.requested_device
@@ -545,39 +504,6 @@ def run_preset_benchmark(
         num_datasets_override=num_datasets_override,
         warmup_override=warmup_override,
     )
-    multi_worker_benchmark = (
-        effective_local_parallel_worker_count(int(config.runtime.worker_count), num_datasets) > 1
-    )
-
-    explicit_requested_device = str(requested_device).strip().lower()
-    if multi_worker_benchmark and explicit_requested_device in {"cuda", "mps"}:
-        raise ParallelGenerationConfigError(
-            "runtime.worker_count > 1 benchmark runs currently support resolved CPU presets only. "
-            f"Preset '{spec.key}' requested_device='{requested_device}' resolved backend "
-            f"'{hw.backend}'."
-        )
-    if multi_worker_benchmark and explicit_requested_device == "auto":
-        resolved_preset = _resolve_preset_for_requested_device("cpu")
-        config = resolved_preset.config
-        requested_device = resolved_preset.requested_device
-        hw = resolved_preset.hardware
-        num_datasets, warmup = _preset_counts(
-            config,
-            preset_key=spec.key,
-            suite=suite,
-            num_datasets_override=num_datasets_override,
-            warmup_override=warmup_override,
-        )
-        multi_worker_benchmark = (
-            effective_local_parallel_worker_count(int(config.runtime.worker_count), num_datasets)
-            > 1
-        )
-    if multi_worker_benchmark and hw.backend != "cpu":
-        raise ParallelGenerationConfigError(
-            "runtime.worker_count > 1 benchmark runs currently support resolved CPU presets only. "
-            f"Preset '{spec.key}' requested_device='{requested_device}' resolved backend "
-            f"'{hw.backend}'."
-        )
 
     rss_before = _peak_rss_mb() if collect_memory else 0.0
     if collect_memory and hw.backend == "cuda" and torch.cuda.is_available():
@@ -759,39 +685,26 @@ def run_preset_benchmark(
     # control-run guardrail benchmarks to avoid unnecessary memory retention.
     sampled_bundles.clear()
 
-    latency_stats: Mapping[str, float | None]
-    if multi_worker_benchmark:
-        latency_stats = {
-            "latency_samples": None,
-            "latency_mean_ms": None,
-            "latency_p95_ms": None,
-            "latency_min_ms": None,
-            "latency_max_ms": None,
-        }
-    else:
-        latency_kwargs: dict[str, Any] = {
-            "device": requested_device,
-            "num_samples": _latency_sample_count(config, suite, num_datasets),
-        }
-        if fixed_layout_plan is not None:
-            latency_kwargs["fixed_layout_plan"] = fixed_layout_plan
-        latency_stats = _collect_latency(generation_config, **latency_kwargs)
+    latency_kwargs: dict[str, Any] = {
+        "device": requested_device,
+        "num_samples": _latency_sample_count(config, suite, num_datasets),
+    }
+    if fixed_layout_plan is not None:
+        latency_kwargs["fixed_layout_plan"] = fixed_layout_plan
+    latency_stats: Mapping[str, float | None] = _collect_latency(
+        generation_config, **latency_kwargs
+    )
     result.update(latency_stats)
 
     if collect_memory:
-        if multi_worker_benchmark:
-            result["peak_rss_mb"] = None
-            result["peak_cuda_allocated_mb"] = None
-            result["peak_cuda_reserved_mb"] = None
-        else:
-            result["peak_rss_mb"] = max(0.0, _peak_rss_mb() - rss_before)
-            if hw.backend == "cuda" and torch.cuda.is_available():
-                try:
-                    result["peak_cuda_allocated_mb"] = torch.cuda.max_memory_allocated() / MIB
-                    result["peak_cuda_reserved_mb"] = torch.cuda.max_memory_reserved() / MIB
-                except Exception:
-                    result["peak_cuda_allocated_mb"] = None
-                    result["peak_cuda_reserved_mb"] = None
+        result["peak_rss_mb"] = max(0.0, _peak_rss_mb() - rss_before)
+        if hw.backend == "cuda" and torch.cuda.is_available():
+            try:
+                result["peak_cuda_allocated_mb"] = torch.cuda.max_memory_allocated() / MIB
+                result["peak_cuda_reserved_mb"] = torch.cuda.max_memory_reserved() / MIB
+            except Exception:
+                result["peak_cuda_allocated_mb"] = None
+                result["peak_cuda_reserved_mb"] = None
 
     if collect_reproducibility:
         repro_n = min(num_datasets, max(1, int(config.benchmark.reproducibility_num_datasets)))
@@ -810,7 +723,7 @@ def run_preset_benchmark(
                 generation_config,
                 device=requested_device,
                 repeats=MICROBENCH_REPEATS,
-                include_generate_one=not multi_worker_benchmark,
+                include_generate_one=True,
             )
         )
 

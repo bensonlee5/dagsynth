@@ -38,8 +38,8 @@ under the resolved output directory.
 datasets emitted in the same run share one layout signature / plan signature.
 Generation does not run inline filtering; keep `filter.enabled: false` for
 generate flows.
-`runtime.worker_count > 1` is temporarily unsupported for both `generate` and
-`benchmark` while batch-first optimization work is in progress.
+Parallel generation has been removed. Config files must not include
+`runtime.worker_count` or `runtime.worker_index`.
 
 ______________________________________________________________________
 

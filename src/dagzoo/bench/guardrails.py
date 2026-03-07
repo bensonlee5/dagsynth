@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import math
 import pickle
 import statistics
@@ -24,10 +23,6 @@ from dagzoo.bench.metrics import degradation_percent
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_batch_iter
 from dagzoo.core.fixed_layout import FixedLayoutPlan, generate_batch_fixed_layout_iter
-from dagzoo.core.parallel_generation import (
-    effective_local_parallel_worker_count,
-    generate_parallel_batch_iter,
-)
 from dagzoo.io.parquet_writer import write_packed_parquet_shards_stream
 from dagzoo.math_utils import to_numpy as _to_numpy
 from dagzoo.rng import offset_seed32
@@ -156,18 +151,8 @@ def _stage_lineage_trial_bundles(
             device=device,
         )
     else:
-        generator = (
-            generate_parallel_batch_iter
-            if effective_local_parallel_worker_count(int(config.runtime.worker_count), sample_n) > 1
-            else generate_batch_iter
-        )
-        generation_config = config
-        if generator is generate_batch_iter and int(config.runtime.worker_count) > 1:
-            generation_config = copy.deepcopy(config)
-            generation_config.runtime.worker_count = 1
-            generation_config.runtime.worker_index = 0
-        bundle_iter = generator(
-            generation_config,
+        bundle_iter = generate_batch_iter(
+            config,
             num_datasets=sample_n,
             seed=seed,
             device=device,

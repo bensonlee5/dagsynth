@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import time
 from collections.abc import Callable
 from typing import Any
@@ -16,10 +15,6 @@ from dagzoo.bench.constants import (
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_batch_iter
 from dagzoo.core.fixed_layout import FixedLayoutPlan, generate_batch_fixed_layout_iter
-from dagzoo.core.parallel_generation import (
-    effective_local_parallel_worker_count,
-    generate_parallel_batch_iter,
-)
 from dagzoo.rng import offset_seed32
 from dagzoo.types import DatasetBundle
 
@@ -32,13 +27,11 @@ def _select_generation_iterator(
 ) -> Any:
     """Choose one generator path for the full benchmark run."""
 
+    _ = config
+    _ = num_datasets
     if fixed_layout_plan is not None:
         return generate_batch_fixed_layout_iter
-    return (
-        generate_parallel_batch_iter
-        if effective_local_parallel_worker_count(int(config.runtime.worker_count), num_datasets) > 1
-        else generate_batch_iter
-    )
+    return generate_batch_iter
 
 
 def _consume_generation(
@@ -53,11 +46,6 @@ def _consume_generation(
     on_bundle: Callable[[DatasetBundle], object] | None = None,
 ) -> None:
     """Run generation for ``num_datasets`` items while discarding outputs."""
-
-    if generator is generate_batch_iter and int(config.runtime.worker_count) > 1:
-        config = copy.deepcopy(config)
-        config.runtime.worker_count = 1
-        config.runtime.worker_index = 0
 
     generator_kwargs: dict[str, Any] = {
         "num_datasets": num_datasets,
@@ -126,9 +114,5 @@ def run_throughput_benchmark(
         "datasets_per_second": dps,
         "datasets_per_minute": dpm,
         "slo_pass_100_datasets_per_min": dpm >= THROUGHPUT_SLO_DATASETS_PER_MINUTE,
-        "generation_mode": (
-            "fixed_batched"
-            if fixed_layout_plan is not None or generator is generate_batch_iter
-            else "dynamic"
-        ),
+        "generation_mode": "fixed_batched" if fixed_layout_plan is not None else "dynamic",
     }

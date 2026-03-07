@@ -30,6 +30,7 @@ from dagzoo.core.generation_context import (
     _resolve_device,
     _resolve_run_seed,
     _resolve_split_sizes,
+    _split_permutation_seed,
     _validate_class_split_for_layout,
 )
 from dagzoo.core.generation_engine import _finalize_generated_tensors, _torch_dtype
@@ -37,6 +38,7 @@ from dagzoo.core.layout import _sample_layout
 from dagzoo.core.layout_types import FeatureType, LayoutPlan
 from dagzoo.core.noise_runtime import _noise_sampling_spec, _resolve_noise_runtime_selection
 from dagzoo.core.shift import resolve_shift_runtime_params
+from dagzoo.core.validation import _classification_split_valid, _stratified_split_indices
 from dagzoo.rng import SeedManager, offset_seed32
 from dagzoo.types import DatasetBundle
 
@@ -335,14 +337,27 @@ def prepare_canonical_fixed_layout_run(
         seed=base_plan_seed,
         device=requested_device,
     )
+    effective_batch_size = _resolve_fixed_layout_batch_size(
+        plan,
+        num_datasets=max(1, int(num_datasets)),
+        batch_size=batch_size,
+    )
     if str(realized_config.dataset.task) == "classification":
         attempts = max(1, int(realized_config.filter.max_attempts))
         for attempt in range(attempts):
-            if _fixed_layout_plan_supports_classification_replay(
+            effective_batch_size = _resolve_fixed_layout_batch_size(
+                plan,
+                num_datasets=max(1, int(num_datasets)),
+                batch_size=batch_size,
+            )
+            if _fixed_layout_plan_supports_classification_run(
                 realized_config,
                 plan=plan,
                 requested_device=requested_device,
-                validation_seed=run_seed,
+                resolved_device=resolved_device,
+                run_seed=run_seed,
+                num_datasets=max(1, int(num_datasets)),
+                batch_size=effective_batch_size,
             ):
                 break
             if attempt == attempts - 1:
@@ -355,11 +370,6 @@ def prepare_canonical_fixed_layout_run(
                 seed=_attempt_seed(base_plan_seed, attempt + 1),
                 device=requested_device,
             )
-    effective_batch_size = _resolve_fixed_layout_batch_size(
-        plan,
-        num_datasets=max(1, int(num_datasets)),
-        batch_size=batch_size,
-    )
     return CanonicalFixedLayoutRun(
         config=realized_config,
         plan=plan,
@@ -412,31 +422,170 @@ def _sample_fixed_layout_once(
     )
 
 
+def _raw_classification_labels_support_split(
+    y: torch.Tensor,
+    *,
+    dataset_seed: int,
+    attempt: int,
+    n_train: int,
+) -> bool:
+    """Return whether one raw classification label vector can satisfy split constraints."""
+
+    labels = y.to(device="cpu", dtype=torch.int64)
+    split_generator = torch.Generator(device="cpu")
+    split_generator.manual_seed(_split_permutation_seed(dataset_seed, attempt))
+    try:
+        train_idx_cpu, test_idx_cpu = _stratified_split_indices(
+            labels,
+            int(n_train),
+            split_generator,
+            "cpu",
+        )
+    except ValueError as exc:
+        if str(exc).startswith("infeasible_stratified_split"):
+            return False
+        raise
+    return _classification_split_valid(labels[train_idx_cpu], labels[test_idx_cpu])
+
+
+def _fixed_layout_dataset_supports_classification_replay(
+    config: GeneratorConfig,
+    *,
+    plan: FixedLayoutPlan,
+    dataset_seed: int,
+    requested_device: str,
+    resolved_device: str,
+) -> bool:
+    """Return whether one dataset seed can replay under one fixed-layout plan."""
+
+    if plan.node_plans is None:
+        raise ValueError("Fixed-layout plan must include node_plans.")
+
+    data_seed = SeedManager(dataset_seed).child("data")
+    shift_params = resolve_shift_runtime_params(config)
+    noise_runtime_selection = _resolve_noise_runtime_selection(config, run_seed=data_seed)
+    noise_spec = _noise_sampling_spec(noise_runtime_selection)
+    attempts = max(1, int(config.filter.max_attempts))
+
+    for attempt in range(attempts):
+        _, y_batch, _, _effective_resolved_device, _device_fallback_reason = (
+            _generate_fixed_layout_graph_batch_with_fallback(
+                config,
+                plan.layout,
+                node_plans=plan.node_plans,
+                dataset_seeds=[_attempt_seed(data_seed, attempt)],
+                requested_device=requested_device,
+                resolved_device=resolved_device,
+                noise_sigma_multiplier=float(shift_params.variance_sigma_multiplier),
+                noise_spec=noise_spec,
+            )
+        )
+        if _raw_classification_labels_support_split(
+            y_batch[0],
+            dataset_seed=dataset_seed,
+            attempt=attempt,
+            n_train=int(plan.n_train),
+        ):
+            return True
+    return False
+
+
+def _fixed_layout_plan_supports_classification_run(
+    config: GeneratorConfig,
+    *,
+    plan: FixedLayoutPlan,
+    requested_device: str,
+    resolved_device: str,
+    run_seed: int,
+    num_datasets: int = 1,
+    batch_size: int = 1,
+) -> bool:
+    """Return whether a classification plan can replay for the full requested run."""
+
+    if plan.node_plans is None:
+        raise ValueError("Fixed-layout plan must include node_plans.")
+
+    manager = SeedManager(run_seed)
+    shift_params = resolve_shift_runtime_params(config)
+    effective_batch_size = max(1, int(batch_size))
+    dataset_index = 0
+    while dataset_index < num_datasets:
+        chunk_size = min(effective_batch_size, num_datasets - dataset_index)
+        dataset_seeds = [
+            manager.child("dataset", dataset_index + offset) for offset in range(chunk_size)
+        ]
+        data_seeds = [SeedManager(dataset_seed).child("data") for dataset_seed in dataset_seeds]
+        noise_runtime_selections = [
+            _resolve_noise_runtime_selection(config, run_seed=data_seed) for data_seed in data_seeds
+        ]
+        if any(
+            selection != noise_runtime_selections[0] for selection in noise_runtime_selections[1:]
+        ):
+            for dataset_seed in dataset_seeds:
+                if not _fixed_layout_dataset_supports_classification_replay(
+                    config,
+                    plan=plan,
+                    dataset_seed=dataset_seed,
+                    requested_device=requested_device,
+                    resolved_device=resolved_device,
+                ):
+                    return False
+            dataset_index += chunk_size
+            continue
+
+        noise_runtime_selection = noise_runtime_selections[0]
+        noise_spec = _noise_sampling_spec(noise_runtime_selection)
+        _, y_batch, _aux_meta_batch, _effective_resolved_device, _device_fallback_reason = (
+            _generate_fixed_layout_graph_batch_with_fallback(
+                config,
+                plan.layout,
+                node_plans=plan.node_plans,
+                dataset_seeds=data_seeds,
+                requested_device=requested_device,
+                resolved_device=resolved_device,
+                noise_sigma_multiplier=float(shift_params.variance_sigma_multiplier),
+                noise_spec=noise_spec,
+            )
+        )
+        for offset, dataset_seed in enumerate(dataset_seeds):
+            if _raw_classification_labels_support_split(
+                y_batch[offset],
+                dataset_seed=dataset_seed,
+                attempt=0,
+                n_train=int(plan.n_train),
+            ):
+                continue
+            if not _fixed_layout_dataset_supports_classification_replay(
+                config,
+                plan=plan,
+                dataset_seed=dataset_seed,
+                requested_device=requested_device,
+                resolved_device=resolved_device,
+            ):
+                return False
+        dataset_index += chunk_size
+    return True
+
+
 def _fixed_layout_plan_supports_classification_replay(
     config: GeneratorConfig,
     *,
     plan: FixedLayoutPlan,
     requested_device: str,
+    resolved_device: str,
     validation_seed: int,
 ) -> bool:
     """Return whether a classification plan can replay under the fixed-layout engine."""
 
-    try:
-        _ = next(
-            generate_batch_fixed_layout_iter(
-                config,
-                plan=plan,
-                num_datasets=1,
-                seed=validation_seed,
-                batch_size=1,
-                device=requested_device,
-            )
-        )
-    except ValueError as exc:
-        if "invalid_class_split" in str(exc):
-            return False
-        raise
-    return True
+    return _fixed_layout_plan_supports_classification_run(
+        config,
+        plan=plan,
+        requested_device=requested_device,
+        resolved_device=resolved_device,
+        run_seed=validation_seed,
+        num_datasets=1,
+        batch_size=1,
+    )
 
 
 def sample_fixed_layout(
@@ -470,6 +619,7 @@ def sample_fixed_layout(
                 config,
                 plan=plan,
                 requested_device=requested_device,
+                resolved_device=resolved_device,
                 validation_seed=validation_seed,
             ):
                 valid = True
