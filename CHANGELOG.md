@@ -10,6 +10,57 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.5.7] - 2026-03-07
+
+### Added
+
+- Added `dagzoo fixed-layout sample` and `dagzoo fixed-layout generate` CLI
+  subcommands for sampling reusable fixed-layout plan artifacts and generating
+  datasets from saved plans.
+
+### Changed
+
+- Upgraded fixed-layout generation to freeze node execution plans in the saved
+  plan artifact and generate raw graph tensors in batched `N x rows x features`
+  chunks before per-dataset finalization.
+- Fixed-layout plan artifacts now serialize `node_plans`,
+  `plan_signature`, `execution_contract`, and `schema_version: 3`, and
+  emitted fixed-layout bundles now include `metadata.layout_plan_signature`.
+- Built-in CPU benchmark runs (`dagzoo benchmark --preset cpu`) now expand into
+  explicit `1024`, `4096`, and `8192` total-row profiles, use the fixed-layout
+  batched generator by default for those row profiles, and report
+  `generation_mode="fixed_batched"` plus explicit dataset row counts in
+  benchmark results.
+- Fixed-layout raw generation now uses a chunk-scoped batched RNG contract and
+  grouped converter execution in the fixed-layout batched engine.
+- Built-in CPU benchmark fixed-layout runs now pin one internal fixed-layout
+  batch size per preset run so throughput, reproducibility, and lineage
+  guardrail generation use the same chunking contract.
+- Emitted fixed-layout bundles now include
+  `metadata.layout_plan_schema_version` and
+  `metadata.layout_execution_contract`.
+- Fixed-layout replay now uses the current requested device instead of the
+  plan's sampling backend provenance, and `dagzoo fixed-layout generate --device ...` now controls replay backend selection correctly.
+- Fixed-layout generation again retries on CPU when `--device auto` resolves to
+  `mps` and the batched fixed-layout runtime hits an unsupported MPS op.
+
+### Breaking
+
+- **BREAKING:** Fixed-layout plan artifacts changed schema in this release.
+  Older serialized plan payloads without execution plans or plan signatures are
+  no longer accepted by `generate_batch_fixed_layout(_iter)` or the new
+  `dagzoo fixed-layout generate` CLI.
+- **BREAKING:** The built-in CPU benchmark preset no longer measures the
+  dynamic-layout generator path by default and no longer emits a single CPU
+  result row. It now emits `cpu_rows1024`, `cpu_rows4096`, and `cpu_rows8192`
+  results; benchmark artifacts distinguish `generation_mode="fixed_batched"`
+  and `generation_mode="dynamic"` and include explicit dataset row counts.
+- **BREAKING:** Fixed-layout plan artifacts now serialize `schema_version: 3`
+  and `execution_contract: "chunk_batched_v1"`.
+- **BREAKING:** Fixed-layout outputs are no longer batch-size independent. The
+  current contract is deterministic for the same `plan + run seed + batch_size`,
+  but changing `batch_size` may change the emitted dataset values.
+
 ## [0.5.6] - 2026-03-07
 
 ### Changed

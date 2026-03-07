@@ -88,10 +88,12 @@ Detailed guides:
 
 ______________________________________________________________________
 
-## 5. Fixed-layout batch generation (Python API)
+## 5. Fixed-layout batch generation
 
 Use a fixed layout plan when you want many datasets with consistent structure
 and aligned emitted columns across the batch.
+
+Python API:
 
 ```python
 from dagzoo import (
@@ -108,6 +110,32 @@ batch = generate_batch_fixed_layout(cfg, plan=plan, num_datasets=32, seed=101)
 `generate_batch_fixed_layout(_iter)` validates plan/config compatibility before
 generation. If layout-driving config fields drift from the plan snapshot, it
 raises and asks you to resample the plan.
+
+CLI:
+
+```bash
+dagzoo fixed-layout sample \
+  --config configs/default.yaml \
+  --device cpu \
+  --out plans/fixed_layout_cpu.yaml
+
+dagzoo fixed-layout generate \
+  --config configs/default.yaml \
+  --plan plans/fixed_layout_cpu.yaml \
+  --num-datasets 32 \
+  --batch-size 8 \
+  --out data/fixed_layout_run
+```
+
+Saved plan artifacts now include frozen node execution plans, an
+`execution_contract`, and a `plan_signature`. Under the current
+`chunk_batched_v1` contract, fixed-layout generation is deterministic for the
+same `plan + run seed + batch_size`, but outputs may change if you change the
+fixed-layout batch size. Built-in CPU benchmarks pin one internal fixed-layout
+batch size per preset run so those benchmark artifacts stay stable. Plan
+device fields are provenance only: replay uses the current request/config
+device, and `dagzoo fixed-layout generate --device auto` still falls back to
+CPU when a partially supported MPS runtime fails during batched execution.
 
 ______________________________________________________________________
 
@@ -137,6 +165,13 @@ dagzoo benchmark \
   --no-memory \
   --out-dir benchmarks/results/smoke_many_class
 ```
+
+Note: the built-in CPU benchmark preset (`dagzoo benchmark --preset cpu`) now
+measures three explicit row profiles: `1024`, `4096`, and `8192` total rows per
+dataset. Those built-in CPU runs use the fixed-layout batched generator by
+default and report `generation_mode="fixed_batched"` plus explicit row counts in
+their summary artifacts. Custom presets stay on the normal dynamic-layout path
+unless you call the fixed-layout APIs or CLI explicitly.
 
 Detailed guide: [Many-class](features/many-class.md)
 

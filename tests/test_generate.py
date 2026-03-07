@@ -805,8 +805,75 @@ def test_sample_fixed_layout_is_deterministic_for_seed() -> None:
 
     assert plan_a.layout_signature == plan_b.layout_signature
     assert plan_a.plan_seed == plan_b.plan_seed
+    assert plan_a.plan_signature == plan_b.plan_signature
+    assert plan_a.node_plans == plan_b.node_plans
     assert int(plan_a.layout.n_features) == int(plan_b.layout.n_features)
     assert list(plan_a.layout.feature_types) == list(plan_b.layout.feature_types)
+
+
+def test_sample_fixed_layout_propagates_mechanism_drift_tilt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_regression_config()
+    cfg.shift.enabled = True
+    cfg.shift.mode = "mechanism_drift"
+    observed_tilts: list[float] = []
+
+    def _stub_sample_function_family(
+        _generator,
+        *,
+        mechanism_logit_tilt: float,
+        function_family_mix=None,
+    ) -> str:
+        _ = function_family_mix
+        observed_tilts.append(float(mechanism_logit_tilt))
+        return "linear"
+
+    monkeypatch.setattr(
+        "dagzoo.core.fixed_layout_batched._sample_function_family",
+        _stub_sample_function_family,
+    )
+
+    runtime = resolve_shift_runtime_params(cfg)
+    _ = sample_fixed_layout(cfg, seed=90210, device="cpu")
+
+    assert observed_tilts
+    assert all(tilt == pytest.approx(runtime.mechanism_logit_tilt) for tilt in observed_tilts)
+
+
+def test_fixed_layout_plan_round_trips_via_dict() -> None:
+    cfg = _tiny_regression_config()
+    sampled = sample_fixed_layout(cfg, seed=90211, device="cpu")
+
+    restored = FixedLayoutPlan.from_dict(sampled.to_dict())
+
+    assert restored.layout_signature == sampled.layout_signature
+    assert restored.plan_signature == sampled.plan_signature
+    assert restored.node_plans == sampled.node_plans
+    assert restored.compatibility_snapshot == sampled.compatibility_snapshot
+    assert restored.plan_schema_version == sampled.plan_schema_version
+    assert restored.plan_schema_version == 3
+    assert restored.execution_contract == "chunk_batched_v1"
+
+
+def test_fixed_layout_plan_from_dict_rejects_foreign_schema_version() -> None:
+    cfg = _tiny_regression_config()
+    sampled = sample_fixed_layout(cfg, seed=90211, device="cpu")
+    payload = sampled.to_dict()
+    payload["schema_version"] = 999
+
+    with pytest.raises(ValueError, match=r"schema_version"):
+        FixedLayoutPlan.from_dict(payload)
+
+
+def test_fixed_layout_plan_from_dict_rejects_foreign_execution_contract() -> None:
+    cfg = _tiny_regression_config()
+    sampled = sample_fixed_layout(cfg, seed=90211, device="cpu")
+    payload = sampled.to_dict()
+    payload["execution_contract"] = "foreign_contract_v1"
+
+    with pytest.raises(ValueError, match=r"execution_contract"):
+        FixedLayoutPlan.from_dict(payload)
 
 
 def test_generate_batch_fixed_layout_iter_matches_materialized_ordering() -> None:
@@ -824,6 +891,25 @@ def test_generate_batch_fixed_layout_iter_matches_materialized_ordering() -> Non
         assert b.metadata["layout_mode"] == "fixed"
 
 
+def test_generate_batch_fixed_layout_is_deterministic_for_same_batch_size() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=78, device="cpu")
+
+    batch_a = generate_batch_fixed_layout(cfg, plan=plan, num_datasets=3, seed=801, batch_size=1)
+    batch_b = generate_batch_fixed_layout(cfg, plan=plan, num_datasets=3, seed=801, batch_size=1)
+
+    assert len(batch_a) == len(batch_b)
+    for left, right in zip(batch_a, batch_b, strict=True):
+        np.testing.assert_allclose(np.asarray(left.X_train), np.asarray(right.X_train), atol=1e-6)
+        np.testing.assert_allclose(np.asarray(left.X_test), np.asarray(right.X_test), atol=1e-6)
+        np.testing.assert_allclose(np.asarray(left.y_train), np.asarray(right.y_train), atol=1e-6)
+        np.testing.assert_allclose(np.asarray(left.y_test), np.asarray(right.y_test), atol=1e-6)
+        assert left.metadata["seed"] == right.metadata["seed"]
+        assert left.metadata["layout_plan_signature"] == right.metadata["layout_plan_signature"]
+        assert left.metadata["layout_execution_contract"] == "chunk_batched_v1"
+        assert left.metadata["layout_plan_schema_version"] == 3
+
+
 def test_generate_batch_fixed_layout_enforces_layout_reuse() -> None:
     cfg = _tiny_regression_config()
     plan = sample_fixed_layout(cfg, seed=101, device="cpu")
@@ -838,6 +924,9 @@ def test_generate_batch_fixed_layout_enforces_layout_reuse() -> None:
         assert bundle.metadata["layout_mode"] == "fixed"
         assert int(bundle.metadata["layout_plan_seed"]) == plan.plan_seed
         assert str(bundle.metadata["layout_signature"]) == layout_signature
+        assert str(bundle.metadata["layout_plan_signature"]) == str(plan.plan_signature)
+        assert int(bundle.metadata["layout_plan_schema_version"]) == 3
+        assert str(bundle.metadata["layout_execution_contract"]) == "chunk_batched_v1"
         assert int(bundle.metadata["n_features"]) == n_features
         assert list(bundle.feature_types) == feature_types
         assert (
@@ -912,6 +1001,100 @@ def test_generate_batch_fixed_layout_rejects_tampered_plan_resolved_device() -> 
         list(generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=1, seed=226))
 
 
+def test_generate_batch_fixed_layout_rejects_tampered_plan_schema_version() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=116, device="cpu")
+    plan.plan_schema_version = 999
+
+    with pytest.raises(ValueError, match=r"plan_schema_version"):
+        list(generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=1, seed=227))
+
+
+def test_generate_batch_fixed_layout_rejects_tampered_execution_contract() -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=117, device="cpu")
+    plan.execution_contract = "foreign_contract_v1"
+
+    with pytest.raises(ValueError, match=r"execution_contract"):
+        list(generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=1, seed=228))
+
+
+def test_generate_batch_fixed_layout_uses_current_device_override_not_plan_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_regression_config()
+    sampled = sample_fixed_layout(cfg, seed=118, device="cpu")
+    replay_payload = sampled.to_dict()
+    replay_payload["requested_device"] = "cuda"
+    replay_payload["resolved_device"] = "cuda"
+    replay_payload["compatibility_snapshot"]["runtime.resolved_device"] = "cuda"
+    replay_plan = FixedLayoutPlan.from_dict(replay_payload)
+    calls: list[str] = []
+
+    def _stub_generate_fixed_layout_graph_batch(
+        _config,
+        _layout,
+        *,
+        node_plans,
+        dataset_seeds,
+        device,
+        noise_sigma_multiplier,
+        noise_spec,
+    ):
+        _ = node_plans
+        _ = dataset_seeds
+        _ = noise_sigma_multiplier
+        _ = noise_spec
+        calls.append(str(device))
+        n_rows = int(replay_plan.n_train + replay_plan.n_test)
+        n_features = int(replay_plan.layout.n_features)
+        x = torch.zeros((1, n_rows, n_features), dtype=torch.float32)
+        y = torch.zeros((1, n_rows), dtype=torch.float32)
+        return x, y, [{}]
+
+    def _stub_finalize_generated_tensors(*_args, **kwargs) -> DatasetBundle:
+        n_features = int(replay_plan.layout.n_features)
+        return DatasetBundle(
+            X_train=torch.zeros((int(replay_plan.n_train), n_features), dtype=torch.float32),
+            y_train=torch.zeros(int(replay_plan.n_train), dtype=torch.float32),
+            X_test=torch.zeros((int(replay_plan.n_test), n_features), dtype=torch.float32),
+            y_test=torch.zeros(int(replay_plan.n_test), dtype=torch.float32),
+            feature_types=list(replay_plan.layout.feature_types),
+            metadata={
+                "n_features": n_features,
+                "resolved_device": kwargs["resolved_device"],
+                "lineage": {
+                    "assignments": {
+                        "feature_to_node": list(replay_plan.layout.feature_node_assignment),
+                        "target_to_node": int(replay_plan.layout.target_node_assignment),
+                    }
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        "dagzoo.core.fixed_layout.generate_fixed_layout_graph_batch",
+        _stub_generate_fixed_layout_graph_batch,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.fixed_layout._finalize_generated_tensors",
+        _stub_finalize_generated_tensors,
+    )
+
+    batch = list(
+        generate_batch_fixed_layout_iter(
+            cfg,
+            plan=replay_plan,
+            num_datasets=1,
+            seed=229,
+            device="cpu",
+        )
+    )
+
+    assert calls == ["cpu"]
+    assert batch[0].metadata["resolved_device"] == "cpu"
+
+
 def test_generate_batch_fixed_layout_raises_on_schema_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -919,7 +1102,7 @@ def test_generate_batch_fixed_layout_raises_on_schema_mismatch(
     plan = sample_fixed_layout(cfg, seed=11, device="cpu")
     calls: dict[str, int] = {"count": 0}
 
-    def _stub_generate_one_with_resolved_layout(*_args, **_kwargs) -> DatasetBundle:
+    def _stub_finalize_generated_tensors(*_args, **_kwargs) -> DatasetBundle:
         calls["count"] += 1
         n_features = 3 if calls["count"] == 1 else 2
         return DatasetBundle(
@@ -940,8 +1123,8 @@ def test_generate_batch_fixed_layout_raises_on_schema_mismatch(
         )
 
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout._generate_one_with_resolved_layout",
-        _stub_generate_one_with_resolved_layout,
+        "dagzoo.core.fixed_layout._finalize_generated_tensors",
+        _stub_finalize_generated_tensors,
     )
 
     with pytest.raises(ValueError, match="Fixed-layout schema mismatch"):
@@ -1003,6 +1186,77 @@ def test_auto_retries_on_cpu_when_mps_fails(monkeypatch: pytest.MonkeyPatch) -> 
     bundle = generate_one(cfg, seed=123, device="auto")
     assert calls == ["mps", "cpu"]
     assert bundle.metadata["backend"] == "torch"
+
+
+def test_fixed_layout_auto_retries_on_cpu_when_mps_batch_generation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_regression_config()
+    plan = sample_fixed_layout(cfg, seed=130, device="cpu")
+    calls: list[str] = []
+
+    def _stub_generate_fixed_layout_graph_batch(
+        _config,
+        _layout,
+        *,
+        node_plans,
+        dataset_seeds,
+        device,
+        noise_sigma_multiplier,
+        noise_spec,
+    ):
+        _ = node_plans
+        _ = dataset_seeds
+        _ = noise_sigma_multiplier
+        _ = noise_spec
+        calls.append(str(device))
+        if device == "mps":
+            raise RuntimeError("simulated mps failure")
+        n_rows = int(plan.n_train + plan.n_test)
+        n_features = int(plan.layout.n_features)
+        x = torch.zeros((1, n_rows, n_features), dtype=torch.float32)
+        y = torch.zeros((1, n_rows), dtype=torch.float32)
+        return x, y, [{}]
+
+    def _stub_finalize_generated_tensors(*_args, **kwargs) -> DatasetBundle:
+        n_features = int(plan.layout.n_features)
+        return DatasetBundle(
+            X_train=torch.zeros((int(plan.n_train), n_features), dtype=torch.float32),
+            y_train=torch.zeros(int(plan.n_train), dtype=torch.float32),
+            X_test=torch.zeros((int(plan.n_test), n_features), dtype=torch.float32),
+            y_test=torch.zeros(int(plan.n_test), dtype=torch.float32),
+            feature_types=list(plan.layout.feature_types),
+            metadata={
+                "backend": "torch",
+                "resolved_device": kwargs["resolved_device"],
+                "device_fallback_reason": kwargs["device_fallback_reason"],
+                "n_features": n_features,
+                "lineage": {
+                    "assignments": {
+                        "feature_to_node": list(plan.layout.feature_node_assignment),
+                        "target_to_node": int(plan.layout.target_node_assignment),
+                    }
+                },
+            },
+        )
+
+    monkeypatch.setattr("dagzoo.core.fixed_layout._resolve_device", lambda *_args, **_kwargs: "mps")
+    monkeypatch.setattr(
+        "dagzoo.core.fixed_layout.generate_fixed_layout_graph_batch",
+        _stub_generate_fixed_layout_graph_batch,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.fixed_layout._finalize_generated_tensors",
+        _stub_finalize_generated_tensors,
+    )
+
+    bundle = next(
+        generate_batch_fixed_layout_iter(cfg, plan=plan, num_datasets=1, seed=230, device="auto")
+    )
+
+    assert calls == ["mps", "cpu"]
+    assert bundle.metadata["resolved_device"] == "cpu"
+    assert bundle.metadata["device_fallback_reason"] == "auto_mps_runtime_error:RuntimeError"
 
 
 def test_auto_does_not_fallback_to_numpy_if_torch_runtime_fails(
