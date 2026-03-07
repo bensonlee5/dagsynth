@@ -1036,6 +1036,7 @@ def _run_fixed_layout_generate(args: argparse.Namespace) -> int:
             num_datasets=args.num_datasets,
             seed=args.seed if args.seed is not None else config.seed,
             batch_size=args.batch_size,
+            device=resolved.requested_device,
         )
     except (FileNotFoundError, ValueError) as exc:
         _raise_usage_error(str(exc))

@@ -152,6 +152,7 @@ def _stage_lineage_trial_bundles(
             num_datasets=sample_n,
             seed=seed,
             batch_size=fixed_layout_batch_size,
+            device=device,
         )
     else:
         generator = (

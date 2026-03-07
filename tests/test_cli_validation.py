@@ -295,6 +295,74 @@ def test_fixed_layout_generate_cli_accepts_saved_plan_no_write(tmp_path: Path) -
     assert code == 0
 
 
+def test_fixed_layout_generate_cli_forwards_device_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_path = tmp_path / "plan.yaml"
+    sample_code = main(
+        [
+            "fixed-layout",
+            "sample",
+            "--config",
+            "configs/default.yaml",
+            "--out",
+            str(plan_path),
+            "--device",
+            "cpu",
+            "--hardware-policy",
+            "none",
+        ]
+    )
+    assert sample_code == 0
+
+    captured: dict[str, object] = {}
+
+    def _stub_generate_batch_fixed_layout_iter(
+        _config,
+        *,
+        plan,
+        num_datasets,
+        seed=None,
+        batch_size=None,
+        device=None,
+    ):
+        captured["plan"] = plan
+        captured["num_datasets"] = num_datasets
+        captured["seed"] = seed
+        captured["batch_size"] = batch_size
+        captured["device"] = device
+        yield from ()
+
+    monkeypatch.setattr(
+        "dagzoo.cli.generate_batch_fixed_layout_iter",
+        _stub_generate_batch_fixed_layout_iter,
+    )
+
+    code = main(
+        [
+            "fixed-layout",
+            "generate",
+            "--config",
+            "configs/default.yaml",
+            "--plan",
+            str(plan_path),
+            "--num-datasets",
+            "2",
+            "--device",
+            "cpu",
+            "--hardware-policy",
+            "none",
+            "--batch-size",
+            "1",
+            "--no-dataset-write",
+        ]
+    )
+
+    assert code == 0
+    assert captured["device"] == "cpu"
+
+
 def test_benchmark_cli_accepts_cpu_multi_worker_root_config(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

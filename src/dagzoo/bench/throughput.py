@@ -59,6 +59,7 @@ def _consume_generation(
     }
     if fixed_layout_plan is not None:
         generator_kwargs["plan"] = fixed_layout_plan
+        generator_kwargs["device"] = device
         if fixed_layout_batch_size is not None:
             generator_kwargs["batch_size"] = int(fixed_layout_batch_size)
     else:

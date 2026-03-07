@@ -39,6 +39,10 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
 - Emitted fixed-layout bundles now include
   `metadata.layout_plan_schema_version` and
   `metadata.layout_execution_contract`.
+- Fixed-layout replay now uses the current requested device instead of the
+  plan's sampling backend provenance, and `dagzoo fixed-layout generate --device ...` now controls replay backend selection correctly.
+- Fixed-layout generation again retries on CPU when `--device auto` resolves to
+  `mps` and the batched fixed-layout runtime hits an unsupported MPS op.
 
 ### Breaking
 

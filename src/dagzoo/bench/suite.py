@@ -257,6 +257,7 @@ def _collect_latency(
                 num_datasets=1,
                 seed=seed,
                 batch_size=1,
+                device=device,
             )[0]
         else:
             _ = generate_one(config, seed=seed, device=device)
@@ -284,6 +285,7 @@ def _collect_reproducibility(
                 num_datasets=n,
                 seed=run_seed,
                 batch_size=fixed_layout_batch_size,
+                device=device,
             )
         )
         sig_b = reproducibility_signature(
@@ -293,6 +295,7 @@ def _collect_reproducibility(
                 num_datasets=n,
                 seed=run_seed,
                 batch_size=fixed_layout_batch_size,
+                device=device,
             )
         )
     else:

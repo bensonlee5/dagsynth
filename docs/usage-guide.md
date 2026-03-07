@@ -132,7 +132,10 @@ Saved plan artifacts now include frozen node execution plans, an
 `chunk_batched_v1` contract, fixed-layout generation is deterministic for the
 same `plan + run seed + batch_size`, but outputs may change if you change the
 fixed-layout batch size. Built-in CPU benchmarks pin one internal fixed-layout
-batch size per preset run so those benchmark artifacts stay stable.
+batch size per preset run so those benchmark artifacts stay stable. Plan
+device fields are provenance only: replay uses the current request/config
+device, and `dagzoo fixed-layout generate --device auto` still falls back to
+CPU when a partially supported MPS runtime fails during batched execution.
 
 ______________________________________________________________________
 

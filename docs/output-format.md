@@ -211,7 +211,9 @@ the sampled plan before generation. This prevents plan-driven emitted tensors
 from disagreeing with `metadata.config` on layout-driving fields.
 Under `chunk_batched_v1`, fixed-layout outputs are deterministic for the same
 plan, run seed, and fixed-layout batch size; changing the batch size may change
-the emitted values.
+the emitted values. The plan's stored device fields are provenance; replay uses
+the current request/config backend and may record a CPU fallback when `auto`
+hits a partial MPS runtime.
 
 ### Missingness sub-object (optional)
 

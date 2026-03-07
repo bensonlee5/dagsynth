@@ -86,7 +86,14 @@ class FixedLayoutPlan:
                 "Unsupported fixed-layout plan schema_name "
                 f"{schema_name!r}; expected {_FIXED_LAYOUT_PLAN_SCHEMA_NAME!r}."
             )
-        schema_version = int(data.get("schema_version", _FIXED_LAYOUT_PLAN_SCHEMA_VERSION))
+        if "schema_version" not in data:
+            raise ValueError("Fixed-layout plan payload must include schema_version.")
+        schema_version = int(data["schema_version"])
+        if schema_version != _FIXED_LAYOUT_PLAN_SCHEMA_VERSION:
+            raise ValueError(
+                "Unsupported fixed-layout plan schema_version "
+                f"{schema_version!r}; expected {_FIXED_LAYOUT_PLAN_SCHEMA_VERSION!r}."
+            )
         layout_payload = data.get("layout")
         if not isinstance(layout_payload, dict):
             raise ValueError("Fixed-layout plan payload must include a layout mapping.")
@@ -102,6 +109,14 @@ class FixedLayoutPlan:
             node_plans = [dict(plan) for plan in node_plans_raw]
         else:
             raise ValueError("Fixed-layout plan payload must include node_plans as a list.")
+        if "execution_contract" not in data:
+            raise ValueError("Fixed-layout plan payload must include execution_contract.")
+        execution_contract = str(data["execution_contract"])
+        if execution_contract != _FIXED_LAYOUT_EXECUTION_CONTRACT:
+            raise ValueError(
+                "Unsupported fixed-layout plan execution_contract "
+                f"{execution_contract!r}; expected {_FIXED_LAYOUT_EXECUTION_CONTRACT!r}."
+            )
         return cls(
             layout=_layout_from_dict(layout_payload),
             requested_device=str(data["requested_device"]),
@@ -115,9 +130,7 @@ class FixedLayoutPlan:
             plan_signature=(
                 None if data.get("plan_signature") is None else str(data["plan_signature"])
             ),
-            execution_contract=str(
-                data.get("execution_contract", _FIXED_LAYOUT_EXECUTION_CONTRACT)
-            ),
+            execution_contract=execution_contract,
             plan_schema_version=int(schema_version),
         )
 
@@ -136,7 +149,7 @@ _FIXED_LAYOUT_COMPAT_KEYS: tuple[str, ...] = (
     "graph.n_nodes_min",
     "graph.n_nodes_max",
     "shift.edge_logit_bias_shift",
-    "runtime.resolved_device",
+    "shift.mechanism_logit_tilt",
 )
 
 
@@ -220,6 +233,7 @@ def _build_fixed_layout_compatibility_snapshot(
         "graph.n_nodes_min": int(config.graph.n_nodes_min),
         "graph.n_nodes_max": int(config.graph.n_nodes_max),
         "shift.edge_logit_bias_shift": float(shift_params.edge_logit_bias_shift),
+        "shift.mechanism_logit_tilt": float(shift_params.mechanism_logit_tilt),
         "runtime.resolved_device": str(resolved_device),
     }
 
@@ -264,7 +278,13 @@ def sample_fixed_layout(
     layout = _sample_layout(config, layout_gen, "cpu")
     n_train, n_test = _resolve_split_sizes(config, dataset_seed=run_seed)
     _validate_class_split_for_layout(config, layout=layout, n_train=n_train, n_test=n_test)
-    node_plans = build_fixed_layout_execution_plans(config, layout, plan_seed=run_seed)
+    shift_params = resolve_shift_runtime_params(config)
+    node_plans = build_fixed_layout_execution_plans(
+        config,
+        layout,
+        plan_seed=run_seed,
+        mechanism_logit_tilt=float(shift_params.mechanism_logit_tilt),
+    )
     return FixedLayoutPlan(
         layout=layout,
         requested_device=requested_device,
@@ -329,13 +349,24 @@ def _validate_fixed_layout_plan_compatibility(
     config: GeneratorConfig,
     *,
     plan: FixedLayoutPlan,
-) -> str:
+    device: str | None = None,
+) -> tuple[str, str]:
     _validate_fixed_layout_rows_mode(config)
 
     snapshot = plan.compatibility_snapshot
     if not isinstance(snapshot, dict):
         raise ValueError(
             "Fixed-layout plan integrity mismatch: compatibility_snapshot must be a mapping."
+        )
+    if int(plan.plan_schema_version) != _FIXED_LAYOUT_PLAN_SCHEMA_VERSION:
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: unsupported plan_schema_version "
+            f"{plan.plan_schema_version!r}."
+        )
+    if str(plan.execution_contract) != _FIXED_LAYOUT_EXECUTION_CONTRACT:
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: unsupported execution_contract "
+            f"{plan.execution_contract!r}."
         )
 
     computed_layout_signature = _layout_signature(plan.layout)
@@ -360,6 +391,11 @@ def _validate_fixed_layout_plan_compatibility(
             "Fixed-layout plan integrity mismatch: compatibility snapshot is missing keys: "
             f"{', '.join(missing_keys)}."
         )
+    if "runtime.resolved_device" not in snapshot:
+        raise ValueError(
+            "Fixed-layout plan integrity mismatch: compatibility snapshot is missing "
+            "runtime.resolved_device provenance."
+        )
 
     if int(plan.n_train) != int(snapshot["dataset.n_train"]):
         raise ValueError(
@@ -378,17 +414,13 @@ def _validate_fixed_layout_plan_compatibility(
         )
 
     try:
-        resolved_device = _resolve_device(config, plan.requested_device)
+        requested_device = (device or config.runtime.device or "auto").lower()
+        resolved_device = _resolve_device(config, device)
     except (RuntimeError, ValueError) as exc:
         raise ValueError(
-            "Fixed-layout plan/config mismatch: unable to resolve the plan-requested "
-            f"device '{plan.requested_device}' for the current environment."
+            "Fixed-layout plan/config mismatch: unable to resolve the current replay "
+            f"device '{device or config.runtime.device or 'auto'}' for the current environment."
         ) from exc
-    if str(plan.resolved_device) != str(resolved_device):
-        raise ValueError(
-            "Fixed-layout plan/config mismatch: plan.resolved_device does not match "
-            f"the currently resolved backend ({plan.resolved_device!r} != {resolved_device!r})."
-        )
 
     current_n_train, current_n_test = _resolve_split_sizes(config, dataset_seed=int(plan.plan_seed))
     current_snapshot = _build_fixed_layout_compatibility_snapshot(
@@ -407,7 +439,60 @@ def _validate_fixed_layout_plan_compatibility(
         raise ValueError(
             "Fixed-layout plan/config mismatch for compatibility fields: " + "; ".join(mismatches)
         )
-    return str(resolved_device)
+    return str(requested_device), str(resolved_device)
+
+
+def _generate_fixed_layout_graph_batch_with_fallback(
+    config: GeneratorConfig,
+    layout: LayoutPlan,
+    *,
+    node_plans: list[dict[str, Any]],
+    dataset_seeds: list[int],
+    requested_device: str,
+    resolved_device: str,
+    noise_sigma_multiplier: float,
+    noise_spec: Any,
+) -> tuple[torch.Tensor, torch.Tensor, list[dict[str, Any]], str, str | None]:
+    if requested_device == "auto" and resolved_device == "mps":
+        try:
+            x_batch, y_batch, aux_meta_batch = generate_fixed_layout_graph_batch(
+                config,
+                layout,
+                node_plans=node_plans,
+                dataset_seeds=dataset_seeds,
+                device=resolved_device,
+                noise_sigma_multiplier=noise_sigma_multiplier,
+                noise_spec=noise_spec,
+            )
+            return x_batch, y_batch, aux_meta_batch, resolved_device, None
+        except Exception as exc:
+            x_batch, y_batch, aux_meta_batch = generate_fixed_layout_graph_batch(
+                config,
+                layout,
+                node_plans=node_plans,
+                dataset_seeds=dataset_seeds,
+                device="cpu",
+                noise_sigma_multiplier=noise_sigma_multiplier,
+                noise_spec=noise_spec,
+            )
+            return (
+                x_batch,
+                y_batch,
+                aux_meta_batch,
+                "cpu",
+                f"auto_mps_runtime_error:{exc.__class__.__name__}",
+            )
+
+    x_batch, y_batch, aux_meta_batch = generate_fixed_layout_graph_batch(
+        config,
+        layout,
+        node_plans=node_plans,
+        dataset_seeds=dataset_seeds,
+        device=resolved_device,
+        noise_sigma_multiplier=noise_sigma_multiplier,
+        noise_spec=noise_spec,
+    )
+    return x_batch, y_batch, aux_meta_batch, resolved_device, None
 
 
 def _generate_fixed_layout_bundle_with_retries(
@@ -415,6 +500,7 @@ def _generate_fixed_layout_bundle_with_retries(
     *,
     plan: FixedLayoutPlan,
     dataset_seed: int,
+    requested_device: str,
     resolved_device: str,
     preserve_feature_schema: bool,
 ) -> DatasetBundle:
@@ -430,12 +516,19 @@ def _generate_fixed_layout_bundle_with_retries(
     last_error: str = "unknown"
 
     for attempt in range(attempts):
-        x_batch, y_batch, aux_meta_batch = generate_fixed_layout_graph_batch(
+        (
+            x_batch,
+            y_batch,
+            aux_meta_batch,
+            effective_resolved_device,
+            device_fallback_reason,
+        ) = _generate_fixed_layout_graph_batch_with_fallback(
             config,
             plan.layout,
             node_plans=plan.node_plans,
             dataset_seeds=[_attempt_seed(data_seed, attempt)],
-            device=resolved_device,
+            requested_device=requested_device,
+            resolved_device=resolved_device,
             noise_sigma_multiplier=float(shift_params.variance_sigma_multiplier),
             noise_spec=noise_spec,
         )
@@ -446,12 +539,12 @@ def _generate_fixed_layout_bundle_with_retries(
                 seed=dataset_seed,
                 attempt=attempt,
                 attempts_used=attempt + 1,
-                device=resolved_device,
+                device=effective_resolved_device,
                 n_train=int(plan.n_train),
                 n_test=int(plan.n_test),
-                requested_device=plan.requested_device,
-                resolved_device=resolved_device,
-                device_fallback_reason=None,
+                requested_device=requested_device,
+                resolved_device=effective_resolved_device,
+                device_fallback_reason=device_fallback_reason,
                 x=x_batch[0],
                 y=y_batch[0],
                 aux_meta=aux_meta_batch[0],
@@ -479,6 +572,7 @@ def generate_batch_fixed_layout_iter(
     num_datasets: int,
     seed: int | None = None,
     batch_size: int | None = None,
+    device: str | None = None,
 ) -> Iterator[DatasetBundle]:
     """Yield datasets that share one pre-sampled fixed layout and split shape."""
 
@@ -487,7 +581,11 @@ def generate_batch_fixed_layout_iter(
     if num_datasets == 0:
         return
 
-    validated_resolved_device = _validate_fixed_layout_plan_compatibility(config, plan=plan)
+    requested_device, validated_resolved_device = _validate_fixed_layout_plan_compatibility(
+        config,
+        plan=plan,
+        device=device,
+    )
     run_seed = _resolve_run_seed(config, seed)
     manager = SeedManager(run_seed)
     dtype = _torch_dtype(config)
@@ -519,6 +617,7 @@ def generate_batch_fixed_layout_iter(
                     config,
                     plan=plan,
                     dataset_seed=dataset_seed,
+                    requested_device=requested_device,
                     resolved_device=validated_resolved_device,
                     preserve_feature_schema=True,
                 )
@@ -537,12 +636,19 @@ def generate_batch_fixed_layout_iter(
 
         noise_runtime_selection = noise_runtime_selections[0]
         noise_spec = _noise_sampling_spec(noise_runtime_selection)
-        x_batch, y_batch, aux_meta_batch = generate_fixed_layout_graph_batch(
+        (
+            x_batch,
+            y_batch,
+            aux_meta_batch,
+            effective_resolved_device,
+            device_fallback_reason,
+        ) = _generate_fixed_layout_graph_batch_with_fallback(
             config,
             plan.layout,
             node_plans=plan.node_plans or [],
             dataset_seeds=data_seeds,
-            device=validated_resolved_device,
+            requested_device=requested_device,
+            resolved_device=validated_resolved_device,
             noise_sigma_multiplier=float(shift_params.variance_sigma_multiplier),
             noise_spec=noise_spec,
         )
@@ -554,12 +660,12 @@ def generate_batch_fixed_layout_iter(
                     seed=dataset_seed,
                     attempt=0,
                     attempts_used=1,
-                    device=validated_resolved_device,
+                    device=effective_resolved_device,
                     n_train=int(plan.n_train),
                     n_test=int(plan.n_test),
-                    requested_device=plan.requested_device,
-                    resolved_device=validated_resolved_device,
-                    device_fallback_reason=None,
+                    requested_device=requested_device,
+                    resolved_device=effective_resolved_device,
+                    device_fallback_reason=device_fallback_reason,
                     x=x_batch[offset],
                     y=y_batch[offset],
                     aux_meta=aux_meta_batch[offset],
@@ -575,6 +681,7 @@ def generate_batch_fixed_layout_iter(
                     config,
                     plan=plan,
                     dataset_seed=dataset_seed,
+                    requested_device=requested_device,
                     resolved_device=validated_resolved_device,
                     preserve_feature_schema=True,
                 )
@@ -598,6 +705,7 @@ def generate_batch_fixed_layout(
     num_datasets: int,
     seed: int | None = None,
     batch_size: int | None = None,
+    device: str | None = None,
 ) -> list[DatasetBundle]:
     """Generate a materialized fixed-layout batch using a reusable plan."""
 
@@ -608,5 +716,6 @@ def generate_batch_fixed_layout(
             num_datasets=num_datasets,
             seed=seed,
             batch_size=batch_size,
+            device=device,
         )
     )

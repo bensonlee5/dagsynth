@@ -244,6 +244,7 @@ def build_fixed_layout_execution_plans(
     layout: LayoutPlan,
     *,
     plan_seed: int,
+    mechanism_logit_tilt: float,
 ) -> list[dict[str, Any]]:
     """Build one reusable per-node execution-plan payload for fixed-layout batches."""
 
@@ -276,7 +277,7 @@ def build_fixed_layout_execution_plans(
             _sample_converter_plan(
                 plan_gen,
                 spec,
-                mechanism_logit_tilt=0.0,
+                mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=config.mechanism.function_family_mix,
             )
             for spec in converter_specs
@@ -301,7 +302,7 @@ def build_fixed_layout_execution_plans(
                 node_plan["function"] = _sample_function_plan(
                     plan_gen,
                     out_dim=total_dim,
-                    mechanism_logit_tilt=0.0,
+                    mechanism_logit_tilt=mechanism_logit_tilt,
                     function_family_mix=config.mechanism.function_family_mix,
                 )
             else:
@@ -312,7 +313,7 @@ def build_fixed_layout_execution_plans(
                     _sample_function_plan(
                         plan_gen,
                         out_dim=total_dim,
-                        mechanism_logit_tilt=0.0,
+                        mechanism_logit_tilt=mechanism_logit_tilt,
                         function_family_mix=config.mechanism.function_family_mix,
                     )
                     for _ in parent_indices
@@ -325,7 +326,7 @@ def build_fixed_layout_execution_plans(
             node_plan["function"] = _sample_function_plan(
                 plan_gen,
                 out_dim=total_dim,
-                mechanism_logit_tilt=0.0,
+                mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=config.mechanism.function_family_mix,
             )
         node_plan["converter_groups"] = _build_converter_groups(
