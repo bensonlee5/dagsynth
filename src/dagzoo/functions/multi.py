@@ -43,6 +43,23 @@ def _resolved_aggregation_kind(
     return _AGGREGATION_KIND_ORDER[int(idx)]
 
 
+def _aggregate_incrementally(
+    aggregate: torch.Tensor,
+    transformed_output: torch.Tensor,
+    *,
+    aggregation_kind: AggregationKind,
+) -> torch.Tensor:
+    """Update an aggregate tensor without materializing a full stack."""
+
+    if aggregation_kind == "sum":
+        return aggregate + transformed_output
+    if aggregation_kind == "product":
+        return aggregate * transformed_output
+    if aggregation_kind == "max":
+        return torch.maximum(aggregate, transformed_output)
+    raise ValueError(f"Unknown aggregation kind: {aggregation_kind!r}")
+
+
 def apply_multi_function(
     inputs: list[torch.Tensor],
     generator: torch.Generator,
@@ -86,11 +103,27 @@ def apply_multi_function(
             noise_spec=noise_spec,
         )
 
-    resolved_aggregation_kind = _resolved_aggregation_kind(
-        aggregation_kind,
-        generator=generator,
-    )
-    if resolved_aggregation_kind == "logsumexp":
+    if aggregation_kind is None:
+        transformed_outputs = [
+            apply_random_function(
+                inp,
+                generator,
+                out_dim=out_dim,
+                mechanism_logit_tilt=mechanism_logit_tilt,
+                function_family_mix=function_family_mix,
+                noise_sigma_multiplier=noise_sigma_multiplier,
+                noise_spec=noise_spec,
+            )
+            for inp in inputs
+        ]
+        resolved_aggregation_kind = _resolved_aggregation_kind(
+            aggregation_kind,
+            generator=generator,
+        )
+        stacked = torch.stack(transformed_outputs, dim=1)  # (N, parents, out_dim)
+        return _aggregate_parent_outputs(stacked, aggregation_kind=resolved_aggregation_kind)
+
+    if aggregation_kind == "logsumexp":
         transformed_outputs = [
             apply_random_function(
                 inp,
@@ -104,7 +137,7 @@ def apply_multi_function(
             for inp in inputs
         ]
         stacked = torch.stack(transformed_outputs, dim=1)  # (N, parents, out_dim)
-        return _aggregate_parent_outputs(stacked, aggregation_kind=resolved_aggregation_kind)
+        return _aggregate_parent_outputs(stacked, aggregation_kind=aggregation_kind)
 
     aggregate: torch.Tensor | None = None
     for inp in inputs:
@@ -120,14 +153,11 @@ def apply_multi_function(
         if aggregate is None:
             aggregate = transformed_output
             continue
-        if resolved_aggregation_kind == "sum":
-            aggregate = aggregate + transformed_output
-        elif resolved_aggregation_kind == "product":
-            aggregate = aggregate * transformed_output
-        elif resolved_aggregation_kind == "max":
-            aggregate = torch.maximum(aggregate, transformed_output)
-        else:
-            raise ValueError(f"Unknown aggregation kind: {resolved_aggregation_kind!r}")
+        aggregate = _aggregate_incrementally(
+            aggregate,
+            transformed_output,
+            aggregation_kind=aggregation_kind,
+        )
 
     if aggregate is None:
         raise RuntimeError("Expected at least one transformed parent output.")

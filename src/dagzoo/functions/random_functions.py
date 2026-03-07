@@ -63,21 +63,19 @@ def _apply_quadratic(
     else:
         x_sub = x
     x_aug = torch.cat([x_sub, torch.ones(x_sub.shape[0], 1, device=x.device)], dim=1)
-    matrices = torch.stack(
-        [
-            sample_random_matrix(
-                x_aug.shape[1],
-                x_aug.shape[1],
-                generator,
-                str(x.device),
-                noise_sigma_multiplier=noise_sigma_multiplier,
-                noise_spec=noise_spec,
-            )
-            for _ in range(out_dim)
-        ],
-        dim=0,
-    )
-    return torch.einsum("ni,oij,nj->no", x_aug, matrices, x_aug)
+
+    y = torch.empty(x_aug.shape[0], out_dim, device=x.device)
+    for i in range(out_dim):
+        m = sample_random_matrix(
+            x_aug.shape[1],
+            x_aug.shape[1],
+            generator,
+            str(x.device),
+            noise_sigma_multiplier=noise_sigma_multiplier,
+            noise_spec=noise_spec,
+        )
+        y[:, i] = torch.sum((x_aug @ m) * x_aug, dim=1)
+    return y
 
 
 def _apply_nn(
