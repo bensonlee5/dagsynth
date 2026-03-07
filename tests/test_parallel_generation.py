@@ -74,8 +74,13 @@ class _FakeResultQueue:
 
 
 class _FakeControlQueue:
+    def __init__(self, messages: list[object] | None = None) -> None:
+        self._messages = list(messages or [])
+
     def get_nowait(self):
-        raise queue.Empty
+        if not self._messages:
+            raise queue.Empty
+        return self._messages.pop(0)
 
 
 class _FakeSpawnContext:
@@ -286,6 +291,126 @@ def test_generate_parallel_batch_iter_uses_per_worker_queues_for_ordered_progres
     assert [int(bundle.metadata["seed"]) for bundle in produced] == [0, 1]
     assert worker0_queue.get_calls == 2
     assert worker1_queue.get_calls == 1
+
+
+def test_generate_parallel_batch_iter_tolerates_done_before_final_result_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_parallel_config()
+    worker0_process = SimpleNamespace(exitcode=0)
+    worker1_process = SimpleNamespace(exitcode=None)
+    worker0_queue = _FakeResultQueue(
+        [
+            _QUEUE_EMPTY,
+            parallel_generation_mod._WorkerResultMessage(
+                worker_index=0,
+                dataset_index=0,
+                bundle_payload=_ipc_bundle_payload(0),
+            ),
+        ]
+    )
+    worker1_queue = _FakeResultQueue(
+        [
+            parallel_generation_mod._WorkerResultMessage(
+                worker_index=1,
+                dataset_index=1,
+                bundle_payload=_ipc_bundle_payload(1),
+            )
+        ]
+    )
+    control_queue = _FakeControlQueue([parallel_generation_mod._WorkerDoneMessage(worker_index=0)])
+    event = _FakeEvent()
+    ctx = _FakeSpawnContext(
+        result_queues=[worker0_queue, worker1_queue],
+        control_queue=control_queue,
+        event=event,
+    )
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._build_spawn_context",
+        lambda: ctx,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._spawn_parallel_workers",
+        lambda **_kwargs: [worker0_process, worker1_process],
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._terminate_processes",
+        lambda _processes: None,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._close_process_queue",
+        lambda _queue: None,
+    )
+
+    produced = list(
+        generate_parallel_batch_iter(
+            cfg,
+            num_datasets=2,
+            seed=777,
+            device="cpu",
+            max_buffered_results=1,
+        )
+    )
+
+    assert [int(bundle.metadata["seed"]) for bundle in produced] == [0, 1]
+    assert worker0_queue.get_calls == 2
+
+
+def test_generate_parallel_batch_iter_raises_when_completed_worker_queue_stays_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_parallel_config()
+    worker0_process = SimpleNamespace(exitcode=0)
+    worker1_process = SimpleNamespace(exitcode=None)
+    worker0_queue = _FakeResultQueue([_QUEUE_EMPTY, _QUEUE_EMPTY])
+    worker1_queue = _FakeResultQueue(
+        [
+            parallel_generation_mod._WorkerResultMessage(
+                worker_index=1,
+                dataset_index=1,
+                bundle_payload=_ipc_bundle_payload(1),
+            )
+        ]
+    )
+    control_queue = _FakeControlQueue([parallel_generation_mod._WorkerDoneMessage(worker_index=0)])
+    event = _FakeEvent()
+    ctx = _FakeSpawnContext(
+        result_queues=[worker0_queue, worker1_queue],
+        control_queue=control_queue,
+        event=event,
+    )
+
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._build_spawn_context",
+        lambda: ctx,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._spawn_parallel_workers",
+        lambda **_kwargs: [worker0_process, worker1_process],
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._terminate_processes",
+        lambda _processes: None,
+    )
+    monkeypatch.setattr(
+        "dagzoo.core.parallel_generation._close_process_queue",
+        lambda _queue: None,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"completed before producing the expected dataset index 0: worker 0",
+    ):
+        list(
+            generate_parallel_batch_iter(
+                cfg,
+                num_datasets=2,
+                seed=777,
+                device="cpu",
+                max_buffered_results=1,
+            )
+        )
 
 
 def test_generate_parallel_batch_iter_close_does_not_hang() -> None:

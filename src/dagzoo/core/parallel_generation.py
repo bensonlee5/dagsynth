@@ -369,19 +369,19 @@ def _drain_control_queue(
         )
 
 
-def _raise_if_target_worker_exited_incompletely(
+def _raise_if_target_worker_missing_output(
     *,
     processes: list[BaseProcess],
     done_workers: set[int],
     target_worker_index: int,
     next_dataset_index: int,
-) -> None:
-    """Raise if the worker responsible for the next dataset cannot produce it."""
+) -> bool:
+    """Return whether the target worker can no longer produce the next dataset."""
 
     target_process = processes[target_worker_index]
     exitcode = target_process.exitcode
     if exitcode is None:
-        return
+        return False
 
     if exitcode != 0:
         raise RuntimeError(
@@ -396,10 +396,7 @@ def _raise_if_target_worker_exited_incompletely(
             f"dataset index {next_dataset_index}: worker {target_worker_index}."
         )
 
-    raise RuntimeError(
-        "Parallel generation worker completed before producing the expected "
-        f"dataset index {next_dataset_index}: worker {target_worker_index}."
-    )
+    return True
 
 
 def _terminate_processes(processes: list[BaseProcess]) -> None:
@@ -501,13 +498,21 @@ def generate_parallel_batch_iter(
                     )
                     if worker_error is not None:
                         raise worker_error
-                    _raise_if_target_worker_exited_incompletely(
+                    if not _raise_if_target_worker_missing_output(
                         processes=processes,
                         done_workers=done_workers,
                         target_worker_index=target_worker_index,
                         next_dataset_index=next_dataset_index,
-                    )
-                    continue
+                    ):
+                        continue
+                    try:
+                        message = target_queue.get(timeout=_QUEUE_POLL_TIMEOUT_S)
+                    except queue.Empty:
+                        raise RuntimeError(
+                            "Parallel generation worker completed before producing the "
+                            f"expected dataset index {next_dataset_index}: worker "
+                            f"{target_worker_index}."
+                        ) from None
 
                 if not isinstance(message, _WorkerResultMessage):
                     raise RuntimeError(
