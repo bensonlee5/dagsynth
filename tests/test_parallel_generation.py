@@ -43,6 +43,9 @@ def _ipc_bundle_payload(value: int) -> dict[str, object]:
     }
 
 
+_QUEUE_EMPTY = object()
+
+
 class _FakeEvent:
     def __init__(self) -> None:
         self._is_set = False
@@ -54,39 +57,20 @@ class _FakeEvent:
         self._is_set = True
 
 
-class _FakeSemaphore:
-    def __init__(self) -> None:
-        self.release_calls = 0
-
-    def release(self) -> None:
-        self.release_calls += 1
-
-
 class _FakeResultQueue:
-    def __init__(self, semaphore: _FakeSemaphore) -> None:
-        self._messages = [
-            parallel_generation_mod._WorkerResultMessage(
-                worker_index=1,
-                dataset_index=1,
-                bundle_payload=_ipc_bundle_payload(1),
-            ),
-            parallel_generation_mod._WorkerResultMessage(
-                worker_index=0,
-                dataset_index=0,
-                bundle_payload=_ipc_bundle_payload(0),
-            ),
-        ]
-        self._get_calls = 0
-        self._semaphore = semaphore
+    def __init__(self, messages: list[object]) -> None:
+        self._messages = list(messages)
+        self.get_calls = 0
 
     def get(self, timeout: float | None = None):
         _ = timeout
-        if self._get_calls == 1 and self._semaphore.release_calls == 0:
-            raise AssertionError("result slot should be released immediately after dequeue")
-        self._get_calls += 1
+        self.get_calls += 1
         if not self._messages:
             raise queue.Empty
-        return self._messages.pop(0)
+        message = self._messages.pop(0)
+        if message is _QUEUE_EMPTY:
+            raise queue.Empty
+        return message
 
 
 class _FakeControlQueue:
@@ -98,22 +82,20 @@ class _FakeSpawnContext:
     def __init__(
         self,
         *,
-        result_queue: _FakeResultQueue,
+        result_queues: list[_FakeResultQueue],
         control_queue: _FakeControlQueue,
-        semaphore: _FakeSemaphore,
         event: _FakeEvent,
     ) -> None:
-        self._result_queue = result_queue
+        self._result_queues = list(result_queues)
         self._control_queue = control_queue
-        self._semaphore = semaphore
         self._event = event
 
     def Queue(self, maxsize: int | None = None):
-        return self._result_queue if maxsize is not None else self._control_queue
-
-    def BoundedSemaphore(self, value: int):
-        _ = value
-        return self._semaphore
+        if maxsize is None:
+            return self._control_queue
+        if not self._result_queues:  # pragma: no cover - defensive invariant
+            raise AssertionError("unexpected extra result queue request")
+        return self._result_queues.pop(0)
 
     def Event(self):
         return self._event
@@ -237,18 +219,40 @@ def test_generate_parallel_batch_iter_handles_single_dataset_with_many_workers(
     assert spawned_worker_counts == [1]
 
 
-def test_generate_parallel_batch_iter_releases_result_slots_before_in_order_yield(
+def test_result_queue_capacities_preserve_a_bounded_total_window() -> None:
+    assert parallel_generation_mod._result_queue_capacities(4, 8) == [2, 2, 2, 2]
+    assert parallel_generation_mod._result_queue_capacities(3, 5) == [2, 2, 1]
+    assert parallel_generation_mod._result_queue_capacities(4, 1) == [1, 1, 1, 1]
+
+
+def test_generate_parallel_batch_iter_uses_per_worker_queues_for_ordered_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = _tiny_parallel_config()
-    semaphore = _FakeSemaphore()
-    result_queue = _FakeResultQueue(semaphore)
+    worker0_queue = _FakeResultQueue(
+        [
+            _QUEUE_EMPTY,
+            parallel_generation_mod._WorkerResultMessage(
+                worker_index=0,
+                dataset_index=0,
+                bundle_payload=_ipc_bundle_payload(0),
+            ),
+        ]
+    )
+    worker1_queue = _FakeResultQueue(
+        [
+            parallel_generation_mod._WorkerResultMessage(
+                worker_index=1,
+                dataset_index=1,
+                bundle_payload=_ipc_bundle_payload(1),
+            )
+        ]
+    )
     control_queue = _FakeControlQueue()
     event = _FakeEvent()
     ctx = _FakeSpawnContext(
-        result_queue=result_queue,
+        result_queues=[worker0_queue, worker1_queue],
         control_queue=control_queue,
-        semaphore=semaphore,
         event=event,
     )
 
@@ -258,7 +262,7 @@ def test_generate_parallel_batch_iter_releases_result_slots_before_in_order_yiel
     )
     monkeypatch.setattr(
         "dagzoo.core.parallel_generation._spawn_parallel_workers",
-        lambda **_kwargs: [SimpleNamespace(exitcode=0), SimpleNamespace(exitcode=0)],
+        lambda **_kwargs: [SimpleNamespace(exitcode=None), SimpleNamespace(exitcode=None)],
     )
     monkeypatch.setattr(
         "dagzoo.core.parallel_generation._terminate_processes",
@@ -280,7 +284,8 @@ def test_generate_parallel_batch_iter_releases_result_slots_before_in_order_yiel
     )
 
     assert [int(bundle.metadata["seed"]) for bundle in produced] == [0, 1]
-    assert semaphore.release_calls == 2
+    assert worker0_queue.get_calls == 2
+    assert worker1_queue.get_calls == 1
 
 
 def test_generate_parallel_batch_iter_close_does_not_hang() -> None:

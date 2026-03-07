@@ -128,6 +128,18 @@ def _worker_torch_intraop_threads(local_worker_count: int) -> int:
     return max(1, _local_parallel_worker_capacity() // max(1, int(local_worker_count)))
 
 
+def _result_queue_capacities(local_worker_count: int, buffer_budget: int) -> list[int]:
+    """Split the total buffered-result budget across local worker queues."""
+
+    worker_count = max(1, int(local_worker_count))
+    effective_budget = max(int(buffer_budget), worker_count)
+    base_capacity, remainder = divmod(effective_budget, worker_count)
+    return [
+        base_capacity + (1 if worker_index < remainder else 0)
+        for worker_index in range(worker_count)
+    ]
+
+
 def _build_spawn_context() -> BaseContext:
     """Return the multiprocessing context used for local parallel generation."""
 
@@ -172,28 +184,6 @@ def _configure_worker_torch_threads(*, intraop_threads: int) -> None:
         torch.set_num_interop_threads(1)
 
 
-def _acquire_result_slot(
-    result_slots: Any,
-    stop_event: Any,
-    *,
-    timeout: float,
-) -> bool:
-    """Reserve one buffered-result slot or abort when shutdown is requested."""
-
-    while True:
-        if stop_event.is_set():
-            return False
-        if result_slots.acquire(timeout=timeout):
-            return True
-
-
-def _release_result_slot(result_slots: Any) -> None:
-    """Release one buffered-result slot, ignoring teardown races."""
-
-    with suppress(ValueError):
-        result_slots.release()
-
-
 def _put_result_message(
     result_queue: Any,
     stop_event: Any,
@@ -201,7 +191,7 @@ def _put_result_message(
     message: _WorkerResultMessage,
     timeout: float,
 ) -> bool:
-    """Put one result payload onto the shared result queue with shutdown awareness."""
+    """Put one result payload onto one worker-local result queue with shutdown awareness."""
 
     while True:
         if stop_event.is_set():
@@ -256,7 +246,6 @@ def _parallel_worker_entrypoint(
     spec: _WorkerRunSpec,
     result_queue: Any,
     control_queue: Any,
-    result_slots: Any,
     stop_event: Any,
 ) -> None:
     """Generate one worker partition inside a spawned child process."""
@@ -273,13 +262,6 @@ def _parallel_worker_entrypoint(
         ):
             if stop_event.is_set():
                 break
-            if not _acquire_result_slot(
-                result_slots,
-                stop_event,
-                timeout=spec.queue_timeout_s,
-            ):
-                break
-            slot_reserved = True
             try:
                 bundle = _generation_engine._generate_one_seeded(
                     worker_config,
@@ -297,13 +279,8 @@ def _parallel_worker_entrypoint(
                     ),
                     timeout=spec.queue_timeout_s,
                 ):
-                    _release_result_slot(result_slots)
-                    slot_reserved = False
                     break
-                slot_reserved = False
             except BaseException:
-                if slot_reserved:
-                    _release_result_slot(result_slots)
                 raise
         _put_control_message(
             control_queue,
@@ -327,9 +304,8 @@ def _spawn_parallel_workers(
     *,
     ctx: Any,
     worker_specs: list[_WorkerRunSpec],
-    result_queue: Any,
+    result_queues: list[Any],
     control_queue: Any,
-    result_slots: Any,
     stop_event: Any,
 ) -> list[BaseProcess]:
     """Start spawned local generation worker processes."""
@@ -340,7 +316,12 @@ def _spawn_parallel_workers(
         for spec in worker_specs:
             process = ctx.Process(
                 target=_parallel_worker_entrypoint,
-                args=(spec, result_queue, control_queue, result_slots, stop_event),
+                args=(
+                    spec,
+                    result_queues[spec.worker_index],
+                    control_queue,
+                    stop_event,
+                ),
                 name=f"dagzoo-parallel-gen-{spec.worker_index}",
             )
             process.start()
@@ -388,44 +369,36 @@ def _drain_control_queue(
         )
 
 
-def _raise_if_parallel_workers_exited_incompletely(
+def _raise_if_target_worker_exited_incompletely(
     *,
     processes: list[BaseProcess],
     done_workers: set[int],
+    target_worker_index: int,
     next_dataset_index: int,
 ) -> None:
-    """Raise if every worker has exited before the next expected dataset becomes available."""
+    """Raise if the worker responsible for the next dataset cannot produce it."""
 
-    exitcodes = [process.exitcode for process in processes]
-    if any(exitcode is None for exitcode in exitcodes):
+    target_process = processes[target_worker_index]
+    exitcode = target_process.exitcode
+    if exitcode is None:
         return
 
-    nonzero_workers = [
-        worker_index for worker_index, exitcode in enumerate(exitcodes) if exitcode not in (None, 0)
-    ]
-    if nonzero_workers:
-        details = ", ".join(
-            f"worker {worker_index} exitcode={int(exitcodes[worker_index] or 0)}"
-            for worker_index in nonzero_workers
-        )
+    if exitcode != 0:
         raise RuntimeError(
             "Parallel generation worker exited unexpectedly before producing "
-            f"dataset index {next_dataset_index}: {details}."
+            f"dataset index {next_dataset_index}: "
+            f"worker {target_worker_index} exitcode={int(exitcode)}."
         )
 
-    incomplete_workers = [
-        worker_index for worker_index in range(len(processes)) if worker_index not in done_workers
-    ]
-    if incomplete_workers:
-        detail = ", ".join(str(worker_index) for worker_index in incomplete_workers)
+    if target_worker_index not in done_workers:
         raise RuntimeError(
             "Parallel generation worker exited without a completion signal before producing "
-            f"dataset index {next_dataset_index}: worker(s) {detail}."
+            f"dataset index {next_dataset_index}: worker {target_worker_index}."
         )
 
     raise RuntimeError(
-        "Parallel generation workers completed before producing the expected "
-        f"dataset index {next_dataset_index}."
+        "Parallel generation worker completed before producing the expected "
+        f"dataset index {next_dataset_index}: worker {target_worker_index}."
     )
 
 
@@ -478,9 +451,11 @@ def generate_parallel_batch_iter(
     buffer_budget = max(1, int(max_buffered_results or (local_worker_count * 2)))
     run_seed = _generation_context._resolve_run_seed(config, seed)
     ctx = _build_spawn_context()
-    result_queue = ctx.Queue(maxsize=buffer_budget)
+    result_queues = [
+        ctx.Queue(maxsize=queue_capacity)
+        for queue_capacity in _result_queue_capacities(local_worker_count, buffer_budget)
+    ]
     control_queue = ctx.Queue()
-    result_slots = ctx.BoundedSemaphore(value=buffer_budget)
     stop_event = ctx.Event()
 
     worker_specs = [
@@ -500,17 +475,17 @@ def generate_parallel_batch_iter(
     processes = _spawn_parallel_workers(
         ctx=ctx,
         worker_specs=worker_specs,
-        result_queue=result_queue,
+        result_queues=result_queues,
         control_queue=control_queue,
-        result_slots=result_slots,
         stop_event=stop_event,
     )
 
-    pending_results: dict[int, DatasetBundle] = {}
     done_workers: set[int] = set()
     try:
         for next_dataset_index in range(num_datasets):
-            while next_dataset_index not in pending_results:
+            target_worker_index = next_dataset_index % local_worker_count
+            target_queue = result_queues[target_worker_index]
+            while True:
                 worker_error = _drain_control_queue(
                     control_queue,
                     done_workers=done_workers,
@@ -518,7 +493,7 @@ def generate_parallel_batch_iter(
                 if worker_error is not None:
                     raise worker_error
                 try:
-                    message = result_queue.get(timeout=_QUEUE_POLL_TIMEOUT_S)
+                    message = target_queue.get(timeout=_QUEUE_POLL_TIMEOUT_S)
                 except queue.Empty:
                     worker_error = _drain_control_queue(
                         control_queue,
@@ -526,36 +501,28 @@ def generate_parallel_batch_iter(
                     )
                     if worker_error is not None:
                         raise worker_error
-                    _raise_if_parallel_workers_exited_incompletely(
+                    _raise_if_target_worker_exited_incompletely(
                         processes=processes,
                         done_workers=done_workers,
+                        target_worker_index=target_worker_index,
                         next_dataset_index=next_dataset_index,
                     )
                     continue
 
-                _release_result_slot(result_slots)
                 if not isinstance(message, _WorkerResultMessage):
                     raise RuntimeError(
                         "Parallel generation received an unexpected result message "
                         f"{type(message).__name__!r}."
                     )
                 dataset_index = int(message.dataset_index)
-                if dataset_index in pending_results:
+                if dataset_index != next_dataset_index:
                     raise RuntimeError(
-                        "Parallel generation received a duplicate dataset index "
-                        f"{dataset_index} from worker {message.worker_index}."
+                        "Parallel generation yielded an unexpected dataset index from worker "
+                        f"{target_worker_index}: expected {next_dataset_index}, "
+                        f"got {dataset_index}."
                     )
-                if dataset_index < next_dataset_index or dataset_index >= num_datasets:
-                    raise RuntimeError(
-                        "Parallel generation received an out-of-range dataset index "
-                        f"{dataset_index} from worker {message.worker_index}."
-                    )
-                pending_results[dataset_index] = _deserialize_bundle_from_ipc(
-                    message.bundle_payload
-                )
-
-            bundle = pending_results.pop(next_dataset_index)
-            yield bundle
+                yield _deserialize_bundle_from_ipc(message.bundle_payload)
+                break
     finally:
         stop_event.set()
         current_exception = sys.exc_info()[1]
@@ -576,7 +543,8 @@ def generate_parallel_batch_iter(
                             f"worker {worker_index} exitcode={int(process.exitcode or 0)}."
                         )
                         break
-        _close_process_queue(result_queue)
+        for result_queue in result_queues:
+            _close_process_queue(result_queue)
         _close_process_queue(control_queue)
         if current_exception is None and teardown_error is not None:
             raise teardown_error

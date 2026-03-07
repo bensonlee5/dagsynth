@@ -25,10 +25,9 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
   active.
 - Local multi-worker benchmark fan-out now caps to host CPU capacity before the
   benchmark coordinator spawns worker processes and bounded IPC queues.
-- The process-based local multi-worker coordinator now releases buffered-result
-  slots as soon as the parent dequeues them, avoiding hangs when faster
-  workers finish later dataset indexes before the next in-order dataset is
-  ready.
+- The process-based local multi-worker coordinator now uses bounded per-worker
+  result queues, preserving deterministic ordering without deadlocking on slow
+  low-index workers or allowing unbounded out-of-order result accumulation.
 - True local multi-worker benchmark runs now coerce `runtime.device: auto` to
   CPU after effective fan-out resolution, while effectively single-worker runs
   keep their requested device behavior.
