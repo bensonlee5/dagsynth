@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import math
-from typing import Any
+from typing import Any, Literal, cast
 
 import torch
 
@@ -22,14 +22,19 @@ from dagzoo.core.fixed_layout_plan_types import (
     EmFunctionPlan,
     FixedActivationPlan,
     FixedLayoutActivationPlan,
+    FixedLayoutActivationKind,
     FixedLayoutConverterPlan,
     FixedLayoutConverterSpec,
+    FixedLayoutConverterMethod,
+    FixedLayoutConverterVariant,
     FixedLayoutExecutionPlan,
     FixedLayoutFunctionPlan,
     FixedLayoutLatentPlan,
     FixedLayoutMatrixPlan,
+    FixedLayoutMatrixBaseKind,
     FixedLayoutNodePlan,
     FixedLayoutNodeSource,
+    FixedLayoutRootBaseKind,
     GaussianMatrixPlan,
     GpFunctionPlan,
     KernelMatrixPlan,
@@ -69,14 +74,24 @@ _MATRIX_KIND_CHOICES: tuple[str, ...] = (
     "kernel",
     "activation",
 )
-_MATRIX_BASE_KIND_CHOICES: tuple[str, ...] = (
+_MATRIX_BASE_KIND_CHOICES: tuple[FixedLayoutMatrixBaseKind, ...] = (
     "gaussian",
     "weights",
     "singular_values",
     "kernel",
 )
-_ROOT_BASE_KIND_CHOICES: tuple[str, ...] = ("normal", "uniform", "unit_ball", "normal_cov")
-_PARAM_ACTIVATION_CHOICES: tuple[str, ...] = ("relu_pow", "signed_pow", "inv_pow", "poly")
+_ROOT_BASE_KIND_CHOICES: tuple[FixedLayoutRootBaseKind, ...] = (
+    "normal",
+    "uniform",
+    "unit_ball",
+    "normal_cov",
+)
+_PARAM_ACTIVATION_CHOICES: tuple[FixedLayoutActivationKind, ...] = (
+    "relu_pow",
+    "signed_pow",
+    "inv_pow",
+    "poly",
+)
 _AGGREGATION_KIND_ORDER: tuple[AggregationKind, ...] = ("sum", "product", "max", "logsumexp")
 _PRODUCT_COMPONENT_FAMILIES: tuple[MechanismFamily, ...] = (
     "tree",
@@ -258,15 +273,17 @@ def _sample_converter_plan(
 ) -> FixedLayoutConverterPlan:
     if spec.kind in {"num", "target_reg"}:
         return NumericConverterPlan(
-            kind=str(spec.kind),  # type: ignore[arg-type]
+            kind=cast(Literal["num", "target_reg"], spec.kind),
             warp_enabled=not _sample_bool(generator),
         )
 
     idx_joint = randint_scalar(0, len(_JOINT_VARIANTS), generator)
-    selected_method, variant = _JOINT_VARIANTS[int(idx_joint)]
+    selected_method_raw, variant_raw = _JOINT_VARIANTS[int(idx_joint)]
+    selected_method = cast(FixedLayoutConverterMethod, selected_method_raw)
+    variant = cast(FixedLayoutConverterVariant, variant_raw)
     if variant == "center_random_fn":
         return CategoricalConverterPlan(
-            kind=str(spec.kind),  # type: ignore[arg-type]
+            kind=cast(Literal["cat", "target_cls"], spec.kind),
             method=selected_method,
             variant=variant,
             function=_sample_function_plan(
@@ -277,7 +294,7 @@ def _sample_converter_plan(
             ),
         )
     return CategoricalConverterPlan(
-        kind=str(spec.kind),  # type: ignore[arg-type]
+        kind=cast(Literal["cat", "target_cls"], spec.kind),
         method=selected_method,
         variant=variant,
     )
@@ -650,7 +667,7 @@ def _apply_activation_plan(
     return y.to(torch.float32)
 
 
-def _base_matrix_plan(kind: str) -> FixedLayoutMatrixPlan:
+def _base_matrix_plan(kind: FixedLayoutMatrixBaseKind) -> FixedLayoutMatrixPlan:
     if kind == "gaussian":
         return GaussianMatrixPlan()
     if kind == "weights":
@@ -746,7 +763,7 @@ def _sample_random_matrix_from_plan_batch(
         matrix = kernel * sign
     elif isinstance(plan, ActivationMatrixPlan):
         matrix = _sample_random_matrix_from_plan_batch(
-            _base_matrix_plan(str(plan.base_kind)),
+            _base_matrix_plan(plan.base_kind),
             out_dim=int(out_dim),
             in_dim=int(in_dim),
             rng=rng,
@@ -851,7 +868,7 @@ def _sample_random_points_batch(
     *,
     n_rows: int,
     dim: int,
-    base_kind: str,
+    base_kind: FixedLayoutRootBaseKind,
     noise_sigma_multiplier: float,
     noise_spec: NoiseSamplingSpec | None,
 ) -> torch.Tensor:
@@ -1331,10 +1348,13 @@ def _apply_categorical_group_batch(
             ).permute(0, 2, 1, 3)
         if group_size != 1:
             raise ValueError("center_random_fn converter groups must have size 1.")
+        nested_function = converter_plan.function
+        if nested_function is None:
+            raise ValueError("center_random_fn converter plan requires a nested function.")
         nested_out = apply_function_plan_batch(
             nested_input[:, :, 0, :],
             rng,
-            converter_plan.function,
+            nested_function,
             out_dim=width,
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,
@@ -1414,7 +1434,7 @@ def _apply_node_plan_batch(
             rng,
             n_rows=n_rows,
             dim=total_dim,
-            base_kind=str(source.base_kind),
+            base_kind=source.base_kind,
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,
         )
@@ -1450,9 +1470,14 @@ def _apply_node_plan_batch(
             spec_payloads = [converter_specs[idx] for idx in spec_indices]
             columns = [int(spec.column_start) for spec in spec_payloads]
             views = latent[:, :, columns]
-            numeric_plans = [converter_plans[idx] for idx in spec_indices]
-            if not all(isinstance(plan, NumericConverterPlan) for plan in numeric_plans):
-                raise ValueError("Numeric converter group must reference numeric converter plans.")
+            numeric_plans: list[NumericConverterPlan] = []
+            for spec_index in spec_indices:
+                plan = converter_plans[spec_index]
+                if not isinstance(plan, NumericConverterPlan):
+                    raise ValueError(
+                        "Numeric converter group must reference numeric converter plans."
+                    )
+                numeric_plans.append(plan)
             warp_enabled = torch.as_tensor(
                 [bool(plan.warp_enabled) for plan in numeric_plans],
                 dtype=torch.bool,

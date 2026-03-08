@@ -246,6 +246,7 @@ def fixed_layout_converter_groups(
     groups: dict[tuple[Any, ...], FixedLayoutConverterGroup] = {}
     ordered_keys: list[tuple[Any, ...]] = []
     for spec_index, (spec, plan) in enumerate(zip(converter_specs, converter_plans, strict=True)):
+        key: tuple[Any, ...]
         if isinstance(plan, NumericConverterPlan):
             key = ("numeric",)
             group = groups.get(key)
