@@ -1,10 +1,26 @@
+import pytest
 import torch
 
+from dagzoo.core.execution_semantics import typed_converter_specs
+from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, _apply_node_plan_batch
+from dagzoo.core.fixed_layout_plan_types import (
+    CategoricalConverterGroup,
+    CategoricalConverterPlan,
+    FixedLayoutLatentPlan,
+    FixedLayoutNodePlan,
+    GaussianMatrixPlan,
+    LinearFunctionPlan,
+    NumericConverterPlan,
+    RandomPointsNodeSource,
+    StackedNodeSource,
+    fixed_layout_converter_groups,
+)
 from dagzoo.core.node_pipeline import (
     ConverterSpec,
     apply_node_pipeline,
     parse_feature_key,
 )
+import dagzoo.core.node_pipeline as node_pipeline_mod
 from conftest import make_generator as _make_generator
 
 
@@ -63,6 +79,39 @@ def test_torch_deterministic() -> None:
     torch.testing.assert_close(e1["v"], e2["v"])
 
 
+def test_node_pipeline_sanitizes_non_finite_parent_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    specs = [ConverterSpec(key="v", kind="num", dim=1)]
+    typed_specs = typed_converter_specs(specs)
+    converter_plans = (NumericConverterPlan(kind="num", warp_enabled=False),)
+    node_plan = FixedLayoutNodePlan(
+        node_index=0,
+        parent_indices=(0,),
+        converter_specs=typed_specs,
+        converter_plans=converter_plans,
+        converter_groups=fixed_layout_converter_groups(typed_specs, converter_plans),
+        latent=FixedLayoutLatentPlan(required_dim=1, extra_dim=1, total_dim=2),
+        source=StackedNodeSource(
+            aggregation_kind="sum",
+            parent_functions=(LinearFunctionPlan(matrix=GaussianMatrixPlan()),),
+        ),
+    )
+    monkeypatch.setattr(node_pipeline_mod, "sample_node_plan", lambda **_kwargs: node_plan)
+
+    parents = [
+        torch.tensor(
+            [[0.0, float("nan")], [float("inf"), -1.0], [-float("inf"), 2.0]],
+            dtype=torch.float32,
+        )
+    ]
+
+    x, ext = apply_node_pipeline(parents, 3, specs, _make_generator(5), "cpu")
+
+    assert torch.all(torch.isfinite(x))
+    assert torch.all(torch.isfinite(ext["v"]))
+
+
 def test_parse_feature_key_accepts_expected_pattern() -> None:
     assert parse_feature_key("feature_0") == 0
     assert parse_feature_key("feature_42") == 42
@@ -72,3 +121,83 @@ def test_parse_feature_key_rejects_unexpected_pattern() -> None:
     assert parse_feature_key("feature_") is None
     assert parse_feature_key("feature_name") is None
     assert parse_feature_key("target") is None
+
+
+def test_node_pipeline_splits_grouped_center_random_fn_converters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    specs = [
+        ConverterSpec(key="feature_0", kind="cat", dim=3, cardinality=5),
+        ConverterSpec(key="feature_1", kind="cat", dim=3, cardinality=5),
+    ]
+    typed_specs = typed_converter_specs(specs)
+    converter_plans = (
+        CategoricalConverterPlan(
+            kind="cat",
+            method="neighbor",
+            variant="center_random_fn",
+            function=LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+        CategoricalConverterPlan(
+            kind="cat",
+            method="neighbor",
+            variant="center_random_fn",
+            function=LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    grouped_converter_groups = fixed_layout_converter_groups(typed_specs, converter_plans)
+    assert grouped_converter_groups == (CategoricalConverterGroup(spec_indices=(0, 1)),)
+
+    grouped_node_plan = FixedLayoutNodePlan(
+        node_index=0,
+        parent_indices=(),
+        converter_specs=typed_specs,
+        converter_plans=converter_plans,
+        converter_groups=grouped_converter_groups,
+        latent=FixedLayoutLatentPlan(required_dim=6, extra_dim=2, total_dim=8),
+        source=RandomPointsNodeSource(
+            base_kind="normal",
+            function=LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    split_node_plan = FixedLayoutNodePlan(
+        node_index=0,
+        parent_indices=(),
+        converter_specs=typed_specs,
+        converter_plans=converter_plans,
+        converter_groups=(
+            CategoricalConverterGroup(spec_indices=(0,)),
+            CategoricalConverterGroup(spec_indices=(1,)),
+        ),
+        latent=grouped_node_plan.latent,
+        source=grouped_node_plan.source,
+    )
+    monkeypatch.setattr(node_pipeline_mod, "sample_node_plan", lambda **_kwargs: grouped_node_plan)
+
+    actual_generator = _make_generator(17)
+    reference_generator = _make_generator(17)
+    actual_latent, actual_extracted = apply_node_pipeline(
+        [],
+        12,
+        specs,
+        actual_generator,
+        "cpu",
+    )
+    expected_latent, expected_extracted = _apply_node_plan_batch(
+        None,
+        split_node_plan,
+        [],
+        n_rows=12,
+        rng=FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu"),
+        device="cpu",
+        noise_sigma_multiplier=1.0,
+        noise_spec=None,
+    )
+
+    assert torch.all(torch.isfinite(actual_latent))
+    assert set(actual_extracted) == {"feature_0", "feature_1"}
+    torch.testing.assert_close(actual_latent, expected_latent.squeeze(0))
+    for key, value in actual_extracted.items():
+        assert torch.all(torch.isfinite(value))
+        torch.testing.assert_close(value, expected_extracted[key].squeeze(0))
+    torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())

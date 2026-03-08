@@ -3,10 +3,16 @@
 import pytest
 import torch
 
+from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_function_plan_batch
+from dagzoo.core.fixed_layout_plan_types import (
+    ConcatNodeSource,
+    GaussianMatrixPlan,
+    LinearFunctionPlan,
+    StackedNodeSource,
+)
 from dagzoo.core.layout_types import AggregationKind
-from dagzoo.functions._rng_helpers import randint_scalar
-from dagzoo.functions.multi import _AGGREGATION_KIND_ORDER, apply_multi_function
-from dagzoo.functions.random_functions import apply_random_function
+from dagzoo.functions.multi import apply_multi_function
+from dagzoo.math_utils import sanitize_and_standardize
 from conftest import make_generator as _make_generator
 
 
@@ -58,36 +64,74 @@ def test_multiple_inputs_are_deterministic_for_explicit_aggregation_kind(
     torch.testing.assert_close(y1, y2)
 
 
-def _reference_apply_multi_function(
-    inputs: list[torch.Tensor],
-    generator: torch.Generator,
-    *,
-    out_dim: int,
-) -> torch.Tensor:
-    transformed = [apply_random_function(inp, generator, out_dim=out_dim) for inp in inputs]
-    stacked = torch.stack(transformed, dim=1)
-    idx = randint_scalar(0, len(_AGGREGATION_KIND_ORDER), generator)
-    aggregation_kind = _AGGREGATION_KIND_ORDER[int(idx)]
-    if aggregation_kind == "sum":
-        return torch.sum(stacked, dim=1)
-    if aggregation_kind == "product":
-        return torch.prod(stacked, dim=1)
-    if aggregation_kind == "max":
-        return torch.max(stacked, dim=1).values
-    if aggregation_kind == "logsumexp":
-        return torch.logsumexp(stacked, dim=1)
-    raise AssertionError(f"Unexpected aggregation kind: {aggregation_kind!r}")
-
-
-def test_implicit_aggregation_preserves_reference_rng_order(
+def test_multiple_inputs_concat_sanitizes_non_finite_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("dagzoo.functions.multi.rand_scalar", lambda _generator: 0.75)
+    source = ConcatNodeSource(function=LinearFunctionPlan(matrix=GaussianMatrixPlan()))
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+    inputs = [
+        torch.tensor(
+            [[0.0, float("nan")], [1.0, 2.0], [float("inf"), -1.0]],
+            dtype=torch.float32,
+        ),
+        torch.tensor([[1.0], [2.0], [-float("inf")]], dtype=torch.float32),
+    ]
+
+    actual = apply_multi_function(inputs, _make_generator(18), out_dim=3)
+
+    assert actual.shape == (3, 3)
+    assert torch.all(torch.isfinite(actual))
+
+
+def test_multiple_inputs_stacked_sanitizes_non_finite_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = StackedNodeSource(
+        aggregation_kind="sum",
+        parent_functions=(
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+    inputs = [
+        torch.tensor(
+            [[0.0, float("nan")], [1.0, 2.0], [float("inf"), -1.0]],
+            dtype=torch.float32,
+        ),
+        torch.tensor([[1.0], [2.0], [-float("inf")]], dtype=torch.float32),
+    ]
+
+    actual = apply_multi_function(inputs, _make_generator(19), out_dim=3)
+
+    assert actual.shape == (3, 3)
+    assert torch.all(torch.isfinite(actual))
+
+
+def test_multi_function_matches_explicit_stacked_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     inputs = [
         torch.randn(64, 3, generator=_make_generator(21)),
         torch.randn(64, 2, generator=_make_generator(22)),
         torch.randn(64, 4, generator=_make_generator(23)),
     ]
+    source = StackedNodeSource(
+        aggregation_kind="logsumexp",
+        parent_functions=(
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+
     actual_generator = _make_generator(24)
     reference_generator = _make_generator(24)
 
@@ -96,13 +140,76 @@ def test_implicit_aggregation_preserves_reference_rng_order(
         actual_generator,
         out_dim=5,
     )
-    expected = _reference_apply_multi_function(
+    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    transformed = [
+        apply_function_plan_batch(
+            inp.unsqueeze(0),
+            rng,
+            source.parent_functions[plan_index],
+            out_dim=5,
+            noise_sigma_multiplier=1.0,
+            noise_spec=None,
+        ).squeeze(0)
+        for plan_index, inp in enumerate(inputs)
+    ]
+    expected = torch.logsumexp(torch.stack(transformed, dim=1), dim=1)
+
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())
+
+
+@pytest.mark.parametrize("aggregation_kind", ["sum", "product", "max"])
+def test_multi_function_matches_explicit_stacked_plan_for_associative_reducers(
+    aggregation_kind: AggregationKind,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = [
+        torch.randn(64, 3, generator=_make_generator(31)),
+        torch.randn(64, 2, generator=_make_generator(32)),
+        torch.randn(64, 4, generator=_make_generator(33)),
+    ]
+    source = StackedNodeSource(
+        aggregation_kind=aggregation_kind,
+        parent_functions=(
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+
+    actual_generator = _make_generator(34)
+    reference_generator = _make_generator(34)
+    actual = apply_multi_function(
         [inp.clone() for inp in inputs],
-        reference_generator,
+        actual_generator,
         out_dim=5,
     )
 
-    torch.testing.assert_close(actual, expected)
+    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    transformed = [
+        apply_function_plan_batch(
+            sanitize_and_standardize(inp).unsqueeze(0),
+            rng,
+            source.parent_functions[plan_index],
+            out_dim=5,
+            noise_sigma_multiplier=1.0,
+            noise_spec=None,
+            standardize_input=False,
+        ).squeeze(0)
+        for plan_index, inp in enumerate(inputs)
+    ]
+    expected = torch.stack(transformed, dim=1)
+    if aggregation_kind == "sum":
+        expected_out = torch.sum(expected, dim=1)
+    elif aggregation_kind == "product":
+        expected_out = torch.prod(expected, dim=1)
+    else:
+        expected_out = torch.max(expected, dim=1).values
+
+    torch.testing.assert_close(actual, expected_out)
     torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())
 
 

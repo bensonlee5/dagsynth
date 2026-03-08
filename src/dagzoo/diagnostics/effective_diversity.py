@@ -18,8 +18,9 @@ import torch
 from sklearn.metrics import adjusted_rand_score
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.converters import categorical as categorical_converter_module
+from dagzoo.core import fixed_layout_batched as fixed_layout_batched_module
 from dagzoo.core.dataset import generate_batch_iter
+from dagzoo.core import execution_semantics as execution_semantics_module
 from dagzoo.core.layout_types import AggregationKind, MechanismFamily
 from dagzoo.core.shift import MECHANISM_FAMILY_ORDER
 from dagzoo.diagnostics.coverage import CoverageAggregationConfig, CoverageAggregator
@@ -30,7 +31,6 @@ from dagzoo.functions import random_functions as random_functions_module
 from dagzoo.functions.multi import _aggregate_parent_outputs
 from dagzoo.functions.random_functions import apply_random_function
 from dagzoo.math_utils import log_uniform, sanitize_json, standardize
-from dagzoo.sampling import random_points as random_points_module
 from dagzoo.types import DatasetBundle
 
 _MECHANISM_FAMILIES: tuple[MechanismFamily, ...] = MECHANISM_FAMILY_ORDER
@@ -1360,15 +1360,21 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
         _patch_attr(
             random_functions_module, "_sample_function_family", _mapped_sample_function_family
         )
+        _patch_attr(
+            execution_semantics_module,
+            "sample_function_family",
+            _mapped_sample_function_family,
+        )
         _patch_attr(random_functions_module, "apply_random_function", _mapped_apply_random_function)
         _patch_attr(multi_module, "apply_random_function", _mapped_apply_random_function)
-        _patch_attr(
-            categorical_converter_module, "apply_random_function", _mapped_apply_random_function
-        )
-        _patch_attr(random_points_module, "apply_random_function", _mapped_apply_random_function)
 
     if arm.aggregation_map:
         original_aggregate = multi_module._aggregate_parent_outputs
+        original_incremental_aggregate = multi_module._aggregate_incrementally
+        original_batch_aggregate = fixed_layout_batched_module._aggregate_parent_outputs_batch
+        original_batch_incremental_aggregate = (
+            fixed_layout_batched_module._aggregate_batch_incrementally
+        )
 
         def _mapped_aggregate_parent_outputs(
             stacked: torch.Tensor,
@@ -1378,7 +1384,52 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
             mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
             return original_aggregate(stacked, aggregation_kind=mapped_kind)
 
+        def _mapped_aggregate_incrementally(
+            aggregate: torch.Tensor,
+            transformed_output: torch.Tensor,
+            *,
+            aggregation_kind: AggregationKind,
+        ) -> torch.Tensor:
+            mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
+            return original_incremental_aggregate(
+                aggregate,
+                transformed_output,
+                aggregation_kind=mapped_kind,
+            )
+
+        def _mapped_aggregate_parent_outputs_batch(
+            stacked: torch.Tensor,
+            *,
+            aggregation_kind: AggregationKind,
+        ) -> torch.Tensor:
+            mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
+            return original_batch_aggregate(stacked, aggregation_kind=mapped_kind)
+
+        def _mapped_aggregate_batch_incrementally(
+            aggregate: torch.Tensor,
+            transformed_output: torch.Tensor,
+            *,
+            aggregation_kind: AggregationKind,
+        ) -> torch.Tensor:
+            mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
+            return original_batch_incremental_aggregate(
+                aggregate,
+                transformed_output,
+                aggregation_kind=mapped_kind,
+            )
+
         _patch_attr(multi_module, "_aggregate_parent_outputs", _mapped_aggregate_parent_outputs)
+        _patch_attr(multi_module, "_aggregate_incrementally", _mapped_aggregate_incrementally)
+        _patch_attr(
+            fixed_layout_batched_module,
+            "_aggregate_parent_outputs_batch",
+            _mapped_aggregate_parent_outputs_batch,
+        )
+        _patch_attr(
+            fixed_layout_batched_module,
+            "_aggregate_batch_incrementally",
+            _mapped_aggregate_batch_incrementally,
+        )
 
     try:
         yield
