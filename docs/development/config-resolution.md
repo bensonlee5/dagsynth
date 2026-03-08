@@ -18,7 +18,8 @@ ______________________________________________________________________
 1. CLI device override (`--device`) -> `runtime.device`
 1. Hardware policy transforms (`--hardware-policy`)
 1. Default CUDA fixed-layout auto-batch floor
-   (`runtime.fixed_layout_target_cells`) based on detected GPU memory
+   (`runtime.fixed_layout_target_cells`) based on detected GPU memory, applied
+   only when the config leaves that field unset
 1. CLI rows override (`--rows`) -> `dataset.rows`
 1. Missingness CLI overrides:
    - `--missing-rate`
@@ -46,7 +47,8 @@ Each preset in `dagzoo benchmark` resolves independently in this order:
    - CLI `--device` when a single preset run is selected
 1. Hardware policy transforms (`--hardware-policy`)
 1. Default CUDA fixed-layout auto-batch floor
-   (`runtime.fixed_layout_target_cells`) based on detected GPU memory
+   (`runtime.fixed_layout_target_cells`) based on detected GPU memory, applied
+   only when the config leaves that field unset
 1. Suite caps for `--suite smoke`:
    - `dataset.n_train <= 256`
    - `dataset.n_test <= 128`

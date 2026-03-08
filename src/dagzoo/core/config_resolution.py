@@ -199,20 +199,18 @@ def _apply_default_cuda_fixed_layout_target_floor(
     hw: HardwareInfo,
     events: list[ResolutionEvent],
 ) -> None:
-    """Raise the fixed-layout target to the default CUDA floor for the detected device."""
+    """Fill the fixed-layout target from the default CUDA floor when the config leaves it unset."""
 
     target_floor, _ = resolve_cuda_fixed_layout_target_cells_limits(hw)
     if target_floor is None:
         return
     current_target = config.runtime.fixed_layout_target_cells
-    current_value = 0 if current_target is None else int(current_target)
-    new_value = max(current_value, int(target_floor))
-    if current_target == new_value:
+    if current_target is not None:
         return
     _set_config_path(
         config,
         path="runtime.fixed_layout_target_cells",
-        value=int(new_value),
+        value=int(target_floor),
         source=_DEFAULT_CUDA_FIXED_LAYOUT_TARGET_SOURCE,
         events=events,
     )

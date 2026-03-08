@@ -170,7 +170,7 @@ def test_resolve_generate_config_applies_default_cuda_fixed_layout_floor_without
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.fixed_layout_target_cells = 32_000_000
+    assert cfg.runtime.fixed_layout_target_cells is None
 
     resolved = resolve_generate_config(
         cfg,
@@ -190,17 +190,18 @@ def test_resolve_generate_config_applies_default_cuda_fixed_layout_floor_without
     assert any(
         event["path"] == "runtime.fixed_layout_target_cells"
         and event["source"] == "hardware.default_cuda_fixed_layout_target_cells"
+        and event["old_value"] is None
         and event["new_value"] == 160_000_000
         for event in trace
     )
 
 
-def test_resolve_generate_config_preserves_higher_explicit_cuda_target_without_policy(
+def test_resolve_generate_config_preserves_explicit_cuda_target_without_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
-    cfg.runtime.fixed_layout_target_cells = 192_000_000
+    cfg.runtime.fixed_layout_target_cells = 32_000_000
 
     resolved = resolve_generate_config(
         cfg,
@@ -215,7 +216,7 @@ def test_resolve_generate_config_preserves_higher_explicit_cuda_target_without_p
         diagnostics_enabled=False,
     )
 
-    assert resolved.config.runtime.fixed_layout_target_cells == 192_000_000
+    assert resolved.config.runtime.fixed_layout_target_cells == 32_000_000
     trace = serialize_resolution_events(resolved.trace_events)
     assert not any(
         event["path"] == "runtime.fixed_layout_target_cells"
@@ -369,7 +370,7 @@ def test_resolve_benchmark_preset_config_preserves_dataset_rows_after_policy_tra
     assert resolved.config.runtime.fixed_layout_target_cells == 160_000_000
 
 
-def test_resolve_benchmark_preset_config_applies_default_cuda_floor_without_policy(
+def test_resolve_benchmark_preset_config_preserves_explicit_cuda_budget_without_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
@@ -386,12 +387,38 @@ def test_resolve_benchmark_preset_config_applies_default_cuda_floor_without_poli
     )
 
     assert resolved.requested_device == "cuda"
+    assert resolved.config.runtime.fixed_layout_target_cells == 32_000_000
+    trace = serialize_resolution_events(resolved.trace_events)
+    assert not any(
+        event["path"] == "runtime.fixed_layout_target_cells"
+        and event["source"] == "hardware.default_cuda_fixed_layout_target_cells"
+        for event in trace
+    )
+
+
+def test_resolve_benchmark_preset_config_applies_default_cuda_floor_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
+    cfg = GeneratorConfig.from_yaml("configs/benchmark_cuda_h100.yaml")
+    cfg.runtime.fixed_layout_target_cells = None
+
+    resolved = resolve_benchmark_preset_config(
+        preset_key="cuda_h100",
+        config=cfg,
+        preset_device=None,
+        suite="standard",
+        hardware_policy="none",
+        smoke_caps=None,
+    )
+
+    assert resolved.requested_device == "cuda"
     assert resolved.config.runtime.fixed_layout_target_cells == 160_000_000
     trace = serialize_resolution_events(resolved.trace_events)
     assert any(
         event["path"] == "runtime.fixed_layout_target_cells"
         and event["source"] == "hardware.default_cuda_fixed_layout_target_cells"
-        and event["old_value"] == 32_000_000
+        and event["old_value"] is None
         and event["new_value"] == 160_000_000
         for event in trace
     )

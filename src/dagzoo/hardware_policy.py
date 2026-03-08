@@ -141,6 +141,11 @@ def _policy_cuda_tiered_v1(config: GeneratorConfig, hw: HardwareInfo) -> Generat
         return config
 
     config.benchmark.preset_name = "cuda_unknown_fallback"
+    if fixed_layout_target_cells is not None:
+        _apply_fixed_layout_target_cells_floor(
+            config,
+            target_cells=fixed_layout_target_cells,
+        )
     return config
 
 

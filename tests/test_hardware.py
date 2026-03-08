@@ -110,6 +110,24 @@ def test_hardware_policy_cuda_datacenter_scales_fixed_layout_target_cells_with_m
     assert effective.runtime.fixed_layout_target_cells == 160_000_000
 
 
+def test_hardware_policy_cuda_unknown_fallback_applies_fixed_layout_target_floor() -> None:
+    cfg = GeneratorConfig()
+    cfg.runtime.device = "cuda"
+
+    hw = HardwareInfo(
+        backend="cuda",
+        requested_device="cuda",
+        device_name="Unknown GPU XYZ",
+        total_memory_gb=None,
+        peak_flops=float("inf"),
+        tier="cuda_unknown_fallback",
+    )
+    effective = apply_hardware_policy(cfg, hw, policy_name="cuda_tiered_v1")
+
+    assert effective.benchmark.preset_name == "cuda_unknown_fallback"
+    assert effective.runtime.fixed_layout_target_cells == 48_000_000
+
+
 def test_hardware_policy_unknown_name_raises() -> None:
     cfg = GeneratorConfig()
     hw = HardwareInfo(
