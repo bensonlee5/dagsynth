@@ -129,6 +129,27 @@ def _batch_standardize(x: torch.Tensor) -> torch.Tensor:
     return (x - mean) / torch.clamp(std, min=1e-6)
 
 
+def _sanitize_and_batch_standardize(x: torch.Tensor) -> torch.Tensor:
+    y = torch.nan_to_num(x.to(torch.float32), nan=0.0, posinf=1e6, neginf=-1e6)
+    y = torch.clamp(y, -1e6, 1e6)
+    return _batch_standardize(y)
+
+
+def _aggregate_batch_incrementally(
+    aggregate: torch.Tensor,
+    transformed: torch.Tensor,
+    *,
+    aggregation_kind: str,
+) -> torch.Tensor:
+    if aggregation_kind == "sum":
+        return aggregate + transformed
+    if aggregation_kind == "product":
+        return aggregate * transformed
+    if aggregation_kind == "max":
+        return torch.maximum(aggregate, transformed)
+    raise ValueError(f"Unknown aggregation kind: {aggregation_kind!r}")
+
+
 def _flatten_leading_dims(
     x: torch.Tensor, *, trailing_dims: int
 ) -> tuple[torch.Tensor, tuple[int, ...]]:
@@ -1151,7 +1172,7 @@ def _apply_node_plan_batch(
     if parent_data:
         source = node_plan.source
         if isinstance(source, ConcatNodeSource):
-            concat = torch.cat(parent_data, dim=2)
+            concat = _sanitize_and_batch_standardize(torch.cat(parent_data, dim=2))
             latent = apply_function_plan_batch(
                 concat,
                 rng,
@@ -1159,31 +1180,50 @@ def _apply_node_plan_batch(
                 out_dim=total_dim,
                 noise_sigma_multiplier=noise_sigma_multiplier,
                 noise_spec=noise_spec,
+                standardize_input=False,
             )
         else:
             if not isinstance(source, StackedNodeSource):
                 raise ValueError("Parent-driven fixed-layout node must use a multi-input source.")
-            transformed = [
-                apply_function_plan_batch(
-                    parent_tensor,
-                    rng,
-                    source.parent_functions[plan_index],
-                    out_dim=total_dim,
-                    noise_sigma_multiplier=noise_sigma_multiplier,
-                    noise_spec=noise_spec,
-                )
-                for plan_index, parent_tensor in enumerate(parent_data)
-            ]
-            stacked = torch.stack(transformed, dim=2)
             aggregation_kind = str(source.aggregation_kind)
-            if aggregation_kind == "sum":
-                latent = torch.sum(stacked, dim=2)
-            elif aggregation_kind == "product":
-                latent = torch.prod(stacked, dim=2)
-            elif aggregation_kind == "max":
-                latent = torch.max(stacked, dim=2).values
-            else:
+            if aggregation_kind == "logsumexp":
+                transformed_outputs = [
+                    apply_function_plan_batch(
+                        _sanitize_and_batch_standardize(parent_tensor),
+                        rng,
+                        source.parent_functions[plan_index],
+                        out_dim=total_dim,
+                        noise_sigma_multiplier=noise_sigma_multiplier,
+                        noise_spec=noise_spec,
+                        standardize_input=False,
+                    )
+                    for plan_index, parent_tensor in enumerate(parent_data)
+                ]
+                stacked = torch.stack(transformed_outputs, dim=2)
                 latent = torch.logsumexp(stacked, dim=2)
+            else:
+                aggregate: torch.Tensor | None = None
+                for plan_index, parent_tensor in enumerate(parent_data):
+                    transformed_output = apply_function_plan_batch(
+                        _sanitize_and_batch_standardize(parent_tensor),
+                        rng,
+                        source.parent_functions[plan_index],
+                        out_dim=total_dim,
+                        noise_sigma_multiplier=noise_sigma_multiplier,
+                        noise_spec=noise_spec,
+                        standardize_input=False,
+                    )
+                    if aggregate is None:
+                        aggregate = transformed_output
+                    else:
+                        aggregate = _aggregate_batch_incrementally(
+                            aggregate,
+                            transformed_output,
+                            aggregation_kind=aggregation_kind,
+                        )
+                if aggregate is None:
+                    raise RuntimeError("Expected at least one parent tensor for stacked node plan.")
+                latent = aggregate
     else:
         source = node_plan.source
         if not isinstance(source, RandomPointsNodeSource):

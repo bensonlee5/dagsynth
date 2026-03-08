@@ -126,8 +126,25 @@ def apply_multi_function(
     if not isinstance(source, StackedNodeSource):
         raise RuntimeError("Expected a stacked multi-source plan.")
 
-    transformed_outputs = [
-        apply_function_plan_batch(
+    if source.aggregation_kind == "logsumexp":
+        transformed_outputs = [
+            apply_function_plan_batch(
+                sanitize_and_standardize(inp.to(torch.float32)).unsqueeze(0),
+                rng,
+                source.parent_functions[plan_index],
+                out_dim=out_dim,
+                noise_sigma_multiplier=noise_sigma_multiplier,
+                noise_spec=noise_spec,
+                standardize_input=False,
+            ).squeeze(0)
+            for plan_index, inp in enumerate(inputs)
+        ]
+        stacked = torch.stack(transformed_outputs, dim=1)  # (N, parents, out_dim)
+        return torch.logsumexp(stacked, dim=1)
+
+    aggregate: torch.Tensor | None = None
+    for plan_index, inp in enumerate(inputs):
+        transformed_output = apply_function_plan_batch(
             sanitize_and_standardize(inp.to(torch.float32)).unsqueeze(0),
             rng,
             source.parent_functions[plan_index],
@@ -136,7 +153,14 @@ def apply_multi_function(
             noise_spec=noise_spec,
             standardize_input=False,
         ).squeeze(0)
-        for plan_index, inp in enumerate(inputs)
-    ]
-    stacked = torch.stack(transformed_outputs, dim=1)  # (N, parents, out_dim)
-    return _aggregate_parent_outputs(stacked, aggregation_kind=source.aggregation_kind)
+        if aggregate is None:
+            aggregate = transformed_output
+        else:
+            aggregate = _aggregate_incrementally(
+                aggregate,
+                transformed_output,
+                aggregation_kind=source.aggregation_kind,
+            )
+    if aggregate is None:
+        raise RuntimeError("Expected at least one parent transform for stacked multi-source.")
+    return aggregate

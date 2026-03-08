@@ -12,6 +12,7 @@ from dagzoo.core.fixed_layout_plan_types import (
 )
 from dagzoo.core.layout_types import AggregationKind
 from dagzoo.functions.multi import apply_multi_function
+from dagzoo.math_utils import sanitize_and_standardize
 from conftest import make_generator as _make_generator
 
 
@@ -154,6 +155,61 @@ def test_multi_function_matches_explicit_stacked_plan(
     expected = torch.logsumexp(torch.stack(transformed, dim=1), dim=1)
 
     torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())
+
+
+@pytest.mark.parametrize("aggregation_kind", ["sum", "product", "max"])
+def test_multi_function_matches_explicit_stacked_plan_for_associative_reducers(
+    aggregation_kind: AggregationKind,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = [
+        torch.randn(64, 3, generator=_make_generator(31)),
+        torch.randn(64, 2, generator=_make_generator(32)),
+        torch.randn(64, 4, generator=_make_generator(33)),
+    ]
+    source = StackedNodeSource(
+        aggregation_kind=aggregation_kind,
+        parent_functions=(
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+
+    actual_generator = _make_generator(34)
+    reference_generator = _make_generator(34)
+    actual = apply_multi_function(
+        [inp.clone() for inp in inputs],
+        actual_generator,
+        out_dim=5,
+    )
+
+    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    transformed = [
+        apply_function_plan_batch(
+            sanitize_and_standardize(inp).unsqueeze(0),
+            rng,
+            source.parent_functions[plan_index],
+            out_dim=5,
+            noise_sigma_multiplier=1.0,
+            noise_spec=None,
+            standardize_input=False,
+        ).squeeze(0)
+        for plan_index, inp in enumerate(inputs)
+    ]
+    expected = torch.stack(transformed, dim=1)
+    if aggregation_kind == "sum":
+        expected_out = torch.sum(expected, dim=1)
+    elif aggregation_kind == "product":
+        expected_out = torch.prod(expected, dim=1)
+    else:
+        expected_out = torch.max(expected, dim=1).values
+
+    torch.testing.assert_close(actual, expected_out)
     torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())
 
 
