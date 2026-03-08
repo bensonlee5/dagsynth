@@ -48,12 +48,12 @@ from dagzoo.core.fixed_layout_plan_types import (
     coerce_fixed_layout_execution_plan,
     fixed_layout_signature_payloads,
 )
-from dagzoo.core.layout_types import LayoutPlan
+from dagzoo.core.layout_types import AggregationKind, LayoutPlan
 from dagzoo.core.trees import (
     compute_odt_leaf_indices_batch,
     sample_odt_splits_batch,
 )
-from dagzoo.functions.activations import _fixed_activation
+from dagzoo.functions import activations as activations_module
 from dagzoo.rng import SeedManager
 from dagzoo.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
 
@@ -139,7 +139,7 @@ def _aggregate_batch_incrementally(
     aggregate: torch.Tensor,
     transformed: torch.Tensor,
     *,
-    aggregation_kind: str,
+    aggregation_kind: AggregationKind,
 ) -> torch.Tensor:
     if aggregation_kind == "sum":
         return aggregate + transformed
@@ -147,6 +147,22 @@ def _aggregate_batch_incrementally(
         return aggregate * transformed
     if aggregation_kind == "max":
         return torch.maximum(aggregate, transformed)
+    raise ValueError(f"Unknown aggregation kind: {aggregation_kind!r}")
+
+
+def _aggregate_parent_outputs_batch(
+    stacked: torch.Tensor,
+    *,
+    aggregation_kind: AggregationKind,
+) -> torch.Tensor:
+    if aggregation_kind == "sum":
+        return torch.sum(stacked, dim=2)
+    if aggregation_kind == "product":
+        return torch.prod(stacked, dim=2)
+    if aggregation_kind == "max":
+        return torch.max(stacked, dim=2).values
+    if aggregation_kind == "logsumexp":
+        return torch.logsumexp(stacked, dim=2)
     raise ValueError(f"Unknown aggregation kind: {aggregation_kind!r}")
 
 
@@ -406,7 +422,10 @@ def _apply_activation_plan(
         else:
             raise ValueError(f"Unknown activation plan kind: {kind!r}")
     else:
-        y = _fixed_activation(y.reshape(-1, y.shape[-1]), str(plan.name)).reshape_as(y)
+        y = activations_module._fixed_activation(
+            y.reshape(-1, y.shape[-1]),
+            str(plan.name),
+        ).reshape_as(y)
 
     y = torch.nan_to_num(y, nan=0.0, posinf=1e6, neginf=-1e6)
     y = torch.clamp(y, -1e6, 1e6)
@@ -1185,7 +1204,7 @@ def _apply_node_plan_batch(
         else:
             if not isinstance(source, StackedNodeSource):
                 raise ValueError("Parent-driven fixed-layout node must use a multi-input source.")
-            aggregation_kind = str(source.aggregation_kind)
+            aggregation_kind = source.aggregation_kind
             if aggregation_kind == "logsumexp":
                 transformed_outputs = [
                     apply_function_plan_batch(
@@ -1200,7 +1219,10 @@ def _apply_node_plan_batch(
                     for plan_index, parent_tensor in enumerate(parent_data)
                 ]
                 stacked = torch.stack(transformed_outputs, dim=2)
-                latent = torch.logsumexp(stacked, dim=2)
+                latent = _aggregate_parent_outputs_batch(
+                    stacked,
+                    aggregation_kind=source.aggregation_kind,
+                )
             else:
                 aggregate: torch.Tensor | None = None
                 for plan_index, parent_tensor in enumerate(parent_data):
@@ -1266,8 +1288,6 @@ def _apply_node_plan_batch(
         spec_indices = [int(value) for value in group.spec_indices]
         if isinstance(group, NumericConverterGroup):
             spec_payloads = [converter_specs[idx] for idx in spec_indices]
-            columns = [int(spec.column_start) for spec in spec_payloads]
-            views = latent[:, :, columns]
             numeric_plans: list[NumericConverterPlan] = []
             for spec_index in spec_indices:
                 plan = converter_plans[spec_index]
@@ -1276,19 +1296,41 @@ def _apply_node_plan_batch(
                         "Numeric converter group must reference numeric converter plans."
                     )
                 numeric_plans.append(plan)
-            warp_enabled = torch.as_tensor(
-                [bool(plan.warp_enabled) for plan in numeric_plans],
-                dtype=torch.bool,
-                device=latent.device,
-            )
-            x_prime, values = _apply_numeric_converter_group_batch(
-                views,
-                rng,
-                warp_enabled,
-            )
-            latent[:, :, columns] = x_prime
+            if all(int(spec.column_end) - int(spec.column_start) == 1 for spec in spec_payloads):
+                columns = [int(spec.column_start) for spec in spec_payloads]
+                views = latent[:, :, columns]
+                warp_enabled = torch.as_tensor(
+                    [bool(plan.warp_enabled) for plan in numeric_plans],
+                    dtype=torch.bool,
+                    device=latent.device,
+                )
+                x_prime, values = _apply_numeric_converter_group_batch(
+                    views,
+                    rng,
+                    warp_enabled,
+                )
+                latent[:, :, columns] = x_prime
+                for local_index, spec_payload in enumerate(spec_payloads):
+                    extracted[str(spec_payload.key)] = values[:, :, local_index]
+                continue
+
             for local_index, spec_payload in enumerate(spec_payloads):
-                extracted[str(spec_payload.key)] = values[:, :, local_index]
+                start = int(spec_payload.column_start)
+                end = int(spec_payload.column_end)
+                spec_out, values = apply_numeric_converter_plan_batch(
+                    latent[:, :, start:end],
+                    rng,
+                    numeric_plans[local_index],
+                )
+                if int(spec_out.shape[2]) != (end - start):
+                    if int(spec_out.shape[2]) > (end - start):
+                        spec_out = spec_out[:, :, : (end - start)]
+                    else:
+                        spec_out = torch.nn.functional.pad(
+                            spec_out, (0, (end - start) - int(spec_out.shape[2]))
+                        )
+                latent[:, :, start:end] = spec_out
+                extracted[str(spec_payload.key)] = values
             continue
 
         spec_payloads = [converter_specs[idx] for idx in spec_indices]

@@ -140,7 +140,7 @@ def apply_multi_function(
             for plan_index, inp in enumerate(inputs)
         ]
         stacked = torch.stack(transformed_outputs, dim=1)  # (N, parents, out_dim)
-        return torch.logsumexp(stacked, dim=1)
+        return _aggregate_parent_outputs(stacked, aggregation_kind=source.aggregation_kind)
 
     aggregate: torch.Tensor | None = None
     for plan_index, inp in enumerate(inputs):

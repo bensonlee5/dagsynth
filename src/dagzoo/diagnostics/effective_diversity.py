@@ -18,6 +18,7 @@ import torch
 from sklearn.metrics import adjusted_rand_score
 
 from dagzoo.config import GeneratorConfig
+from dagzoo.core import fixed_layout_batched as fixed_layout_batched_module
 from dagzoo.core.dataset import generate_batch_iter
 from dagzoo.core import execution_semantics as execution_semantics_module
 from dagzoo.core.layout_types import AggregationKind, MechanismFamily
@@ -1369,6 +1370,11 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
 
     if arm.aggregation_map:
         original_aggregate = multi_module._aggregate_parent_outputs
+        original_incremental_aggregate = multi_module._aggregate_incrementally
+        original_batch_aggregate = fixed_layout_batched_module._aggregate_parent_outputs_batch
+        original_batch_incremental_aggregate = (
+            fixed_layout_batched_module._aggregate_batch_incrementally
+        )
 
         def _mapped_aggregate_parent_outputs(
             stacked: torch.Tensor,
@@ -1378,7 +1384,52 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
             mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
             return original_aggregate(stacked, aggregation_kind=mapped_kind)
 
+        def _mapped_aggregate_incrementally(
+            aggregate: torch.Tensor,
+            transformed_output: torch.Tensor,
+            *,
+            aggregation_kind: AggregationKind,
+        ) -> torch.Tensor:
+            mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
+            return original_incremental_aggregate(
+                aggregate,
+                transformed_output,
+                aggregation_kind=mapped_kind,
+            )
+
+        def _mapped_aggregate_parent_outputs_batch(
+            stacked: torch.Tensor,
+            *,
+            aggregation_kind: AggregationKind,
+        ) -> torch.Tensor:
+            mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
+            return original_batch_aggregate(stacked, aggregation_kind=mapped_kind)
+
+        def _mapped_aggregate_batch_incrementally(
+            aggregate: torch.Tensor,
+            transformed_output: torch.Tensor,
+            *,
+            aggregation_kind: AggregationKind,
+        ) -> torch.Tensor:
+            mapped_kind = arm.aggregation_map.get(aggregation_kind, aggregation_kind)
+            return original_batch_incremental_aggregate(
+                aggregate,
+                transformed_output,
+                aggregation_kind=mapped_kind,
+            )
+
         _patch_attr(multi_module, "_aggregate_parent_outputs", _mapped_aggregate_parent_outputs)
+        _patch_attr(multi_module, "_aggregate_incrementally", _mapped_aggregate_incrementally)
+        _patch_attr(
+            fixed_layout_batched_module,
+            "_aggregate_parent_outputs_batch",
+            _mapped_aggregate_parent_outputs_batch,
+        )
+        _patch_attr(
+            fixed_layout_batched_module,
+            "_aggregate_batch_incrementally",
+            _mapped_aggregate_batch_incrementally,
+        )
 
     try:
         yield
