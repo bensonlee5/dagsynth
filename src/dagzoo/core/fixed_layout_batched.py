@@ -597,6 +597,7 @@ def _apply_activation_plan(
     if y.dim() == 2:
         y = y.unsqueeze(0)
         squeezed = True
+    leading_shape = tuple(int(dim) for dim in y.shape[:-2])
     if with_standardize:
         y = _batch_standardize(y)
         a = rng.log_uniform((y.shape[0],), low=1.0, high=10.0)
@@ -607,14 +608,14 @@ def _apply_activation_plan(
     if str(plan["mode"]) == "parametric":
         kind = str(plan["kind"])
         if kind == "relu_pow":
-            q = rng.log_uniform((y.shape[0],), low=0.1, high=10.0)
-            y = torch.pow(torch.clamp(y, min=0.0), q.view(-1, 1, 1))
+            q = rng.log_uniform(leading_shape, low=0.1, high=10.0)
+            y = torch.pow(torch.clamp(y, min=0.0), q.reshape(*leading_shape, 1, 1))
         elif kind == "signed_pow":
-            q = rng.log_uniform((y.shape[0],), low=0.1, high=10.0)
-            y = torch.sign(y) * torch.pow(torch.abs(y), q.view(-1, 1, 1))
+            q = rng.log_uniform(leading_shape, low=0.1, high=10.0)
+            y = torch.sign(y) * torch.pow(torch.abs(y), q.reshape(*leading_shape, 1, 1))
         elif kind == "inv_pow":
-            q = rng.log_uniform((y.shape[0],), low=0.1, high=10.0)
-            y = torch.pow(torch.abs(y) + 1e-3, -q.view(-1, 1, 1))
+            q = rng.log_uniform(leading_shape, low=0.1, high=10.0)
+            y = torch.pow(torch.abs(y) + 1e-3, -q.reshape(*leading_shape, 1, 1))
         elif kind == "poly":
             y = torch.pow(y, float(int(plan["poly_power"])))
         else:
