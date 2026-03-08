@@ -142,13 +142,25 @@ class MappingFile:
         if not path.exists():
             return cls(repo=repo, project_slug=project_slug, migrated_at=iso_now())
         payload = json.loads(path.read_text())
+        payload_repo = str(payload.get("repo") or "").strip()
+        payload_project_slug = str(payload.get("project_slug") or "").strip()
+        if payload_repo and payload_repo != repo:
+            raise MigrationError(
+                f"Mapping file {path} targets repo {payload_repo!r}, expected {repo!r}."
+            )
+        if payload_project_slug and payload_project_slug != project_slug:
+            raise MigrationError(
+                "Mapping file "
+                f"{path} targets project slug {payload_project_slug!r}, "
+                f"expected {project_slug!r}."
+            )
         entries = {
             int(entry["github_number"]): MappingEntry(**entry)
             for entry in payload.get("entries", [])
         }
         return cls(
-            repo=str(payload.get("repo") or repo),
-            project_slug=str(payload.get("project_slug") or project_slug),
+            repo=payload_repo or repo,
+            project_slug=payload_project_slug or project_slug,
             migrated_at=str(payload.get("migrated_at") or iso_now()),
             entries=entries,
         )
@@ -669,7 +681,12 @@ def migrate_issues(
     mapping_path: Path,
     issue_numbers: set[int] | None,
 ) -> MappingFile:
-    issues = gh.list_issues(issue_numbers)
+    all_issues = gh.list_issues()
+    issues = (
+        [issue for issue in all_issues if issue.number in issue_numbers]
+        if issue_numbers is not None
+        else list(all_issues)
+    )
     if not issues:
         raise MigrationError("No GitHub issues matched the requested scope.")
 
@@ -680,11 +697,11 @@ def migrate_issues(
     states, labels = linear.get_team_metadata(team_id)
     states = linear.ensure_workflow_states(team_id, states)
     labels = linear.ensure_labels(team_id, labels, linear_label_specs(issues))
-    parent_map = epic_parent_map(issues)
+    parent_map = epic_parent_map(all_issues)
     recovered_refs = linear.existing_project_issue_map(project_id)
 
     linear_refs_by_github_number: dict[int, LinearIssueRef] = {}
-    for issue in issues:
+    for issue in all_issues:
         entry = mapping.entry_for(issue.number)
         if entry:
             linear_refs_by_github_number[issue.number] = LinearIssueRef(
@@ -700,7 +717,6 @@ def migrate_issues(
     for issue in issues:
         entry = mapping.entry_for(issue.number)
         recovered_ref = linear_refs_by_github_number.get(issue.number)
-        label_ids = [labels[label.name].id for label in issue.labels if label.name in labels]
         parent_github_number = parent_map.get(issue.number)
         parent_id = None
         if (
@@ -708,31 +724,33 @@ def migrate_issues(
             and parent_github_number in linear_refs_by_github_number
         ):
             parent_id = linear_refs_by_github_number[parent_github_number].id
-        state_name = (
-            entry.linear_state
-            if entry and entry.cutover_applied
-            else desired_linear_state_name(issue)
-        )
-        state_id: str | None = None
-        if entry is None or not entry.cutover_applied:
+        if entry and entry.cutover_applied:
+            linear_ref = LinearIssueRef(
+                id=entry.linear_id,
+                identifier=entry.linear_identifier,
+                url=entry.linear_url,
+            )
+            state_name = entry.linear_state
+        else:
+            label_ids = [labels[label.name].id for label in issue.labels if label.name in labels]
+            state_name = desired_linear_state_name(issue)
             state = states.get(state_name)
             if state is None:
                 raise MigrationError(f"Missing Linear workflow state {state_name!r}")
-            state_id = state.id
-        payload = build_issue_input(
-            issue,
-            team_id=team_id,
-            project_id=project_id,
-            state_id=state_id,
-            label_ids=label_ids,
-            parent_id=parent_id,
-            include_historical_timestamps=entry is None and recovered_ref is None,
-        )
-        if entry is None and recovered_ref is None:
-            linear_ref = linear.create_issue(payload)
-        else:
-            issue_id = entry.linear_id if entry is not None else recovered_ref.id
-            linear_ref = linear.update_issue(issue_id, payload)
+            payload = build_issue_input(
+                issue,
+                team_id=team_id,
+                project_id=project_id,
+                state_id=state.id,
+                label_ids=label_ids,
+                parent_id=parent_id,
+                include_historical_timestamps=entry is None and recovered_ref is None,
+            )
+            if entry is None and recovered_ref is None:
+                linear_ref = linear.create_issue(payload)
+            else:
+                issue_id = entry.linear_id if entry is not None else recovered_ref.id
+                linear_ref = linear.update_issue(issue_id, payload)
         linear_refs_by_github_number[issue.number] = linear_ref
         mapping.upsert(
             MappingEntry(
@@ -752,10 +770,17 @@ def migrate_issues(
     if persist_mapping:
         mapping_path.write_text(mapping.to_json())
 
+    selected_issue_numbers = {issue.number for issue in issues}
     for child_number, parent_number in parent_map.items():
         child_entry = mapping.entry_for(child_number)
         parent_entry = mapping.entry_for(parent_number)
         if not child_entry or not parent_entry:
+            continue
+        if (
+            issue_numbers is not None
+            and child_number not in selected_issue_numbers
+            and parent_number not in selected_issue_numbers
+        ):
             continue
         linear.update_issue(child_entry.linear_id, {"parentId": parent_entry.linear_id})
         child_entry.parent_github_number = parent_number
@@ -766,7 +791,14 @@ def migrate_issues(
     return mapping
 
 
-def apply_cutover(*, gh: GHCLI, mapping: MappingFile, issue_numbers: set[int] | None) -> None:
+def apply_cutover(
+    *,
+    gh: GHCLI,
+    mapping: MappingFile,
+    issue_numbers: set[int] | None,
+    mapping_path: Path | None = None,
+    persist_mapping: bool = False,
+) -> None:
     numbers = sorted(mapping.entries)
     for number in numbers:
         if issue_numbers and number not in issue_numbers:
@@ -784,6 +816,10 @@ def apply_cutover(*, gh: GHCLI, mapping: MappingFile, issue_numbers: set[int] | 
             gh.close_issue(number)
         entry.cutover_applied = True
         entry.cutover_applied_at = iso_now()
+        if persist_mapping:
+            if mapping_path is None:
+                raise MigrationError("Cutover checkpointing requires a mapping path.")
+            mapping_path.write_text(mapping.to_json())
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -836,9 +872,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode in {"cutover", "all"}:
         if not mapping.entries:
             raise MigrationError("Cutover requires a populated mapping file.")
-        apply_cutover(gh=gh, mapping=mapping, issue_numbers=issue_numbers or None)
-        if not args.dry_run:
-            mapping_path.write_text(mapping.to_json())
+        apply_cutover(
+            gh=gh,
+            mapping=mapping,
+            issue_numbers=issue_numbers or None,
+            mapping_path=mapping_path,
+            persist_mapping=not args.dry_run,
+        )
     return 0
 
 

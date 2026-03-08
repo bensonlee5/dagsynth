@@ -2,6 +2,8 @@ ______________________________________________________________________
 
 ## tracker: kind: linear project_slug: "4867d49bb182" active_states: - Todo - In Progress - Human Review - Rework - Merging terminal_states: - Closed - Cancelled - Canceled - Duplicate - Done polling: interval_ms: 5000 workspace: root: ~/code/symphony-workspaces/dagzoo hooks: after_create: | git clone git@github.com:bensonlee5/dagzoo.git . uv sync --group dev agent: max_concurrent_agents: 6 max_turns: 20 codex: command: codex --config shell_environment_policy.inherit=all --model gpt-5.3-codex app-server approval_policy: never thread_sandbox: workspace-write turn_sandbox_policy: type: workspaceWrite
 
+______________________________________________________________________
+
 You are working on a Linear ticket `{{ issue.identifier }}` for `dagzoo`.
 
 {% if attempt %}

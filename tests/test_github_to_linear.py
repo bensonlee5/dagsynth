@@ -85,6 +85,89 @@ def test_epic_parent_map_skips_epic_children_to_avoid_cycles() -> None:
     assert MODULE.epic_parent_map(issues) == {146: 148}
 
 
+def test_mapping_file_load_rejects_repo_mismatch(tmp_path: Path) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "repo": "other/repo",
+                "project_slug": "proj",
+                "migrated_at": "2026-03-08T00:00:00Z",
+                "entries": [],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    try:
+        MODULE.MappingFile.load(
+            mapping_path,
+            repo="bensonlee5/dagzoo",
+            project_slug="proj",
+        )
+    except MODULE.MigrationError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected MappingFile.load() to reject mismatched repo metadata.")
+
+    assert "other/repo" in message
+    assert "bensonlee5/dagzoo" in message
+
+
+def test_mapping_file_load_rejects_project_slug_mismatch(tmp_path: Path) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "repo": "bensonlee5/dagzoo",
+                "project_slug": "other-proj",
+                "migrated_at": "2026-03-08T00:00:00Z",
+                "entries": [],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    try:
+        MODULE.MappingFile.load(
+            mapping_path,
+            repo="bensonlee5/dagzoo",
+            project_slug="proj",
+        )
+    except MODULE.MigrationError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected MappingFile.load() to reject mismatched project metadata.")
+
+    assert "other-proj" in message
+    assert "proj" in message
+
+
+def test_mapping_file_load_accepts_legacy_missing_metadata(tmp_path: Path) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "migrated_at": "2026-03-08T00:00:00Z",
+                "entries": [],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    mapping = MODULE.MappingFile.load(
+        mapping_path,
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+    )
+
+    assert mapping.repo == "bensonlee5/dagzoo"
+    assert mapping.project_slug == "proj"
+
+
 class _FakeGH:
     def __init__(self, issues: list[object], *, dry_run: bool = False) -> None:
         self._issues = issues
@@ -94,6 +177,40 @@ class _FakeGH:
         if issue_numbers is None:
             return list(self._issues)
         return [issue for issue in self._issues if issue.number in issue_numbers]
+
+    def create_migration_comment(self, issue_number: int, linear_ref: object) -> None:
+        _ = issue_number
+        _ = linear_ref
+
+    def close_issue(self, issue_number: int) -> None:
+        _ = issue_number
+
+
+class _CheckpointingGH(_FakeGH):
+    def __init__(
+        self,
+        issues: list[object],
+        *,
+        fail_on_comment_issue: int | None = None,
+        fail_on_close_issue: int | None = None,
+        dry_run: bool = False,
+    ) -> None:
+        super().__init__(issues, dry_run=dry_run)
+        self.fail_on_comment_issue = fail_on_comment_issue
+        self.fail_on_close_issue = fail_on_close_issue
+        self.comments: list[int] = []
+        self.closed: list[int] = []
+
+    def create_migration_comment(self, issue_number: int, linear_ref: object) -> None:
+        _ = linear_ref
+        self.comments.append(issue_number)
+        if self.fail_on_comment_issue == issue_number:
+            raise MODULE.MigrationError(f"comment failed for #{issue_number}")
+
+    def close_issue(self, issue_number: int) -> None:
+        self.closed.append(issue_number)
+        if self.fail_on_close_issue == issue_number:
+            raise MODULE.MigrationError(f"close failed for #{issue_number}")
 
 
 class _FakeLinear:
@@ -133,10 +250,11 @@ class _FakeLinear:
         return {}
 
     def create_issue(self, input_payload: dict[str, object]) -> object:
+        issue_suffix = str(input_payload["title"]).split()[-1]
         return MODULE.LinearIssueRef(
-            id="linear-created",
-            identifier="DAG-100",
-            url="https://linear.app/dagzoo/issue/DAG-100",
+            id=f"linear-{issue_suffix}",
+            identifier=f"DAG-{issue_suffix}",
+            url=f"https://linear.app/dagzoo/issue/DAG-{issue_suffix}",
         )
 
     def update_issue(self, issue_id: str, input_payload: dict[str, object]) -> object:
@@ -259,18 +377,12 @@ def test_migrate_issues_preserves_linear_state_after_cutover(tmp_path: Path) -> 
         issue_numbers=None,
     )
 
-    assert linear.update_calls == [
-        (
-            "linear-12",
-            {
-                "teamId": "team-1",
-                "projectId": "project-1",
-                "title": "Issue 12",
-                "description": MODULE.build_migrated_description(_issue(12, state="CLOSED")),
-            },
-        )
-    ]
+    assert linear.update_calls == []
+    assert migrated.entry_for(12).github_state == "CLOSED"
     assert migrated.entry_for(12).linear_state == "In Progress"
+    assert migrated.entry_for(12).linear_id == "linear-12"
+    assert migrated.entry_for(12).linear_identifier == "DAG-12"
+    assert migrated.entry_for(12).linear_url == "https://linear.app/dagzoo/issue/DAG-12"
 
 
 def test_migrate_issues_updates_state_before_cutover(tmp_path: Path) -> None:
@@ -306,3 +418,178 @@ def test_migrate_issues_updates_state_before_cutover(tmp_path: Path) -> None:
 
     assert linear.update_calls[0][1]["stateId"] == "state-done"
     assert migrated.entry_for(14).linear_state == "Done"
+
+
+def test_migrate_issues_backfills_epic_parent_on_subset_rerun(tmp_path: Path) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    issues = [
+        _issue(148, body="Tracks #145", labels=["epic"]),
+        _issue(145),
+    ]
+
+    first_linear = _FakeLinear()
+    first_migrated = MODULE.migrate_issues(
+        gh=_FakeGH(issues),
+        linear=first_linear,
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+        mapping_path=mapping_path,
+        issue_numbers={145},
+    )
+
+    assert first_migrated.entry_for(145).parent_github_number == 148
+    assert first_linear.update_calls == []
+
+    second_linear = _FakeLinear()
+    second_migrated = MODULE.migrate_issues(
+        gh=_FakeGH(issues),
+        linear=second_linear,
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+        mapping_path=mapping_path,
+        issue_numbers={148},
+    )
+
+    assert ("linear-145", {"parentId": "linear-148"}) in second_linear.update_calls
+    assert second_migrated.entry_for(145).parent_github_number == 148
+
+
+def test_migrate_issues_subset_run_does_not_repair_unrelated_parent_links(
+    tmp_path: Path,
+) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    mapping = MODULE.MappingFile(
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+        migrated_at="2026-03-08T00:00:00Z",
+        entries={
+            145: MODULE.MappingEntry(
+                github_number=145,
+                github_url="https://github.com/bensonlee5/dagzoo/issues/145",
+                github_state="OPEN",
+                linear_id="linear-145",
+                linear_identifier="DAG-145",
+                linear_url="https://linear.app/dagzoo/issue/DAG-145",
+                linear_state="Backlog",
+                parent_github_number=None,
+            ),
+            148: MODULE.MappingEntry(
+                github_number=148,
+                github_url="https://github.com/bensonlee5/dagzoo/issues/148",
+                github_state="OPEN",
+                linear_id="linear-148",
+                linear_identifier="DAG-148",
+                linear_url="https://linear.app/dagzoo/issue/DAG-148",
+                linear_state="Backlog",
+                parent_github_number=None,
+            ),
+        },
+    )
+    mapping_path.write_text(mapping.to_json())
+    linear = _FakeLinear()
+
+    MODULE.migrate_issues(
+        gh=_FakeGH(
+            [
+                _issue(148, body="Tracks #145", labels=["epic"]),
+                _issue(145),
+                _issue(300),
+            ]
+        ),
+        linear=linear,
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+        mapping_path=mapping_path,
+        issue_numbers={300},
+    )
+
+    assert linear.update_calls == []
+
+
+def test_apply_cutover_checkpoints_each_successful_issue(tmp_path: Path) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    mapping = MODULE.MappingFile(
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+        migrated_at="2026-03-08T00:00:00Z",
+        entries={
+            10: MODULE.MappingEntry(
+                github_number=10,
+                github_url="https://github.com/bensonlee5/dagzoo/issues/10",
+                github_state="OPEN",
+                linear_id="linear-10",
+                linear_identifier="DAG-10",
+                linear_url="https://linear.app/dagzoo/issue/DAG-10",
+                linear_state="Backlog",
+            ),
+            11: MODULE.MappingEntry(
+                github_number=11,
+                github_url="https://github.com/bensonlee5/dagzoo/issues/11",
+                github_state="OPEN",
+                linear_id="linear-11",
+                linear_identifier="DAG-11",
+                linear_url="https://linear.app/dagzoo/issue/DAG-11",
+                linear_state="Backlog",
+            ),
+        },
+    )
+    mapping_path.write_text(mapping.to_json())
+    gh = _CheckpointingGH(
+        [_issue(10), _issue(11)],
+        fail_on_comment_issue=11,
+    )
+
+    try:
+        MODULE.apply_cutover(
+            gh=gh,
+            mapping=mapping,
+            issue_numbers=None,
+            mapping_path=mapping_path,
+            persist_mapping=True,
+        )
+    except MODULE.MigrationError as exc:
+        assert "comment failed for #11" in str(exc)
+    else:
+        raise AssertionError("Expected apply_cutover() to stop on the second issue.")
+
+    persisted = MODULE.MappingFile.load(
+        mapping_path,
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+    )
+    assert persisted.entry_for(10).cutover_applied is True
+    assert persisted.entry_for(10).cutover_applied_at is not None
+    assert persisted.entry_for(11).cutover_applied is False
+    assert persisted.entry_for(11).cutover_applied_at is None
+
+
+def test_apply_cutover_dry_run_does_not_checkpoint_mapping(tmp_path: Path) -> None:
+    mapping_path = tmp_path / "mapping.json"
+    mapping = MODULE.MappingFile(
+        repo="bensonlee5/dagzoo",
+        project_slug="proj",
+        migrated_at="2026-03-08T00:00:00Z",
+        entries={
+            10: MODULE.MappingEntry(
+                github_number=10,
+                github_url="https://github.com/bensonlee5/dagzoo/issues/10",
+                github_state="OPEN",
+                linear_id="linear-10",
+                linear_identifier="DAG-10",
+                linear_url="https://linear.app/dagzoo/issue/DAG-10",
+                linear_state="Backlog",
+            )
+        },
+    )
+    original_payload = json.loads(mapping.to_json())
+    mapping_path.write_text(mapping.to_json())
+
+    MODULE.apply_cutover(
+        gh=_CheckpointingGH([_issue(10)], dry_run=True),
+        mapping=mapping,
+        issue_numbers=None,
+        mapping_path=mapping_path,
+        persist_mapping=False,
+    )
+
+    assert json.loads(mapping_path.read_text()) == original_payload
