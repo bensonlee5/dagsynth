@@ -34,6 +34,29 @@ class _FixedSchemaFinalizationContext:
     feature_types: list[str]
 
 
+def _config_payload_for_metadata(
+    config: GeneratorConfig,
+    *,
+    n_train: int,
+    n_test: int,
+) -> dict[str, Any]:
+    """Serialize config metadata while omitting unset fixed-layout target-cell overrides."""
+
+    config_payload = asdict(config)
+    dataset_payload = config_payload.get("dataset")
+    if isinstance(dataset_payload, dict):
+        dataset_payload["n_train"] = int(n_train)
+        dataset_payload["n_test"] = int(n_test)
+
+    runtime_payload = config_payload.get("runtime")
+    if (
+        isinstance(runtime_payload, dict)
+        and runtime_payload.get("fixed_layout_target_cells") is None
+    ):
+        runtime_payload.pop("fixed_layout_target_cells", None)
+    return config_payload
+
+
 def _classification_class_structure(
     *,
     y_train: torch.Tensor,
@@ -83,12 +106,11 @@ def _build_fixed_schema_finalization_context(
 ) -> _FixedSchemaFinalizationContext:
     """Build cached metadata for fixed-schema bundle finalization."""
 
-    config_payload = asdict(config)
-    dataset_payload = config_payload.get("dataset")
-    if isinstance(dataset_payload, dict):
-        dataset_payload["n_train"] = int(n_train)
-        dataset_payload["n_test"] = int(n_test)
-
+    config_payload = _config_payload_for_metadata(
+        config,
+        n_train=n_train,
+        n_test=n_test,
+    )
     feature_types = [str(feature_type) for feature_type in list(layout.feature_types)]
     metadata_template = {
         "backend": "torch",
@@ -394,12 +416,6 @@ def _finalize_generated_tensors(
     else:
         filter_metadata = {"mode": "deferred", "status": "not_run"}
 
-    config_payload = asdict(config)
-    dataset_payload = config_payload.get("dataset")
-    if isinstance(dataset_payload, dict):
-        dataset_payload["n_train"] = int(n_train)
-        dataset_payload["n_test"] = int(n_test)
-
     metadata = {
         "backend": "torch",
         "device": device,
@@ -427,7 +443,11 @@ def _finalize_generated_tensors(
             "filter_rejections": 0,
             "filter_rejection_rate": None,
         },
-        "config": config_payload,
+        "config": _config_payload_for_metadata(
+            config,
+            n_train=n_train,
+            n_test=n_test,
+        ),
     }
     if missingness_summary is not None:
         metadata["missingness"] = missingness_summary

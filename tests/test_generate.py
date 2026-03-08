@@ -165,6 +165,16 @@ def test_generate_one_uses_fixed_dataset_rows_and_updates_metadata_config_split(
     assert int(bundle.metadata["config"]["dataset"]["n_test"]) == 256
 
 
+def test_generate_one_omits_unset_fixed_layout_target_cells_from_metadata_config() -> None:
+    cfg = _tiny_regression_config()
+    assert cfg.runtime.fixed_layout_target_cells is None
+
+    bundle = generate_one(cfg, seed=9, device="cpu")
+
+    runtime_config = bundle.metadata["config"]["runtime"]
+    assert "fixed_layout_target_cells" not in runtime_config
+
+
 def test_generate_batch_rows_choices_are_seed_reproducible() -> None:
     cfg = _tiny_config()
     cfg.dataset.rows = [1024, 2048, 4096]  # type: ignore[assignment]
@@ -951,6 +961,59 @@ def test_finalize_generated_chunk_preserve_schema_copies_metadata_templates() ->
     assert bundles[0].metadata["config"] is not bundles[1].metadata["config"]
     bundles[0].metadata["config"]["dataset"]["n_train"] = -1
     assert bundles[1].metadata["config"]["dataset"]["n_train"] == cfg.dataset.n_train
+
+
+def test_finalize_generated_chunk_preserve_schema_omits_unset_fixed_layout_target_cells() -> None:
+    cfg = _tiny_regression_config()
+    cfg.dataset.n_train = 4
+    cfg.dataset.n_test = 2
+    assert cfg.runtime.fixed_layout_target_cells is None
+    layout = _layout_stub(
+        feature_types=["num", "num"],
+        graph_nodes=2,
+        adjacency=torch.zeros((2, 2), dtype=torch.bool),
+        feature_node_assignment=[0, 1],
+        target_node_assignment=1,
+    )
+    shift_params = resolve_shift_runtime_params(cfg)
+    selection = NoiseRuntimeSelection(
+        family_requested="gaussian",
+        family_sampled="gaussian",
+        sampling_strategy="global",
+        base_scale=1.0,
+        student_t_df=5.0,
+        mixture_weights=None,
+    )
+    context = _build_fixed_schema_finalization_context(
+        cfg,
+        layout,
+        n_train=cfg.dataset.n_train,
+        n_test=cfg.dataset.n_test,
+        shift_params=shift_params,
+    )
+    bundles = _finalize_generated_chunk_preserve_schema(
+        cfg,
+        layout,
+        context=context,
+        seeds=[23],
+        attempt=0,
+        attempts_used=1,
+        device="cpu",
+        n_train=cfg.dataset.n_train,
+        n_test=cfg.dataset.n_test,
+        requested_device="cpu",
+        resolved_device="cpu",
+        device_fallback_reason=None,
+        x=torch.arange(1 * 6 * 2, dtype=torch.float32).reshape(1, 6, 2),
+        y=torch.linspace(0.0, 1.0, 6, dtype=torch.float32).reshape(1, 6),
+        aux_meta_batch=[{"filter": {"mode": "deferred", "status": "not_run"}}],
+        noise_runtime_selection=selection,
+        dtype=torch.float32,
+    )
+
+    assert bundles[0] is not None
+    runtime_config = bundles[0].metadata["config"]["runtime"]
+    assert "fixed_layout_target_cells" not in runtime_config
 
 
 def test_generate_batch_iter_matches_batch_ordering() -> None:
