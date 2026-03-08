@@ -5,6 +5,7 @@ import torch
 
 from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_function_plan_batch
 from dagzoo.core.fixed_layout_plan_types import (
+    ConcatNodeSource,
     GaussianMatrixPlan,
     LinearFunctionPlan,
     StackedNodeSource,
@@ -60,6 +61,54 @@ def test_multiple_inputs_are_deterministic_for_explicit_aggregation_kind(
         aggregation_kind=aggregation_kind,
     )
     torch.testing.assert_close(y1, y2)
+
+
+def test_multiple_inputs_concat_sanitizes_non_finite_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = ConcatNodeSource(function=LinearFunctionPlan(matrix=GaussianMatrixPlan()))
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+    inputs = [
+        torch.tensor(
+            [[0.0, float("nan")], [1.0, 2.0], [float("inf"), -1.0]],
+            dtype=torch.float32,
+        ),
+        torch.tensor([[1.0], [2.0], [-float("inf")]], dtype=torch.float32),
+    ]
+
+    actual = apply_multi_function(inputs, _make_generator(18), out_dim=3)
+
+    assert actual.shape == (3, 3)
+    assert torch.all(torch.isfinite(actual))
+
+
+def test_multiple_inputs_stacked_sanitizes_non_finite_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = StackedNodeSource(
+        aggregation_kind="sum",
+        parent_functions=(
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+        ),
+    )
+    monkeypatch.setattr(
+        "dagzoo.functions.multi.sample_multi_source_plan", lambda *_args, **_kwargs: source
+    )
+    inputs = [
+        torch.tensor(
+            [[0.0, float("nan")], [1.0, 2.0], [float("inf"), -1.0]],
+            dtype=torch.float32,
+        ),
+        torch.tensor([[1.0], [2.0], [-float("inf")]], dtype=torch.float32),
+    ]
+
+    actual = apply_multi_function(inputs, _make_generator(19), out_dim=3)
+
+    assert actual.shape == (3, 3)
+    assert torch.all(torch.isfinite(actual))
 
 
 def test_multi_function_matches_explicit_stacked_plan(

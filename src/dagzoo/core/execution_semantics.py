@@ -143,6 +143,45 @@ def _sample_bool(generator: torch.Generator, *, p: float = 0.5) -> bool:
     return bool(_rand_scalar(generator) < p)
 
 
+def _generator_device(generator: torch.Generator) -> str:
+    return str(generator.device)
+
+
+def _product_component_mix(
+    function_family_mix: dict[MechanismFamily, float] | None,
+) -> dict[MechanismFamily, float]:
+    if function_family_mix is None:
+        return {family: 1.0 for family in _PRODUCT_COMPONENT_FAMILIES}
+    filtered = {
+        family: float(weight)
+        for family, weight in function_family_mix.items()
+        if family in _PRODUCT_COMPONENT_FAMILIES and float(weight) > 0.0
+    }
+    if not filtered:
+        raise ValueError(
+            "mechanism.function_family_mix enables 'product' but disables all product "
+            "component families for fixed-layout plan sampling."
+        )
+    return filtered
+
+
+def _sample_product_component_family(
+    generator: torch.Generator,
+    *,
+    mechanism_logit_tilt: float,
+    function_family_mix: dict[MechanismFamily, float] | None,
+) -> MechanismFamily:
+    component_mix = _product_component_mix(function_family_mix)
+    family = sample_function_family(
+        generator,
+        mechanism_logit_tilt=mechanism_logit_tilt,
+        function_family_mix=component_mix,
+    )
+    if family == "product":
+        raise ValueError("Product subplans must resolve to non-product mechanism families.")
+    return family
+
+
 def sample_activation_plan(generator: torch.Generator) -> FixedLayoutActivationPlan:
     """Sample one activation plan using the shared fixed-layout schema."""
 
@@ -198,7 +237,7 @@ def sample_function_plan_for_family(
         return QuadraticFunctionPlan(matrix=sample_matrix_plan(generator))
     if family == "nn":
         n_layers = int(_randint_scalar(1, 4, generator))
-        hidden_width = int(_log_uniform(generator, 1.0, 127.0, "cpu"))
+        hidden_width = int(_log_uniform(generator, 1.0, 127.0, _generator_device(generator)))
         input_activation = sample_activation_plan(generator) if _sample_bool(generator) else None
         output_activation = sample_activation_plan(generator) if _sample_bool(generator) else None
         layer_count = max(1, n_layers)
@@ -213,14 +252,14 @@ def sample_function_plan_for_family(
             ),
         )
     if family == "tree":
-        n_trees = int(_log_uniform(generator, 1.0, 32.0, "cpu"))
+        n_trees = int(_log_uniform(generator, 1.0, 32.0, _generator_device(generator)))
         n_trees = max(1, n_trees)
         return TreeFunctionPlan(
             n_trees=n_trees,
             depths=tuple(int(_randint_scalar(1, 8, generator)) for _ in range(n_trees)),
         )
     if family == "discretization":
-        n_centers = int(_log_uniform(generator, 2.0, 128.0, "cpu"))
+        n_centers = int(_log_uniform(generator, 2.0, 128.0, _generator_device(generator)))
         return DiscretizationFunctionPlan(
             n_centers=max(2, n_centers),
             linear_matrix=sample_matrix_plan(generator),
@@ -228,26 +267,29 @@ def sample_function_plan_for_family(
     if family == "gp":
         return GpFunctionPlan(branch_kind="ha" if _sample_bool(generator) else "projected")
     if family == "em":
-        m_val = int(_log_uniform(generator, 2.0, float(max(16, 2 * out_dim)), "cpu"))
+        m_val = int(
+            _log_uniform(
+                generator,
+                2.0,
+                float(max(16, 2 * out_dim)),
+                _generator_device(generator),
+            )
+        )
         return EmFunctionPlan(
             m_val=max(2, m_val),
             linear_matrix=sample_matrix_plan(generator),
         )
     if family == "product":
-        eligible = list(_PRODUCT_COMPONENT_FAMILIES)
-        if function_family_mix is not None:
-            eligible = [
-                component
-                for component in _PRODUCT_COMPONENT_FAMILIES
-                if float(function_family_mix.get(component, 0.0)) > 0.0
-            ]
-        if not eligible:
-            raise ValueError(
-                "mechanism.function_family_mix enables 'product' but disables all product "
-                "component families for fixed-layout plan sampling."
-            )
-        lhs_family = eligible[int(_randint_scalar(0, len(eligible), generator))]
-        rhs_family = eligible[int(_randint_scalar(0, len(eligible), generator))]
+        lhs_family = _sample_product_component_family(
+            generator,
+            mechanism_logit_tilt=mechanism_logit_tilt,
+            function_family_mix=function_family_mix,
+        )
+        rhs_family = _sample_product_component_family(
+            generator,
+            mechanism_logit_tilt=mechanism_logit_tilt,
+            function_family_mix=function_family_mix,
+        )
         return ProductFunctionPlan(
             lhs=sample_function_plan_for_family(
                 generator,

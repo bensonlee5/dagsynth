@@ -43,6 +43,13 @@ def standardize(x: torch.Tensor) -> torch.Tensor:
     return (x - mu) / torch.clamp(sigma, min=1e-6)
 
 
+def sanitize_and_standardize(x: torch.Tensor) -> torch.Tensor:
+    """Clip non-finite/extreme values before column standardization."""
+    x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
+    x = torch.clamp(x, -1e6, 1e6)
+    return standardize(x)
+
+
 def to_numpy(value: object) -> np.ndarray:
     """Convert tensors or array-like values to NumPy arrays."""
     if isinstance(value, torch.Tensor):

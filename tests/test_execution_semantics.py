@@ -37,6 +37,7 @@ from dagzoo.sampling.random_points import sample_random_points
 from conftest import make_generator as _make_generator
 import dagzoo.converters.categorical as categorical_mod
 import dagzoo.converters.numeric as numeric_mod
+import dagzoo.core.execution_semantics as execution_semantics_mod
 import dagzoo.core.node_pipeline as node_pipeline_mod
 import dagzoo.functions.random_functions as random_functions_mod
 import dagzoo.sampling.random_points as random_points_mod
@@ -112,6 +113,44 @@ def test_apply_random_function_matches_explicit_plan(
 
     torch.testing.assert_close(actual, expected)
     torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())
+
+
+@pytest.mark.parametrize("family", ["nn", "tree", "discretization", "em"])
+def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
+    family: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGenerator:
+        device = "cuda"
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        execution_semantics_mod,
+        "_log_uniform",
+        lambda *_args: calls.append(_args[3]) or 5.0,
+    )
+    monkeypatch.setattr(execution_semantics_mod, "_randint_scalar", lambda *_args, **_kwargs: 2)
+    monkeypatch.setattr(execution_semantics_mod, "_sample_bool", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        execution_semantics_mod,
+        "sample_activation_plan",
+        lambda *_args, **_kwargs: FixedActivationPlan(name="relu"),
+    )
+    monkeypatch.setattr(
+        execution_semantics_mod,
+        "sample_matrix_plan",
+        lambda *_args, **_kwargs: GaussianMatrixPlan(),
+    )
+
+    execution_semantics_mod.sample_function_plan_for_family(
+        FakeGenerator(),  # type: ignore[arg-type]
+        family=family,  # type: ignore[arg-type]
+        out_dim=4,
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+
+    assert calls == ["cuda"]
 
 
 def test_apply_numeric_converter_matches_explicit_plan(

@@ -17,7 +17,7 @@ from dagzoo.core.trees import compute_odt_leaf_indices, sample_odt_splits
 from dagzoo.functions._rng_helpers import rand_scalar, randint_scalar
 from dagzoo.functions.activations import apply_random_activation
 from dagzoo.linalg.random_matrices import sample_random_matrix
-from dagzoo.math_utils import log_uniform as _log_uniform, standardize as _standardize_base
+from dagzoo.math_utils import log_uniform as _log_uniform, sanitize_and_standardize
 from dagzoo.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
 from dagzoo.sampling.random_weights import sample_random_weights
 
@@ -26,9 +26,7 @@ _sample_function_family = sample_function_family
 
 def _standardize(x: torch.Tensor) -> torch.Tensor:
     """Standardize columns in torch after clipping non-finite/extreme values."""
-    x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
-    x = torch.clamp(x, -1e6, 1e6)
-    return _standardize_base(x)
+    return sanitize_and_standardize(x)
 
 
 def _apply_linear(

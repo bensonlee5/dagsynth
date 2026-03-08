@@ -13,6 +13,7 @@ from dagzoo.core.fixed_layout_plan_types import ConcatNodeSource, StackedNodeSou
 from dagzoo.core.layout_types import AggregationKind, MechanismFamily
 from dagzoo.functions._rng_helpers import randint_scalar
 from dagzoo.functions.random_functions import apply_random_function
+from dagzoo.math_utils import sanitize_and_standardize
 from dagzoo.sampling.noise import NoiseSamplingSpec
 
 
@@ -110,7 +111,7 @@ def apply_multi_function(
     )
 
     if isinstance(source, ConcatNodeSource):
-        concat = torch.cat(inputs, dim=1)
+        concat = sanitize_and_standardize(torch.cat(inputs, dim=1).to(torch.float32))
         out = apply_function_plan_batch(
             concat.unsqueeze(0),
             rng,
@@ -118,6 +119,7 @@ def apply_multi_function(
             out_dim=out_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,
+            standardize_input=False,
         )
         return out.squeeze(0)
 
@@ -126,12 +128,13 @@ def apply_multi_function(
 
     transformed_outputs = [
         apply_function_plan_batch(
-            inp.unsqueeze(0),
+            sanitize_and_standardize(inp.to(torch.float32)).unsqueeze(0),
             rng,
             source.parent_functions[plan_index],
             out_dim=out_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,
+            standardize_input=False,
         ).squeeze(0)
         for plan_index, inp in enumerate(inputs)
     ]

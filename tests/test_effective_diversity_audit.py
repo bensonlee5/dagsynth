@@ -2,9 +2,14 @@ import copy
 import json
 
 import pytest
+import torch
 
 from dagzoo.config import GeneratorConfig
+from dagzoo.core.fixed_layout_plan_types import NeuralNetFunctionPlan, ProductFunctionPlan
+import dagzoo.core.execution_semantics as execution_semantics_mod
 from dagzoo.diagnostics.effective_diversity import (
+    AblationArm,
+    _runtime_override_context,
     build_effective_diversity_baseline_payload,
     compare_scale_report_to_baseline,
     generate_effective_diversity_report,
@@ -92,6 +97,24 @@ def test_effective_diversity_registry_captures_claims_and_runtime_absence() -> N
     nn_prob = report["hypothesis_checks"]["nn_linear_degenerate_probability"]
     assert float(nn_prob["analytic"]) == pytest.approx(1.0 / 12.0)
     assert float(nn_prob["empirical"]) == pytest.approx(1.0 / 12.0, abs=0.02)
+
+
+def test_runtime_override_context_remaps_product_subfamilies() -> None:
+    generator = torch.Generator(device="cpu").manual_seed(0)
+    arm = AblationArm(arm_id="fam_linear_to_nn", description="x", family_map={"linear": "nn"})
+
+    with _runtime_override_context(arm):
+        plan = execution_semantics_mod.sample_function_plan_for_family(
+            generator,
+            family="product",
+            out_dim=4,
+            mechanism_logit_tilt=0.0,
+            function_family_mix={"linear": 1.0, "product": 1.0},
+        )
+
+    assert isinstance(plan, ProductFunctionPlan)
+    assert isinstance(plan.lhs, NeuralNetFunctionPlan)
+    assert isinstance(plan.rhs, NeuralNetFunctionPlan)
 
 
 def test_effective_diversity_scale_report_smoke_and_baseline_regression() -> None:
