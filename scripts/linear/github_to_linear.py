@@ -18,7 +18,7 @@ from typing import Any
 
 GH_MIGRATION_MARKER = "<!-- dagzoo-linear-migration -->"
 DEFAULT_LINEAR_ENDPOINT = "https://api.linear.app/graphql"
-SYMPHONY_STATES: tuple[tuple[str, str, str, float], ...] = (
+DAGZOO_LINEAR_STATES: tuple[tuple[str, str, str, float], ...] = (
     ("Backlog", "backlog", "#6B7280", 0.0),
     ("Todo", "unstarted", "#94A3B8", 1.0),
     ("In Progress", "started", "#3B82F6", 2.0),
@@ -485,7 +485,7 @@ class LinearClient:
         self, team_id: str, existing_states: dict[str, LinearState]
     ) -> dict[str, LinearState]:
         states = dict(existing_states)
-        for name, state_type, color, position in SYMPHONY_STATES:
+        for name, state_type, color, position in DAGZOO_LINEAR_STATES:
             if name in states:
                 continue
             if self.dry_run:
@@ -515,7 +515,7 @@ class LinearClient:
                         "type": state_type,
                         "color": color,
                         "position": position,
-                        "description": f"Created for Symphony orchestration in dagzoo ({name})",
+                        "description": f"Created for dagzoo tracker workflow ({name})",
                     }
                 },
             )

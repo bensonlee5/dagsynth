@@ -108,10 +108,6 @@ def test_build_ticket_specs_contains_epic_and_audit_ticket() -> None:
     assert MODULE.HARNESS_EPIC_TITLE in titles
     assert MODULE.RECURRING_AUDIT_TITLE in titles
     assert (
-        "process(harness): codify issue authoring and acceptance-criteria standards for Symphony"
-        not in titles
-    )
-    assert (
         "docs(harness): write a repo-wide harness-engineering guide for dagzoo contributors"
         in titles
     )

@@ -198,7 +198,7 @@ For command-line and workflow details, use
 ## Roadmap and Development
 
 - Active tracker: [Linear project `dagzoo`](https://linear.app/bl-personal/project/dagzoo-4867d49bb182/overview)
-- Symphony/Linear operator notes: [docs/development/symphony.md](docs/development/symphony.md)
+- Linear tracker notes: [docs/development/linear.md](docs/development/linear.md)
 - Harness audit rubric: [docs/development/harness_audit.md](docs/development/harness_audit.md)
 - Issue authoring standard: [docs/development/issue_authoring.md](docs/development/issue_authoring.md)
 - [docs/development/roadmap.md](docs/development/roadmap.md)

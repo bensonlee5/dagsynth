@@ -28,7 +28,7 @@ operating checklist for `dagzoo`:
 - Recurrence:
   weekly, Friday at 10:00 PM `America/Los_Angeles`
 - Expected operator:
-  Symphony or another unattended agent run
+  an unattended agent run
 
 ## Audit Checklist
 
@@ -36,8 +36,7 @@ Each weekly audit must inspect the current repo state, not stale assumptions.
 
 ### 1. Repo As System Of Record
 
-- `README.md`, `AGENTS.md`, `WORKFLOW.md`, and active docs still describe the
-  real workflow.
+- `README.md`, `AGENTS.md`, and active docs still describe the real workflow.
 - User-facing contract changes are reflected in docs and, when required, version
   bump / changelog policy.
 - Linear backlog and roadmap references still align.

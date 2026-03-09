@@ -1,7 +1,7 @@
-# Issue Authoring For Symphony
+# Issue Authoring For Autonomous Execution
 
-This document defines how `dagzoo` issues should be written so Symphony and
-other agents can execute them safely without inventing missing scope.
+This document defines how `dagzoo` issues should be written so unattended
+agents can execute them safely without inventing missing scope.
 
 ## Goals
 
