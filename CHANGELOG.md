@@ -15,9 +15,9 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
 ### Changed
 
 - Deferred filter replay now streams packed shard inputs dataset-by-dataset
-  instead of materializing whole shard tables in Python memory, writes curated
-  accepted-only shards incrementally, and validates packed split ordering and
-  coverage during replay.
+  instead of materializing whole shard tables in Python memory, stages
+  manifest/curated outputs until shard and run validation succeed, and
+  validates packed split ordering and coverage during replay.
 - Deferred filter now refuses stale `--out` manifest/summary directories from a
   prior run and rejects symlinked lineage entries when copying curated shard
   lineage artifacts.

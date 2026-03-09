@@ -62,6 +62,7 @@ class _CuratedShardWriter:
     """Incremental writer state for one curated accepted-only shard."""
 
     shard_dir: Path
+    final_shard_dir: Path
     train_path: Path
     test_path: Path
     metadata_path: Path
@@ -387,13 +388,52 @@ def _write_ndjson_record(handle: TextIO, record: Mapping[str, Any]) -> None:
     handle.write("\n")
 
 
-def _create_curated_shard_writer(*, curated_out_dir: Path, shard_name: str) -> _CuratedShardWriter:
+def _staged_output_path(*, parent_dir: Path, final_name: str, staging_token: str) -> Path:
+    """Return one hidden temp path used for deferred-filter staging."""
+
+    return parent_dir / f".{final_name}.{staging_token}.tmp"
+
+
+def _cleanup_path(path: Path | None) -> None:
+    """Best-effort cleanup for one staged or promoted artifact path."""
+
+    if path is None or not path.exists():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+        return
+    path.unlink(missing_ok=True)
+
+
+def _promote_staged_path(*, staged_path: Path, final_path: Path) -> None:
+    """Promote one staged file or directory into its final visible location."""
+
+    if final_path.exists():
+        raise RuntimeError(
+            "Deferred filter promotion target already exists: "
+            f"{final_path}. Remove the existing artifact and retry."
+        )
+    staged_path.replace(final_path)
+
+
+def _create_curated_shard_writer(
+    *,
+    curated_out_dir: Path,
+    shard_name: str,
+    staging_token: str,
+) -> _CuratedShardWriter:
     """Initialize incremental writer state for one curated shard."""
 
-    shard_dir = curated_out_dir / shard_name
-    shard_dir.mkdir(parents=True, exist_ok=True)
+    shard_dir = _staged_output_path(
+        parent_dir=curated_out_dir,
+        final_name=shard_name,
+        staging_token=staging_token,
+    )
+    shard_dir.mkdir(parents=True, exist_ok=False)
+    final_shard_dir = curated_out_dir / shard_name
     return _CuratedShardWriter(
         shard_dir=shard_dir,
+        final_shard_dir=final_shard_dir,
         train_path=shard_dir / "train.parquet",
         test_path=shard_dir / "test.parquet",
         metadata_path=shard_dir / "metadata.ndjson",
@@ -617,179 +657,216 @@ def run_deferred_filter(
 
     manifest_path = output_path / MANIFEST_FILENAME
     summary_path = output_path / SUMMARY_FILENAME
+    staging_token = str(time.time_ns())
+    staged_manifest_path = _staged_output_path(
+        parent_dir=output_path,
+        final_name=MANIFEST_FILENAME,
+        staging_token=staging_token,
+    )
+    staged_summary_path = _staged_output_path(
+        parent_dir=output_path,
+        final_name=SUMMARY_FILENAME,
+        staging_token=staging_token,
+    )
+    staged_curated_dirs: list[Path] = []
+    promotable_curated_dirs: list[tuple[Path, Path]] = []
+    promoted_final_paths: list[Path] = []
 
-    with manifest_path.open("w", encoding="utf-8") as manifest_file:
-        for shard_dir in shard_dirs:
-            metadata_path = shard_dir / "metadata.ndjson"
-            train_path = shard_dir / "train.parquet"
-            test_path = shard_dir / "test.parquet"
-            if not metadata_path.exists() or not train_path.exists() or not test_path.exists():
-                raise FileNotFoundError(
-                    "Shard directory is missing required artifacts "
-                    "(metadata.ndjson/train.parquet/test.parquet): "
-                    f"{shard_dir}"
-                )
-
-            train_iter = _iter_packed_split_datasets(train_path)
-            test_iter = _iter_packed_split_datasets(test_path)
-            last_dataset_index = -1
-            curated_writer: _CuratedShardWriter | None = None
-            curated_written = 0
-
-            try:
-                for record in _iter_metadata_records(metadata_path):
-                    dataset_index_raw = record.get("dataset_index")
-                    if dataset_index_raw is None or isinstance(dataset_index_raw, bool):
-                        raise ValueError(
-                            "Invalid dataset_index in metadata record: "
-                            f"shard={shard_dir} dataset_index={dataset_index_raw!r}"
-                        )
-                    try:
-                        dataset_index = int(dataset_index_raw)
-                    except (TypeError, ValueError) as exc:
-                        raise ValueError(
-                            "Invalid dataset_index in metadata record: "
-                            f"shard={shard_dir} dataset_index={dataset_index_raw!r}"
-                        ) from exc
-
-                    if dataset_index <= last_dataset_index:
-                        raise ValueError(
-                            "Metadata records must use strictly increasing dataset_index values: "
-                            f"shard={shard_dir} dataset_index={dataset_index}"
-                        )
-                    last_dataset_index = dataset_index
-
-                    metadata_payload = record.get("metadata")
-                    if not isinstance(metadata_payload, Mapping):
-                        raise ValueError(
-                            "Invalid metadata payload for deferred filtering: "
-                            f"shard={shard_dir} dataset_index={dataset_index}"
-                        )
-
-                    train_split = _consume_expected_split(
-                        train_iter,
-                        expected_dataset_index=dataset_index,
-                        split_path=train_path,
-                    )
-                    test_split = _consume_expected_split(
-                        test_iter,
-                        expected_dataset_index=dataset_index,
-                        split_path=test_path,
+    try:
+        with staged_manifest_path.open("w", encoding="utf-8") as manifest_file:
+            for shard_dir in shard_dirs:
+                metadata_path = shard_dir / "metadata.ndjson"
+                train_path = shard_dir / "train.parquet"
+                test_path = shard_dir / "test.parquet"
+                if not metadata_path.exists() or not train_path.exists() or not test_path.exists():
+                    raise FileNotFoundError(
+                        "Shard directory is missing required artifacts "
+                        "(metadata.ndjson/train.parquet/test.parquet): "
+                        f"{shard_dir}"
                     )
 
-                    task, filter_cfg = _resolve_task_and_filter_config(
-                        metadata_payload=metadata_payload,
-                        fallback_config=config,
-                        n_jobs_override=n_jobs_override,
-                    )
-                    seed = _resolve_filter_seed(metadata_payload, dataset_index=dataset_index)
+                train_iter = _iter_packed_split_datasets(train_path)
+                test_iter = _iter_packed_split_datasets(test_path)
+                last_dataset_index = -1
+                curated_writer: _CuratedShardWriter | None = None
+                curated_written = 0
 
-                    accepted, filter_details, elapsed_seconds = _filter_dataset(
-                        x_train=train_split.x,
-                        y_train=train_split.y,
-                        x_test=test_split.x,
-                        y_test=test_split.y,
-                        task=task,
-                        seed=seed,
-                        filter_cfg=filter_cfg,
-                    )
-                    total_elapsed_seconds += elapsed_seconds
-
-                    filter_metadata = _build_filter_metadata(
-                        existing_filter=metadata_payload.get("filter"),
-                        accepted=accepted,
-                        filter_details=filter_details,
-                    )
-
-                    normalized_record = dict(record)
-                    normalized_metadata = dict(metadata_payload)
-                    normalized_metadata["filter"] = filter_metadata
-                    normalized_record["metadata"] = normalized_metadata
-
-                    reason_value = filter_details.get("reason")
-                    reason = (
-                        str(reason_value)
-                        if isinstance(reason_value, str) and reason_value
-                        else None
-                    )
-                    if not accepted:
-                        rejected_total += 1
-                        rejected_reason_counts[reason or "below_threshold"] += 1
-                    else:
-                        accepted_total += 1
-                        if curated_path is not None:
-                            if curated_writer is None:
-                                curated_writer = _create_curated_shard_writer(
-                                    curated_out_dir=curated_path,
-                                    shard_name=shard_dir.name,
-                                )
-                            _write_curated_dataset(
-                                state=curated_writer,
-                                dataset_index=dataset_index,
-                                train_split=train_split,
-                                test_split=test_split,
-                                record=normalized_record,
+                try:
+                    for record in _iter_metadata_records(metadata_path):
+                        dataset_index_raw = record.get("dataset_index")
+                        if dataset_index_raw is None or isinstance(dataset_index_raw, bool):
+                            raise ValueError(
+                                "Invalid dataset_index in metadata record: "
+                                f"shard={shard_dir} dataset_index={dataset_index_raw!r}"
                             )
-                            curated_written += 1
+                        try:
+                            dataset_index = int(dataset_index_raw)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError(
+                                "Invalid dataset_index in metadata record: "
+                                f"shard={shard_dir} dataset_index={dataset_index_raw!r}"
+                            ) from exc
 
-                    _write_ndjson_record(
-                        manifest_file,
-                        {
-                            "dataset_index": dataset_index,
-                            "seed": seed,
-                            "source_shard": shard_dir.name,
-                            "accepted": bool(accepted),
-                            "status": "accepted" if accepted else "rejected",
-                            "reason": reason,
-                            "elapsed_seconds": float(elapsed_seconds),
-                            "filter": filter_metadata,
-                        },
+                        if dataset_index <= last_dataset_index:
+                            raise ValueError(
+                                "Metadata records must use strictly increasing dataset_index values: "
+                                f"shard={shard_dir} dataset_index={dataset_index}"
+                            )
+                        last_dataset_index = dataset_index
+
+                        metadata_payload = record.get("metadata")
+                        if not isinstance(metadata_payload, Mapping):
+                            raise ValueError(
+                                "Invalid metadata payload for deferred filtering: "
+                                f"shard={shard_dir} dataset_index={dataset_index}"
+                            )
+
+                        train_split = _consume_expected_split(
+                            train_iter,
+                            expected_dataset_index=dataset_index,
+                            split_path=train_path,
+                        )
+                        test_split = _consume_expected_split(
+                            test_iter,
+                            expected_dataset_index=dataset_index,
+                            split_path=test_path,
+                        )
+
+                        task, filter_cfg = _resolve_task_and_filter_config(
+                            metadata_payload=metadata_payload,
+                            fallback_config=config,
+                            n_jobs_override=n_jobs_override,
+                        )
+                        seed = _resolve_filter_seed(metadata_payload, dataset_index=dataset_index)
+
+                        accepted, filter_details, elapsed_seconds = _filter_dataset(
+                            x_train=train_split.x,
+                            y_train=train_split.y,
+                            x_test=test_split.x,
+                            y_test=test_split.y,
+                            task=task,
+                            seed=seed,
+                            filter_cfg=filter_cfg,
+                        )
+                        total_elapsed_seconds += elapsed_seconds
+
+                        filter_metadata = _build_filter_metadata(
+                            existing_filter=metadata_payload.get("filter"),
+                            accepted=accepted,
+                            filter_details=filter_details,
+                        )
+
+                        normalized_record = dict(record)
+                        normalized_metadata = dict(metadata_payload)
+                        normalized_metadata["filter"] = filter_metadata
+                        normalized_record["metadata"] = normalized_metadata
+
+                        reason_value = filter_details.get("reason")
+                        reason = (
+                            str(reason_value)
+                            if isinstance(reason_value, str) and reason_value
+                            else None
+                        )
+                        if not accepted:
+                            rejected_total += 1
+                            rejected_reason_counts[reason or "below_threshold"] += 1
+                        else:
+                            accepted_total += 1
+                            if curated_path is not None:
+                                if curated_writer is None:
+                                    curated_writer = _create_curated_shard_writer(
+                                        curated_out_dir=curated_path,
+                                        shard_name=shard_dir.name,
+                                        staging_token=staging_token,
+                                    )
+                                    staged_curated_dirs.append(curated_writer.shard_dir)
+                                _write_curated_dataset(
+                                    state=curated_writer,
+                                    dataset_index=dataset_index,
+                                    train_split=train_split,
+                                    test_split=test_split,
+                                    record=normalized_record,
+                                )
+                                curated_written += 1
+
+                        _write_ndjson_record(
+                            manifest_file,
+                            {
+                                "dataset_index": dataset_index,
+                                "seed": seed,
+                                "source_shard": shard_dir.name,
+                                "accepted": bool(accepted),
+                                "status": "accepted" if accepted else "rejected",
+                                "reason": reason,
+                                "elapsed_seconds": float(elapsed_seconds),
+                                "filter": filter_metadata,
+                            },
+                        )
+
+                    _ensure_split_iter_exhausted(train_iter, split_path=train_path)
+                    _ensure_split_iter_exhausted(test_iter, split_path=test_path)
+                finally:
+                    _close_curated_shard_writer(curated_writer)
+
+                if curated_writer is not None and curated_written > 0:
+                    source_lineage_dir = shard_dir / "lineage"
+                    if source_lineage_dir.exists():
+                        _copy_lineage_tree_safe(
+                            source_dir=source_lineage_dir,
+                            dest_dir=curated_writer.shard_dir / "lineage",
+                        )
+                    promotable_curated_dirs.append(
+                        (curated_writer.shard_dir, curated_writer.final_shard_dir)
                     )
+                    curated_accepted_total += curated_written
 
-                _ensure_split_iter_exhausted(train_iter, split_path=train_path)
-                _ensure_split_iter_exhausted(test_iter, split_path=test_path)
-            finally:
-                _close_curated_shard_writer(curated_writer)
+        total_datasets = accepted_total + rejected_total
+        datasets_per_minute = (
+            (float(total_datasets) / float(total_elapsed_seconds)) * 60.0
+            if total_elapsed_seconds > 0.0
+            else 0.0
+        )
 
-            if curated_writer is not None and curated_written > 0:
-                source_lineage_dir = shard_dir / "lineage"
-                if source_lineage_dir.exists():
-                    _copy_lineage_tree_safe(
-                        source_dir=source_lineage_dir,
-                        dest_dir=curated_writer.shard_dir / "lineage",
-                    )
-                curated_accepted_total += curated_written
+        summary_payload: dict[str, Any] = {
+            "input_dir": str(input_path.resolve()),
+            "out_dir": str(output_path.resolve()),
+            "manifest_path": str(manifest_path.resolve()),
+            "total_datasets": int(total_datasets),
+            "accepted_datasets": int(accepted_total),
+            "rejected_datasets": int(rejected_total),
+            "acceptance_rate": (
+                float(accepted_total) / float(total_datasets) if total_datasets > 0 else None
+            ),
+            "rejected_reason_counts": {
+                key: int(rejected_reason_counts[key]) for key in sorted(rejected_reason_counts)
+            },
+            "elapsed_seconds": float(total_elapsed_seconds),
+            "datasets_per_minute": float(datasets_per_minute),
+            "curated_out_dir": str(curated_path.resolve()) if curated_path is not None else None,
+            "curated_accepted_datasets": int(curated_accepted_total),
+        }
+        staged_summary_path.write_text(
+            json.dumps(_sanitize_json(summary_payload), indent=2, sort_keys=True, allow_nan=False)
+            + "\n",
+            encoding="utf-8",
+        )
 
-    total_datasets = accepted_total + rejected_total
-    datasets_per_minute = (
-        (float(total_datasets) / float(total_elapsed_seconds)) * 60.0
-        if total_elapsed_seconds > 0.0
-        else 0.0
-    )
-
-    summary_payload: dict[str, Any] = {
-        "input_dir": str(input_path.resolve()),
-        "out_dir": str(output_path.resolve()),
-        "manifest_path": str(manifest_path.resolve()),
-        "total_datasets": int(total_datasets),
-        "accepted_datasets": int(accepted_total),
-        "rejected_datasets": int(rejected_total),
-        "acceptance_rate": (
-            float(accepted_total) / float(total_datasets) if total_datasets > 0 else None
-        ),
-        "rejected_reason_counts": {
-            key: int(rejected_reason_counts[key]) for key in sorted(rejected_reason_counts)
-        },
-        "elapsed_seconds": float(total_elapsed_seconds),
-        "datasets_per_minute": float(datasets_per_minute),
-        "curated_out_dir": str(curated_path.resolve()) if curated_path is not None else None,
-        "curated_accepted_datasets": int(curated_accepted_total),
-    }
-    summary_path.write_text(
-        json.dumps(_sanitize_json(summary_payload), indent=2, sort_keys=True, allow_nan=False)
-        + "\n",
-        encoding="utf-8",
-    )
+        for staged_dir, final_dir in promotable_curated_dirs:
+            _promote_staged_path(staged_path=staged_dir, final_path=final_dir)
+            promoted_final_paths.append(final_dir)
+        _promote_staged_path(staged_path=staged_manifest_path, final_path=manifest_path)
+        promoted_final_paths.append(manifest_path)
+        _promote_staged_path(staged_path=staged_summary_path, final_path=summary_path)
+        promoted_final_paths.append(summary_path)
+    except Exception:
+        for path in reversed(promoted_final_paths):
+            _cleanup_path(path)
+        raise
+    finally:
+        _cleanup_path(staged_manifest_path)
+        _cleanup_path(staged_summary_path)
+        for staged_dir in staged_curated_dirs:
+            _cleanup_path(staged_dir)
 
     return DeferredFilterRunResult(
         manifest_path=manifest_path,

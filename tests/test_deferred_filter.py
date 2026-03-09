@@ -270,6 +270,11 @@ def test_run_deferred_filter_rejects_extra_split_rows_beyond_metadata(
 
     with pytest.raises(ValueError, match="extra dataset rows beyond metadata coverage"):
         _ = run_deferred_filter(in_dir=in_dir, out_dir=out_dir)
+    assert list(out_dir.iterdir()) == []
+
+    with pytest.raises(ValueError, match="extra dataset rows beyond metadata coverage"):
+        _ = run_deferred_filter(in_dir=in_dir, out_dir=out_dir)
+    assert list(out_dir.iterdir()) == []
 
 
 def test_run_deferred_filter_rejects_non_monotonic_split_rows(
@@ -373,3 +378,46 @@ def test_run_deferred_filter_rejects_lineage_symlinks_during_curated_copy(
 
     with pytest.raises(RuntimeError, match="must not be a symlink"):
         _ = run_deferred_filter(in_dir=in_dir, out_dir=out_dir, curated_out_dir=curated_out)
+    assert list(out_dir.iterdir()) == []
+    assert list(curated_out.iterdir()) == []
+
+    with pytest.raises(RuntimeError, match="must not be a symlink"):
+        _ = run_deferred_filter(in_dir=in_dir, out_dir=out_dir, curated_out_dir=curated_out)
+    assert list(out_dir.iterdir()) == []
+    assert list(curated_out.iterdir()) == []
+
+
+def test_run_deferred_filter_cleans_up_curated_output_after_split_exhaustion_failure(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pyarrow.parquet")
+
+    in_dir = tmp_path / "input"
+    out_dir = tmp_path / "filter_out"
+    curated_out = tmp_path / "curated_out"
+    _ = write_packed_parquet_shards_stream(
+        [_bundle_with_embedded_config(601), _bundle_with_embedded_config(602)],
+        in_dir,
+        shard_size=2,
+        compression="zstd",
+    )
+
+    metadata_path = in_dir / "shard_00000" / "metadata.ndjson"
+    records = _load_ndjson(metadata_path)
+    _write_ndjson_records(metadata_path, [records[0]])
+
+    monkeypatch.setattr(
+        "dagzoo.filtering.deferred_filter.apply_extra_trees_filter",
+        lambda *_args, **_kwargs: (True, {"wins_ratio": 1.0, "n_valid_oob": 128}),
+    )
+
+    with pytest.raises(ValueError, match="extra dataset rows beyond metadata coverage"):
+        _ = run_deferred_filter(in_dir=in_dir, out_dir=out_dir, curated_out_dir=curated_out)
+    assert list(out_dir.iterdir()) == []
+    assert list(curated_out.iterdir()) == []
+
+    with pytest.raises(ValueError, match="extra dataset rows beyond metadata coverage"):
+        _ = run_deferred_filter(in_dir=in_dir, out_dir=out_dir, curated_out_dir=curated_out)
+    assert list(out_dir.iterdir()) == []
+    assert list(curated_out.iterdir()) == []
