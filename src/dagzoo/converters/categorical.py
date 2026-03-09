@@ -10,6 +10,7 @@ from dagzoo.core.execution_semantics import sample_converter_plan
 from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, _apply_categorical_group_batch
 from dagzoo.core.fixed_layout_plan_types import CategoricalConverterPlan
 from dagzoo.core.layout_types import MechanismFamily
+from dagzoo.rng import keyed_rng_from_generator
 
 
 def apply_categorical_converter(
@@ -26,18 +27,20 @@ def apply_categorical_converter(
         y = y.unsqueeze(1)
 
     c = max(2, int(n_categories))
+    root = keyed_rng_from_generator(generator, "apply_categorical_converter")
     plan = sample_converter_plan(
-        generator,
         SimpleNamespace(key="value", kind="cat", dim=int(y.shape[1]), cardinality=c),
+        keyed_rng=root.keyed("plan"),
         mechanism_logit_tilt=0.0,
         function_family_mix=function_family_mix,
         method_override=method,
+        device=str(generator.device),
     )
     if not isinstance(plan, CategoricalConverterPlan):
         raise RuntimeError("Expected categorical converter plan for categorical converter.")
 
-    rng = FixedLayoutBatchRng.from_generator(
-        generator,
+    rng = FixedLayoutBatchRng.from_keyed_rng(
+        root.keyed("execution"),
         batch_size=1,
         device=str(y.device),
     )

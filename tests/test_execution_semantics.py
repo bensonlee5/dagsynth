@@ -37,7 +37,7 @@ from dagzoo.diagnostics.effective_diversity import AblationArm, _runtime_overrid
 from dagzoo.functions.multi import apply_multi_function
 from dagzoo.functions.random_functions import apply_random_function
 from dagzoo.sampling.random_points import sample_random_points
-from conftest import make_generator as _make_generator
+from conftest import make_generator as _make_generator, make_keyed_rng as _make_keyed_rng
 import dagzoo.converters.categorical as categorical_mod
 import dagzoo.converters.numeric as numeric_mod
 import dagzoo.core.fixed_layout_batched as fixed_layout_batched_mod
@@ -105,7 +105,8 @@ def test_apply_random_function_matches_explicit_plan(
     reference_generator = _make_generator(2)
     actual = apply_random_function(x.clone(), actual_generator, out_dim=3, function_type=family)  # type: ignore[arg-type]
 
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "apply_random_function")
+    rng = FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu")
     expected = apply_function_plan_batch(
         random_functions_mod._standardize(x).unsqueeze(0),
         rng,
@@ -125,17 +126,23 @@ def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
     family: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeGenerator:
-        device = "cuda"
-
+    generator = _make_generator(123)
     calls: list[str] = []
     monkeypatch.setattr(
         execution_semantics_mod,
         "_log_uniform",
         lambda *_args: calls.append(_args[3]) or 5.0,
     )
+    monkeypatch.setattr(
+        execution_semantics_mod.KeyedRng,
+        "torch_rng",
+        lambda _self, *args, **kwargs: _make_generator(999),
+    )
+    monkeypatch.setattr(execution_semantics_mod, "_generator_device", lambda *_args: "cuda")
     monkeypatch.setattr(execution_semantics_mod, "_randint_scalar", lambda *_args, **_kwargs: 2)
-    monkeypatch.setattr(execution_semantics_mod, "_sample_bool", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        execution_semantics_mod, "_sample_bool_keyed", lambda *_args, **_kwargs: False
+    )
     monkeypatch.setattr(
         execution_semantics_mod,
         "sample_activation_plan",
@@ -148,7 +155,7 @@ def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
     )
 
     execution_semantics_mod.sample_function_plan_for_family(
-        FakeGenerator(),  # type: ignore[arg-type]
+        generator,
         family=family,  # type: ignore[arg-type]
         out_dim=4,
         mechanism_logit_tilt=0.0,
@@ -156,6 +163,57 @@ def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
     )
 
     assert calls == ["cuda"]
+
+
+def test_keyed_discrete_plan_sampling_uses_generator_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = _make_generator(124)
+    devices: list[str] = []
+
+    monkeypatch.setattr(execution_semantics_mod, "_generator_device", lambda *_args: "cuda")
+    monkeypatch.setattr(
+        execution_semantics_mod.KeyedRng,
+        "torch_rng",
+        lambda _self, *args, **kwargs: (
+            devices.append(str(kwargs["device"])) or _make_generator(1000)
+        ),
+    )
+    monkeypatch.setattr(
+        execution_semantics_mod,
+        "sample_function_plan",
+        lambda *_args, **_kwargs: LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+    )
+
+    execution_semantics_mod.sample_function_family(
+        generator,
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+    execution_semantics_mod.sample_matrix_plan(generator)
+    execution_semantics_mod.sample_activation_plan(generator)
+    execution_semantics_mod.sample_converter_plan(
+        ConverterSpec(key="feature", kind="cat", dim=3, cardinality=5),
+        generator,
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+    execution_semantics_mod.sample_multi_source_plan(
+        generator,
+        parent_count=2,
+        out_dim=3,
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+    execution_semantics_mod.sample_root_source_plan(
+        generator,
+        out_dim=3,
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+
+    assert devices
+    assert all(device == "cuda" for device in devices)
 
 
 @pytest.mark.parametrize(
@@ -249,7 +307,8 @@ def test_apply_numeric_converter_matches_explicit_plan(
     reference_generator = _make_generator(11)
     actual_x, actual_values = apply_numeric_converter(x.clone(), actual_generator)
 
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "apply_numeric_converter")
+    rng = FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu")
     expected_x, expected_values = apply_numeric_converter_plan_batch(
         x.unsqueeze(0),
         rng,
@@ -333,7 +392,8 @@ def test_apply_categorical_converter_matches_explicit_plan(
         x.clone(), actual_generator, n_categories=5
     )
 
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "apply_categorical_converter")
+    rng = FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu")
     expected_x, expected_labels = _apply_categorical_group_batch(
         x.unsqueeze(0).unsqueeze(2),
         rng,
@@ -363,9 +423,14 @@ def test_sample_random_points_matches_explicit_root_source_plan(
     reference_generator = _make_generator(30)
     actual = sample_random_points(32, 4, actual_generator, "cpu")
 
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "sample_random_points")
+    rng = FixedLayoutBatchRng.from_keyed_rng(
+        root.keyed("execution", "source"),
+        batch_size=1,
+        device="cpu",
+    )
     base = _sample_random_points_batch(
-        rng,
+        rng.keyed("base"),
         n_rows=32,
         dim=4,
         base_kind=source.base_kind,
@@ -374,7 +439,7 @@ def test_sample_random_points_matches_explicit_root_source_plan(
     )
     expected = apply_function_plan_batch(
         base,
-        rng,
+        rng.keyed("function"),
         source.function,
         out_dim=4,
         noise_sigma_multiplier=1.0,
@@ -426,7 +491,8 @@ def test_apply_node_pipeline_matches_explicit_node_plan(
         "cpu",
     )
 
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "apply_node_pipeline")
+    rng = FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu")
     expected_latent, expected_extracted = _apply_node_plan_batch(
         None,
         node_plan,

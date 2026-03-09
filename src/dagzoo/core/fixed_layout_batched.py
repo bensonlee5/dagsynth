@@ -54,7 +54,7 @@ from dagzoo.core.trees import (
     sample_odt_splits_batch,
 )
 from dagzoo.functions import activations as activations_module
-from dagzoo.rng import SeedManager
+from dagzoo.rng import KeyedRng, SeedManager
 from dagzoo.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
 
 _PAIRWISE_CENTER_BLOCK_SIZE = 32
@@ -87,19 +87,18 @@ def build_fixed_layout_execution_plan(
 ) -> FixedLayoutExecutionPlan:
     """Build one reusable per-node execution-plan payload for fixed-layout batches."""
 
-    manager = SeedManager(plan_seed)
+    root = KeyedRng(int(plan_seed))
     task = str(config.dataset.task)
     node_plans: list[FixedLayoutNodePlan] = []
     for node_index, parent_indices in enumerate(_parent_index_lists(layout)):
-        spec_gen = _cpu_generator(manager.child("node_spec", node_index))
-        plan_gen = _cpu_generator(manager.child("node_plan", node_index))
+        spec_gen = root.keyed("node_spec", node_index).torch_rng(device="cpu")
         converter_specs = _build_node_specs(node_index, layout, task, spec_gen)
         node_plans.append(
             sample_node_plan(
                 node_index=int(node_index),
                 parent_indices=parent_indices,
                 converter_specs=converter_specs,
-                generator=plan_gen,
+                keyed_rng=root.keyed("node_plan", node_index),
                 device="cpu",
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=config.mechanism.function_family_mix,
@@ -244,14 +243,20 @@ class FixedLayoutBatchRng:
     batch_size: int
     device: str
     generator: torch.Generator | None = field(default=None, repr=False)
+    keyed_root: KeyedRng | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        if self.keyed_root is None and self.seed is not None:
+            self.keyed_root = KeyedRng(int(self.seed))
         if self.generator is None:
-            if self.seed is None:
-                raise ValueError("FixedLayoutBatchRng requires either seed or generator.")
-            generator = torch.Generator(device=self.device)
-            generator.manual_seed(int(self.seed))
-            self.generator = generator
+            if self.keyed_root is not None:
+                self.generator = self.keyed_root.torch_rng(device=self.device)
+            else:
+                if self.seed is None:
+                    raise ValueError("FixedLayoutBatchRng requires either seed or generator.")
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(int(self.seed))
+                self.generator = generator
 
     @classmethod
     def from_generator(
@@ -268,11 +273,35 @@ class FixedLayoutBatchRng:
             generator=generator,
         )
 
+    @classmethod
+    def from_keyed_rng(
+        cls,
+        keyed_rng: KeyedRng,
+        *,
+        batch_size: int,
+        device: str,
+    ) -> FixedLayoutBatchRng:
+        return cls(
+            seed=None,
+            batch_size=int(batch_size),
+            device=device,
+            keyed_root=keyed_rng,
+        )
+
     @property
     def torch_generator(self) -> torch.Generator:
         if self.generator is None:
             raise RuntimeError("FixedLayoutBatchRng generator was not initialized.")
         return self.generator
+
+    def keyed(self, *components: str | int) -> FixedLayoutBatchRng:
+        if self.keyed_root is None:
+            return self
+        return FixedLayoutBatchRng.from_keyed_rng(
+            self.keyed_root.keyed(*components),
+            batch_size=self.batch_size,
+            device=self.device,
+        )
 
     def normal(self, shape: tuple[int, ...]) -> torch.Tensor:
         return torch.randn(shape, generator=self.generator, device=self.device)
@@ -356,12 +385,12 @@ def _sample_random_weights_batch(
     q_shape = (rng.batch_size, *normalized_parameter_shape)
     if q is None:
         q_low = 0.1 / math.log(dim + 1.0)
-        q = rng.log_uniform(q_shape, low=q_low, high=6.0)
+        q = rng.keyed("q").log_uniform(q_shape, low=q_low, high=6.0)
     if sigma is None:
-        sigma = rng.log_uniform(q_shape, low=1e-4, high=10.0)
+        sigma = rng.keyed("sigma").log_uniform(q_shape, low=1e-4, high=10.0)
     base_noise = sample_noise_from_spec(
         leading,
-        generator=rng.torch_generator,
+        generator=rng.keyed("noise").torch_generator,
         device=rng.device,
         noise_spec=noise_spec,
         scale_multiplier=float(sigma_multiplier),
@@ -380,7 +409,7 @@ def _sample_random_weights_batch(
     log_w = log_w - torch.max(log_w, dim=-1, keepdim=True).values
     weights = torch.clamp(torch.exp(log_w), min=1e-12)
     weights = weights / torch.clamp(weights.sum(dim=-1, keepdim=True), min=1e-12)
-    perm = torch.argsort(rng.uniform(leading, low=0.0, high=1.0), dim=-1)
+    perm = torch.argsort(rng.keyed("perm").uniform(leading, low=0.0, high=1.0), dim=-1)
     return torch.gather(weights, -1, perm)
 
 
@@ -399,21 +428,21 @@ def _apply_activation_plan(
     leading_shape = tuple(int(dim) for dim in y.shape[:-2])
     if with_standardize:
         y = _batch_standardize(y)
-        a = rng.log_uniform((y.shape[0],), low=1.0, high=10.0)
-        row_idx = rng.randint(0, y.shape[1], (y.shape[0],))
+        a = rng.keyed("standardize_scale").log_uniform((y.shape[0],), low=1.0, high=10.0)
+        row_idx = rng.keyed("standardize_row_index").randint(0, y.shape[1], (y.shape[0],))
         offsets = y[torch.arange(y.shape[0], device=y.device), row_idx].unsqueeze(1)
         y = a.view(-1, 1, 1) * (y - offsets)
 
     if isinstance(plan, ParametricActivationPlan):
         kind = str(plan.kind)
         if kind == "relu_pow":
-            q = rng.log_uniform(leading_shape, low=0.1, high=10.0)
+            q = rng.keyed("relu_pow").log_uniform(leading_shape, low=0.1, high=10.0)
             y = torch.pow(torch.clamp(y, min=0.0), q.reshape(*leading_shape, 1, 1))
         elif kind == "signed_pow":
-            q = rng.log_uniform(leading_shape, low=0.1, high=10.0)
+            q = rng.keyed("signed_pow").log_uniform(leading_shape, low=0.1, high=10.0)
             y = torch.sign(y) * torch.pow(torch.abs(y), q.reshape(*leading_shape, 1, 1))
         elif kind == "inv_pow":
-            q = rng.log_uniform(leading_shape, low=0.1, high=10.0)
+            q = rng.keyed("inv_pow").log_uniform(leading_shape, low=0.1, high=10.0)
             y = torch.pow(torch.abs(y) + 1e-3, -q.reshape(*leading_shape, 1, 1))
         elif kind == "poly":
             if plan.poly_power is None:
@@ -463,22 +492,26 @@ def _sample_random_matrix_from_plan_batch(
     if isinstance(plan, GaussianMatrixPlan):
         matrix = sample_noise_from_spec(
             shape,
-            generator=rng.torch_generator,
+            generator=rng.keyed("gaussian").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
     elif isinstance(plan, WeightsMatrixPlan):
         g = sample_noise_from_spec(
             shape,
-            generator=rng.torch_generator,
+            generator=rng.keyed("gaussian").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
         q_low = 0.1 / math.log(int(in_dim) + 1.0)
-        shared_q = rng.log_uniform((rng.batch_size, *leading_shape), low=q_low, high=6.0)
-        shared_sigma = rng.log_uniform((rng.batch_size, *leading_shape), low=1e-4, high=10.0)
+        shared_q = rng.keyed("shared_q").log_uniform(
+            (rng.batch_size, *leading_shape), low=q_low, high=6.0
+        )
+        shared_sigma = rng.keyed("shared_sigma").log_uniform(
+            (rng.batch_size, *leading_shape), low=1e-4, high=10.0
+        )
         rows = _sample_random_weights_batch(
-            rng,
+            rng.keyed("row_weights"),
             dim=int(in_dim),
             leading_shape=(*leading_shape, int(out_dim)),
             parameter_shape=leading_shape,
@@ -494,18 +527,18 @@ def _sample_random_matrix_from_plan_batch(
         v_shape = (rng.batch_size, *leading_shape, d, int(in_dim))
         u = sample_noise_from_spec(
             u_shape,
-            generator=rng.torch_generator,
+            generator=rng.keyed("u").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
         v = sample_noise_from_spec(
             v_shape,
-            generator=rng.torch_generator,
+            generator=rng.keyed("v").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
         weights = _sample_random_weights_batch(
-            rng,
+            rng.keyed("singular_values"),
             dim=d,
             leading_shape=leading_shape,
             sigma_multiplier=float(noise_sigma_multiplier),
@@ -515,17 +548,17 @@ def _sample_random_matrix_from_plan_batch(
     elif isinstance(plan, KernelMatrixPlan):
         pts = sample_noise_from_spec(
             (rng.batch_size, *leading_shape, int(out_dim) + int(in_dim), 3),
-            generator=rng.torch_generator,
+            generator=rng.keyed("points").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
-        gamma = rng.log_uniform((rng.batch_size, *leading_shape), low=0.1, high=10.0)
+        gamma = rng.keyed("gamma").log_uniform((rng.batch_size, *leading_shape), low=0.1, high=10.0)
         left = pts[..., : int(out_dim), :].unsqueeze(-2)
         right = pts[..., int(out_dim) :, :].unsqueeze(-3)
         dist = torch.norm(left - right, dim=-1)
         kernel = torch.exp(-gamma.unsqueeze(-1).unsqueeze(-1) * dist)
         sign = torch.where(
-            rng.uniform(shape, low=0.0, high=1.0) < 0.5,
+            rng.keyed("sign").uniform(shape, low=0.0, high=1.0) < 0.5,
             -1.0,
             1.0,
         )
@@ -535,20 +568,20 @@ def _sample_random_matrix_from_plan_batch(
             _base_matrix_plan(plan.base_kind),
             out_dim=int(out_dim),
             in_dim=int(in_dim),
-            rng=rng,
+            rng=rng.keyed("base"),
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,
             matrix_count=matrix_count,
         )
         matrix = _apply_activation_plan(
             matrix,
-            rng,
+            rng.keyed("activation"),
             plan.activation,
             with_standardize=False,
         )
         matrix = matrix + 1e-3 * sample_noise_from_spec(
             matrix.shape,
-            generator=rng.torch_generator,
+            generator=rng.keyed("activation_noise").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
@@ -557,7 +590,7 @@ def _sample_random_matrix_from_plan_batch(
 
     matrix = matrix + 1e-6 * sample_noise_from_spec(
         matrix.shape,
-        generator=rng.torch_generator,
+        generator=rng.keyed("jitter").torch_generator,
         device=rng.device,
         noise_spec=noise_spec,
     )
@@ -577,7 +610,7 @@ def _apply_linear_batch(
         plan.matrix,
         out_dim=int(out_dim),
         in_dim=int(x.shape[2]),
-        rng=rng,
+        rng=rng.keyed("matrix"),
         noise_sigma_multiplier=noise_sigma_multiplier,
         noise_spec=noise_spec,
     )
@@ -595,7 +628,7 @@ def _apply_quadratic_batch(
 ) -> torch.Tensor:
     feature_cap = min(int(x.shape[2]), 20)
     if int(x.shape[2]) > feature_cap:
-        indices = rng.randperm_indices(
+        indices = rng.keyed("feature_subset").randperm_indices(
             length=int(x.shape[2]),
             sample_size=feature_cap,
         )
@@ -612,7 +645,7 @@ def _apply_quadratic_batch(
         plan.matrix,
         out_dim=int(x_aug.shape[2]),
         in_dim=int(x_aug.shape[2]),
-        rng=rng,
+        rng=rng.keyed("matrix"),
         noise_sigma_multiplier=noise_sigma_multiplier,
         noise_spec=noise_spec,
         matrix_count=int(out_dim),
@@ -626,9 +659,9 @@ def _sample_unit_ball_batch(
     n_rows: int,
     dim: int,
 ) -> torch.Tensor:
-    vectors = rng.normal((rng.batch_size, n_rows, dim))
+    vectors = rng.keyed("vectors").normal((rng.batch_size, n_rows, dim))
     vectors = vectors / torch.clamp(torch.norm(vectors, dim=2, keepdim=True), min=1e-6)
-    radii = rng.uniform((rng.batch_size, n_rows, 1), low=0.0, high=1.0)
+    radii = rng.keyed("radii").uniform((rng.batch_size, n_rows, 1), low=0.0, high=1.0)
     return vectors * torch.pow(radii, 1.0 / max(1, dim))
 
 
@@ -644,30 +677,30 @@ def _sample_random_points_batch(
     if base_kind == "normal":
         return sample_noise_from_spec(
             (rng.batch_size, n_rows, dim),
-            generator=rng.torch_generator,
+            generator=rng.keyed("normal").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
     if base_kind == "uniform":
-        return rng.uniform((rng.batch_size, n_rows, dim), low=-1.0, high=1.0)
+        return rng.keyed("uniform").uniform((rng.batch_size, n_rows, dim), low=-1.0, high=1.0)
     if base_kind == "unit_ball":
-        return _sample_unit_ball_batch(rng, n_rows=n_rows, dim=dim)
+        return _sample_unit_ball_batch(rng.keyed("unit_ball"), n_rows=n_rows, dim=dim)
 
     points = sample_noise_from_spec(
         (rng.batch_size, n_rows, dim),
-        generator=rng.torch_generator,
+        generator=rng.keyed("points").torch_generator,
         device=rng.device,
         noise_spec=noise_spec,
     )
     weights = _sample_random_weights_batch(
-        rng,
+        rng.keyed("weights"),
         dim=dim,
         sigma_multiplier=float(noise_sigma_multiplier),
         noise_spec=noise_spec,
     )
     matrices = sample_noise_from_spec(
         (rng.batch_size, dim, dim),
-        generator=rng.torch_generator,
+        generator=rng.keyed("matrix").torch_generator,
         device=rng.device,
         noise_spec=noise_spec,
     )
@@ -685,7 +718,12 @@ def _apply_nn_batch(
 ) -> torch.Tensor:
     y = x
     if plan.input_activation is not None:
-        y = _apply_activation_plan(y, rng, plan.input_activation, with_standardize=True)
+        y = _apply_activation_plan(
+            y,
+            rng.keyed("input_activation"),
+            plan.input_activation,
+            with_standardize=True,
+        )
 
     hidden_width = max(1, int(plan.hidden_width))
     n_layers = max(1, int(plan.n_layers))
@@ -699,7 +737,7 @@ def _apply_nn_batch(
             plan.layer_matrices[layer_index],
             out_dim=int(dout),
             in_dim=int(din),
-            rng=rng,
+            rng=rng.keyed("layer_matrix", layer_index),
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,
         )
@@ -707,13 +745,18 @@ def _apply_nn_batch(
         if layer_index < len(layer_dims) - 2:
             y = _apply_activation_plan(
                 y,
-                rng,
+                rng.keyed("hidden_activation", layer_index),
                 plan.hidden_activations[layer_index],
                 with_standardize=True,
             )
 
     if plan.output_activation is not None:
-        y = _apply_activation_plan(y, rng, plan.output_activation, with_standardize=True)
+        y = _apply_activation_plan(
+            y,
+            rng.keyed("output_activation"),
+            plan.output_activation,
+            with_standardize=True,
+        )
     return y
 
 
@@ -737,18 +780,19 @@ def _apply_tree_batch(
         torch.isfinite(probs).all(dim=1, keepdim=True) & torch.isfinite(totals) & (totals > 1e-12)
     )
     probs = torch.where(valid, probs / torch.clamp(totals, min=1e-12), uniform)
-    for depth in plan.depths:
+    for tree_index, depth in enumerate(plan.depths):
+        tree_rng = rng.keyed("tree", tree_index)
         split_dims, thresholds = sample_odt_splits_batch(
             x,
             int(depth),
-            rng.torch_generator,
+            tree_rng.keyed("splits").torch_generator,
             feature_probs=probs,
         )
         leaf_idx = compute_odt_leaf_indices_batch(x, split_dims, thresholds)
         n_leaves = 2 ** int(depth)
         leaf_vals = sample_noise_from_spec(
             (batch_size, n_leaves, out_dim),
-            generator=rng.torch_generator,
+            generator=tree_rng.keyed("leaf_values").torch_generator,
             device=str(x.device),
             noise_spec=noise_spec,
         )
@@ -770,13 +814,16 @@ def _apply_discretization_batch(
     noise_spec: NoiseSamplingSpec | None,
 ) -> torch.Tensor:
     n_centers = min(int(plan.n_centers), int(x.shape[1]))
-    center_idx = rng.randperm_indices(length=int(x.shape[1]), sample_size=n_centers)
+    center_idx = rng.keyed("center_index").randperm_indices(
+        length=int(x.shape[1]),
+        sample_size=n_centers,
+    )
     centers = torch.gather(
         x,
         1,
         center_idx.unsqueeze(-1).expand(-1, -1, x.shape[2]),
     )
-    p = rng.log_uniform((rng.batch_size,), low=0.5, high=4.0)
+    p = rng.keyed("lp_norm").log_uniform((rng.batch_size,), low=0.5, high=4.0)
     nearest = _nearest_lp_center_indices(x, centers, p=p)
     gathered = torch.gather(
         centers,
@@ -785,7 +832,7 @@ def _apply_discretization_batch(
     )
     return _apply_linear_batch(
         gathered,
-        rng,
+        rng.keyed("linear"),
         LinearFunctionPlan(matrix=plan.linear_matrix),
         out_dim=out_dim,
         noise_sigma_multiplier=noise_sigma_multiplier,
@@ -799,7 +846,7 @@ def _sample_radial_ha_batch(
     n: int,
     a: torch.Tensor,
 ) -> torch.Tensor:
-    u = rng.uniform((rng.batch_size, n), low=0.0, high=1.0)
+    u = rng.keyed("u").uniform((rng.batch_size, n), low=0.0, high=1.0)
     return torch.pow(1.0 - u, 1.0 / (1.0 - a.view(-1, 1))) - 1.0
 
 
@@ -814,12 +861,12 @@ def _apply_gp_batch(
 ) -> torch.Tensor:
     batch_size, _, din = x.shape
     p = 256
-    a = rng.log_uniform((rng.batch_size,), low=2.0, high=20.0)
+    a = rng.keyed("a").log_uniform((rng.batch_size,), low=2.0, high=20.0)
 
     if str(plan.branch_kind) == "ha":
-        r = _sample_radial_ha_batch(rng, n=p * din, a=a).view(batch_size, p, din)
+        r = _sample_radial_ha_batch(rng.keyed("ha_radius"), n=p * din, a=a).view(batch_size, p, din)
         signs = torch.where(
-            rng.uniform((batch_size, p, din), low=0.0, high=1.0) < 0.5,
+            rng.keyed("ha_sign").uniform((batch_size, p, din), low=0.0, high=1.0) < 0.5,
             -1.0,
             1.0,
         )
@@ -828,34 +875,34 @@ def _apply_gp_batch(
     else:
         z = sample_noise_from_spec(
             (batch_size, p, din),
-            generator=rng.torch_generator,
+            generator=rng.keyed("projected_direction").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
         z = z / torch.clamp(torch.norm(z, dim=2, keepdim=True), min=1e-6)
-        r = _sample_radial_ha_batch(rng, n=p, a=a)
+        r = _sample_radial_ha_batch(rng.keyed("projected_radius"), n=p, a=a)
         omega = z * r.unsqueeze(2)
         weights = _sample_random_weights_batch(
-            rng,
+            rng.keyed("weights"),
             dim=din,
             sigma_multiplier=float(noise_sigma_multiplier),
             noise_spec=noise_spec,
         )
-        alpha = rng.log_uniform((batch_size,), low=0.5, high=10.0)
+        alpha = rng.keyed("alpha").log_uniform((batch_size,), low=0.5, high=10.0)
         a_mat = sample_noise_from_spec(
             (batch_size, din, din),
-            generator=rng.torch_generator,
+            generator=rng.keyed("matrix").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
         )
         matrices = alpha.view(-1, 1, 1) * (weights.unsqueeze(2) * a_mat)
         x_proj = torch.einsum("bni,bij->bnj", x, matrices.transpose(1, 2))
 
-    b = rng.uniform((batch_size, p), low=0.0, high=2.0 * math.pi)
+    b = rng.keyed("phase").uniform((batch_size, p), low=0.0, high=2.0 * math.pi)
     phi = torch.cos(torch.einsum("bnd,bpd->bnp", x_proj, omega) + b.unsqueeze(1))
     z_out = sample_noise_from_spec(
         (batch_size, out_dim, p),
-        generator=rng.torch_generator,
+        generator=rng.keyed("output_matrix").torch_generator,
         device=rng.device,
         noise_spec=noise_spec,
     )
@@ -872,7 +919,7 @@ def _apply_em_batch(
     noise_spec: NoiseSamplingSpec | None,
 ) -> torch.Tensor:
     m_val = max(2, int(plan.m_val))
-    base_idx = rng.randint(0, x.shape[1], (rng.batch_size, m_val))
+    base_idx = rng.keyed("base_index").randint(0, x.shape[1], (rng.batch_size, m_val))
     centers = torch.gather(
         x,
         1,
@@ -880,21 +927,21 @@ def _apply_em_batch(
     )
     centers = centers + sample_noise_from_spec(
         (rng.batch_size, m_val, x.shape[2]),
-        generator=rng.torch_generator,
+        generator=rng.keyed("center_noise").torch_generator,
         device=rng.device,
         noise_spec=noise_spec,
     )
     sigma = torch.exp(
         sample_noise_from_spec(
             (rng.batch_size, m_val),
-            generator=rng.torch_generator,
+            generator=rng.keyed("sigma").torch_generator,
             device=rng.device,
             noise_spec=noise_spec,
             scale_multiplier=0.1,
         )
     )
-    p_val = rng.log_uniform((rng.batch_size,), low=1.0, high=4.0)
-    q_val = rng.log_uniform((rng.batch_size,), low=1.0, high=2.0)
+    p_val = rng.keyed("p_val").log_uniform((rng.batch_size,), low=1.0, high=4.0)
+    q_val = rng.keyed("q_val").log_uniform((rng.batch_size,), low=1.0, high=2.0)
     dist_p = _lp_distances_to_centers(
         x,
         centers,
@@ -908,7 +955,7 @@ def _apply_em_batch(
     probs = torch.softmax(logits, dim=2)
     return _apply_linear_batch(
         probs,
-        rng,
+        rng.keyed("linear"),
         LinearFunctionPlan(matrix=plan.linear_matrix),
         out_dim=out_dim,
         noise_sigma_multiplier=noise_sigma_multiplier,
@@ -990,7 +1037,7 @@ def apply_function_plan_batch(
     if isinstance(plan, ProductFunctionPlan):
         lhs = apply_function_plan_batch(
             y,
-            rng,
+            rng.keyed("product", "lhs"),
             plan.lhs,
             out_dim=out_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,
@@ -999,7 +1046,7 @@ def apply_function_plan_batch(
         )
         rhs = apply_function_plan_batch(
             y,
-            rng,
+            rng.keyed("product", "rhs"),
             plan.rhs,
             out_dim=out_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,
@@ -1022,8 +1069,8 @@ def apply_numeric_converter_plan_batch(
     if not plan.warp_enabled:
         return y, values
 
-    a = rng.log_uniform((y.shape[0],), low=0.2, high=5.0)
-    b = rng.log_uniform((y.shape[0],), low=0.2, high=5.0)
+    a = rng.keyed("a").log_uniform((y.shape[0],), low=0.2, high=5.0)
+    b = rng.keyed("b").log_uniform((y.shape[0],), low=0.2, high=5.0)
     lo = torch.min(y, dim=1, keepdim=True).values
     hi = torch.max(y, dim=1, keepdim=True).values
     scaled = (y - lo) / torch.clamp(hi - lo, min=1e-6)
@@ -1038,13 +1085,45 @@ def _apply_numeric_converter_group_batch(
     x: torch.Tensor,
     rng: FixedLayoutBatchRng,
     warp_enabled: torch.Tensor,
+    *,
+    spec_indices: tuple[int, ...] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     y = x.to(torch.float32)
     values = y.clone()
     if not bool(torch.any(warp_enabled)):
         return y, values
-    a = rng.log_uniform((y.shape[0], y.shape[2]), low=0.2, high=5.0)
-    b = rng.log_uniform((y.shape[0], y.shape[2]), low=0.2, high=5.0)
+    if spec_indices is None:
+        a = rng.keyed("a").log_uniform((y.shape[0], y.shape[2]), low=0.2, high=5.0)
+        b = rng.keyed("b").log_uniform((y.shape[0], y.shape[2]), low=0.2, high=5.0)
+    else:
+        if len(spec_indices) != int(y.shape[2]):
+            raise ValueError("spec_indices must align with numeric converter group width.")
+        a = torch.stack(
+            [
+                rng.keyed("converter", spec_index)
+                .keyed("a")
+                .log_uniform(
+                    (y.shape[0],),
+                    low=0.2,
+                    high=5.0,
+                )
+                for spec_index in spec_indices
+            ],
+            dim=1,
+        )
+        b = torch.stack(
+            [
+                rng.keyed("converter", spec_index)
+                .keyed("b")
+                .log_uniform(
+                    (y.shape[0],),
+                    low=0.2,
+                    high=5.0,
+                )
+                for spec_index in spec_indices
+            ],
+            dim=1,
+        )
     lo = torch.min(y, dim=1, keepdim=True).values
     hi = torch.max(y, dim=1, keepdim=True).values
     scaled = (y - lo) / torch.clamp(hi - lo, min=1e-6)
@@ -1081,23 +1160,55 @@ def _apply_categorical_group_batch(
     n_categories: int,
     noise_sigma_multiplier: float,
     noise_spec: NoiseSamplingSpec | None,
+    spec_indices: tuple[int, ...] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     y = x.to(torch.float32)
     batch_size, n_rows, group_size, width = y.shape
     category_count = max(2, int(n_categories))
     method = str(converter_plan.method)
     variant = str(converter_plan.variant)
+    if spec_indices is not None and len(spec_indices) != int(group_size):
+        raise ValueError("spec_indices must align with categorical converter group width.")
 
     centers: torch.Tensor | None = None
     if method == "neighbor":
         n_centers = min(category_count, n_rows)
-        center_idx = rng.randperm_indices(
-            length=n_rows,
-            sample_size=n_centers,
-            leading_shape=(group_size,),
-        )
+        if spec_indices is None:
+            center_idx = rng.keyed("center_index").randperm_indices(
+                length=n_rows,
+                sample_size=n_centers,
+                leading_shape=(group_size,),
+            )
+        else:
+            center_idx = torch.stack(
+                [
+                    rng.keyed("converter", spec_index)
+                    .keyed("center_index")
+                    .randperm_indices(
+                        length=n_rows,
+                        sample_size=n_centers,
+                    )
+                    for spec_index in spec_indices
+                ],
+                dim=1,
+            )
         centers = _gather_group_centers(y, center_idx)
-        p = rng.log_uniform((batch_size, group_size), low=0.5, high=4.0)
+        if spec_indices is None:
+            p = rng.keyed("lp_norm").log_uniform((batch_size, group_size), low=0.5, high=4.0)
+        else:
+            p = torch.stack(
+                [
+                    rng.keyed("converter", spec_index)
+                    .keyed("lp_norm")
+                    .log_uniform(
+                        (batch_size,),
+                        low=0.5,
+                        high=4.0,
+                    )
+                    for spec_index in spec_indices
+                ],
+                dim=1,
+            )
         labels_bg = _nearest_lp_center_indices(
             y.permute(0, 2, 1, 3),
             centers,
@@ -1108,17 +1219,73 @@ def _apply_categorical_group_batch(
         labels = labels_bg.permute(0, 2, 1)
     else:
         if width != category_count:
-            projections = rng.normal((batch_size, group_size, width, category_count))
+            if spec_indices is None:
+                projections = rng.keyed("projections").normal(
+                    (batch_size, group_size, width, category_count)
+                )
+            else:
+                projections = torch.stack(
+                    [
+                        rng.keyed("converter", spec_index)
+                        .keyed("projections")
+                        .normal((batch_size, width, category_count))
+                        for spec_index in spec_indices
+                    ],
+                    dim=1,
+                )
             logits_in = torch.einsum("brgd,bgdc->brgc", y, projections)
         else:
             logits_in = y
         logits_std = _batch_standardize(logits_in)
-        a = rng.log_uniform((batch_size, group_size), low=0.1, high=10.0)
-        w = rng.uniform((batch_size, group_size, category_count), low=0.0, high=1.0)
+        if spec_indices is None:
+            a = rng.keyed("softmax_scale").log_uniform((batch_size, group_size), low=0.1, high=10.0)
+            w = rng.keyed("softmax_bias").uniform(
+                (batch_size, group_size, category_count),
+                low=0.0,
+                high=1.0,
+            )
+        else:
+            a = torch.stack(
+                [
+                    rng.keyed("converter", spec_index)
+                    .keyed("softmax_scale")
+                    .log_uniform(
+                        (batch_size,),
+                        low=0.1,
+                        high=10.0,
+                    )
+                    for spec_index in spec_indices
+                ],
+                dim=1,
+            )
+            w = torch.stack(
+                [
+                    rng.keyed("converter", spec_index)
+                    .keyed("softmax_bias")
+                    .uniform(
+                        (batch_size, category_count),
+                        low=0.0,
+                        high=1.0,
+                    )
+                    for spec_index in spec_indices
+                ],
+                dim=1,
+            )
         b = torch.log(w + 1e-4)
         logits = a.unsqueeze(1).unsqueeze(-1) * logits_std + b.unsqueeze(1)
         probs = torch.softmax(logits, dim=3)
-        labels = rng.categorical(probs)
+        if spec_indices is None:
+            labels = rng.keyed("labels").categorical(probs)
+        else:
+            labels = torch.stack(
+                [
+                    rng.keyed("converter", spec_index)
+                    .keyed("labels")
+                    .categorical(probs[:, :, group_index, :])
+                    for group_index, spec_index in enumerate(spec_indices)
+                ],
+                dim=2,
+            )
 
     if variant == "input":
         out = y
@@ -1149,9 +1316,14 @@ def _apply_categorical_group_batch(
         nested_function = converter_plan.function
         if nested_function is None:
             raise ValueError("center_random_fn converter plan requires a nested function.")
+        nested_rng = (
+            rng.keyed("nested_function")
+            if spec_indices is None
+            else rng.keyed("converter", spec_indices[0]).keyed("nested_function")
+        )
         nested_out = apply_function_plan_batch(
             nested_input[:, :, 0, :],
-            rng,
+            nested_rng,
             nested_function,
             out_dim=width,
             noise_sigma_multiplier=noise_sigma_multiplier,
@@ -1159,7 +1331,20 @@ def _apply_categorical_group_batch(
         )
         out = nested_out.unsqueeze(2)
     elif variant == "softmax_points":
-        points = rng.normal((batch_size, group_size, category_count, width))
+        if spec_indices is None:
+            points = rng.keyed("softmax_points").normal(
+                (batch_size, group_size, category_count, width)
+            )
+        else:
+            points = torch.stack(
+                [
+                    rng.keyed("converter", spec_index)
+                    .keyed("softmax_points")
+                    .normal((batch_size, category_count, width))
+                    for spec_index in spec_indices
+                ],
+                dim=1,
+            )
         labels_bg = labels.permute(0, 2, 1)
         out = torch.gather(
             points,
@@ -1194,7 +1379,7 @@ def _apply_node_plan_batch(
             concat = _sanitize_and_batch_standardize(torch.cat(parent_data, dim=2))
             latent = apply_function_plan_batch(
                 concat,
-                rng,
+                rng.keyed("function"),
                 source.function,
                 out_dim=total_dim,
                 noise_sigma_multiplier=noise_sigma_multiplier,
@@ -1209,7 +1394,7 @@ def _apply_node_plan_batch(
                 transformed_outputs = [
                     apply_function_plan_batch(
                         _sanitize_and_batch_standardize(parent_tensor),
-                        rng,
+                        rng.keyed("parent", plan_index),
                         source.parent_functions[plan_index],
                         out_dim=total_dim,
                         noise_sigma_multiplier=noise_sigma_multiplier,
@@ -1228,7 +1413,7 @@ def _apply_node_plan_batch(
                 for plan_index, parent_tensor in enumerate(parent_data):
                     transformed_output = apply_function_plan_batch(
                         _sanitize_and_batch_standardize(parent_tensor),
-                        rng,
+                        rng.keyed("parent", plan_index),
                         source.parent_functions[plan_index],
                         out_dim=total_dim,
                         noise_sigma_multiplier=noise_sigma_multiplier,
@@ -1250,8 +1435,9 @@ def _apply_node_plan_batch(
         source = node_plan.source
         if not isinstance(source, RandomPointsNodeSource):
             raise ValueError("Root fixed-layout node must use a random-points source.")
+        source_rng = rng.keyed("source")
         base = _sample_random_points_batch(
-            rng,
+            source_rng.keyed("base"),
             n_rows=n_rows,
             dim=total_dim,
             base_kind=source.base_kind,
@@ -1260,7 +1446,7 @@ def _apply_node_plan_batch(
         )
         latent = apply_function_plan_batch(
             base,
-            rng,
+            source_rng.keyed("function"),
             source.function,
             out_dim=total_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,
@@ -1272,7 +1458,7 @@ def _apply_node_plan_batch(
     latent = _batch_standardize(latent)
 
     weights = _sample_random_weights_batch(
-        rng,
+        rng.keyed("latent_weights"),
         dim=int(latent.shape[2]),
         sigma_multiplier=float(noise_sigma_multiplier),
         noise_spec=noise_spec,
@@ -1296,30 +1482,41 @@ def _apply_node_plan_batch(
                         "Numeric converter group must reference numeric converter plans."
                     )
                 numeric_plans.append(plan)
-            if all(int(spec.column_end) - int(spec.column_start) == 1 for spec in spec_payloads):
-                columns = [int(spec.column_start) for spec in spec_payloads]
-                views = latent[:, :, columns]
-                warp_enabled = torch.as_tensor(
-                    [bool(plan.warp_enabled) for plan in numeric_plans],
-                    dtype=torch.bool,
+            if all(
+                int(spec_payload.column_end - spec_payload.column_start) == 1
+                for spec_payload in spec_payloads
+            ):
+                grouped_input = torch.cat(
+                    [
+                        latent[:, :, int(spec_payload.column_start) : int(spec_payload.column_end)]
+                        for spec_payload in spec_payloads
+                    ],
+                    dim=2,
+                )
+                warp_enabled = torch.tensor(
+                    [plan.warp_enabled for plan in numeric_plans],
                     device=latent.device,
+                    dtype=torch.bool,
                 )
                 x_prime, values = _apply_numeric_converter_group_batch(
-                    views,
+                    grouped_input,
                     rng,
                     warp_enabled,
+                    spec_indices=tuple(spec_indices),
                 )
-                latent[:, :, columns] = x_prime
                 for local_index, spec_payload in enumerate(spec_payloads):
+                    start = int(spec_payload.column_start)
+                    end = int(spec_payload.column_end)
+                    latent[:, :, start:end] = x_prime[:, :, local_index : local_index + 1]
                     extracted[str(spec_payload.key)] = values[:, :, local_index]
                 continue
-
             for local_index, spec_payload in enumerate(spec_payloads):
+                spec_index = spec_indices[local_index]
                 start = int(spec_payload.column_start)
                 end = int(spec_payload.column_end)
                 spec_out, values = apply_numeric_converter_plan_batch(
                     latent[:, :, start:end],
-                    rng,
+                    rng.keyed("converter", spec_index),
                     numeric_plans[local_index],
                 )
                 if int(spec_out.shape[2]) != (end - start):
@@ -1339,19 +1536,44 @@ def _apply_node_plan_batch(
             raise ValueError(
                 "Categorical converter group must reference categorical converter plans."
             )
-        view = _categorical_group_input_views(latent, spec_payloads)
-        x_prime, values = _apply_categorical_group_batch(
-            view,
-            rng,
-            first_plan,
-            n_categories=max(2, int(spec_payloads[0].cardinality or 2)),
-            noise_sigma_multiplier=noise_sigma_multiplier,
-            noise_spec=noise_spec,
-        )
+        if first_plan.variant != "center_random_fn":
+            x_prime, values = _apply_categorical_group_batch(
+                _categorical_group_input_views(latent, spec_payloads),
+                rng,
+                first_plan,
+                n_categories=max(2, int(spec_payloads[0].cardinality or 2)),
+                noise_sigma_multiplier=noise_sigma_multiplier,
+                noise_spec=noise_spec,
+                spec_indices=tuple(spec_indices),
+            )
+            for local_index, spec_payload in enumerate(spec_payloads):
+                start = int(spec_payload.column_start)
+                end = int(spec_payload.column_end)
+                spec_out = x_prime[:, :, local_index, :]
+                if int(spec_out.shape[2]) != (end - start):
+                    if int(spec_out.shape[2]) > (end - start):
+                        spec_out = spec_out[:, :, : (end - start)]
+                    else:
+                        spec_out = torch.nn.functional.pad(
+                            spec_out, (0, (end - start) - int(spec_out.shape[2]))
+                        )
+                latent[:, :, start:end] = spec_out
+                extracted[str(spec_payload.key)] = values[:, :, local_index]
+            continue
         for local_index, spec_payload in enumerate(spec_payloads):
+            spec_index = spec_indices[local_index]
             start = int(spec_payload.column_start)
             end = int(spec_payload.column_end)
-            spec_out = x_prime[:, :, local_index, :]
+            spec_view = latent[:, :, start:end].unsqueeze(2)
+            x_prime, values = _apply_categorical_group_batch(
+                spec_view,
+                rng.keyed("converter", spec_index),
+                first_plan,
+                n_categories=max(2, int(spec_payload.cardinality or 2)),
+                noise_sigma_multiplier=noise_sigma_multiplier,
+                noise_spec=noise_spec,
+            )
+            spec_out = x_prime[:, :, 0, :]
             if int(spec_out.shape[2]) != (end - start):
                 if int(spec_out.shape[2]) > (end - start):
                     spec_out = spec_out[:, :, : (end - start)]
@@ -1360,9 +1582,9 @@ def _apply_node_plan_batch(
                         spec_out, (0, (end - start) - int(spec_out.shape[2]))
                     )
             latent[:, :, start:end] = spec_out
-            extracted[str(spec_payload.key)] = values[:, :, local_index]
+            extracted[str(spec_payload.key)] = values[:, :, 0]
 
-    scale = rng.log_uniform((rng.batch_size,), low=0.1, high=10.0)
+    scale = rng.keyed("latent_scale").log_uniform((rng.batch_size,), low=0.1, high=10.0)
     latent = latent * scale.view(-1, 1, 1)
     return latent, extracted
 
@@ -1403,12 +1625,13 @@ def _generate_fixed_layout_raw_batch(
             parent_output = node_outputs[int(parent_index)]
             if parent_output is not None:
                 parent_tensors.append(parent_output)
+        node_rng = rng.keyed("node", node_index)
         latent, extracted = _apply_node_plan_batch(
             config,
             node_plan,
             parent_tensors,
             n_rows=n_rows,
-            rng=rng,
+            rng=node_rng,
             device=device,
             noise_sigma_multiplier=noise_sigma_multiplier,
             noise_spec=noise_spec,

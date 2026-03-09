@@ -10,6 +10,7 @@ from dagzoo.core.fixed_layout_plan_types import ConcatNodeSource, StackedNodeSou
 from dagzoo.core.layout_types import AggregationKind, MechanismFamily
 from dagzoo.functions.random_functions import apply_random_function
 from dagzoo.math_utils import sanitize_and_standardize
+from dagzoo.rng import keyed_rng_from_generator
 from dagzoo.sampling.noise import NoiseSamplingSpec
 
 
@@ -79,16 +80,18 @@ def apply_multi_function(
             noise_spec=noise_spec,
         )
 
+    root = keyed_rng_from_generator(generator, "apply_multi_function")
     source = sample_multi_source_plan(
-        generator,
+        keyed_rng=root.keyed("plan"),
         parent_count=len(inputs),
         out_dim=out_dim,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
         aggregation_kind=aggregation_kind,
+        device=str(generator.device),
     )
-    rng = FixedLayoutBatchRng.from_generator(
-        generator,
+    rng = FixedLayoutBatchRng.from_keyed_rng(
+        root.keyed("execution"),
         batch_size=1,
         device=str(inputs[0].device),
     )
@@ -97,7 +100,7 @@ def apply_multi_function(
         concat = sanitize_and_standardize(torch.cat(inputs, dim=1).to(torch.float32))
         out = apply_function_plan_batch(
             concat.unsqueeze(0),
-            rng,
+            rng.keyed("function"),
             source.function,
             out_dim=out_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,
@@ -113,7 +116,7 @@ def apply_multi_function(
         transformed_outputs = [
             apply_function_plan_batch(
                 sanitize_and_standardize(inp.to(torch.float32)).unsqueeze(0),
-                rng,
+                rng.keyed("parent", plan_index),
                 source.parent_functions[plan_index],
                 out_dim=out_dim,
                 noise_sigma_multiplier=noise_sigma_multiplier,
@@ -129,7 +132,7 @@ def apply_multi_function(
     for plan_index, inp in enumerate(inputs):
         transformed_output = apply_function_plan_batch(
             sanitize_and_standardize(inp.to(torch.float32)).unsqueeze(0),
-            rng,
+            rng.keyed("parent", plan_index),
             source.parent_functions[plan_index],
             out_dim=out_dim,
             noise_sigma_multiplier=noise_sigma_multiplier,

@@ -75,6 +75,21 @@ class KeyedRng:
         return g
 
 
+def keyed_rng_from_generator(generator: torch.Generator, *components: str | int) -> KeyedRng:
+    """Consume one ambient generator draw and convert it into a keyed RNG root."""
+
+    seed = int(
+        torch.randint(
+            0,
+            SEED32_MAX + 1,
+            (1,),
+            generator=generator,
+            device=str(generator.device),
+        ).item()
+    )
+    return KeyedRng(validate_seed32(seed)).keyed(*components)
+
+
 @dataclass(slots=True)
 class SeedManager:
     """Creates reproducible child seeds from a run-level seed."""

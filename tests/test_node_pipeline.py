@@ -20,7 +20,7 @@ from dagzoo.core.node_pipeline import (
     apply_node_pipeline,
 )
 import dagzoo.core.node_pipeline as node_pipeline_mod
-from conftest import make_generator as _make_generator
+from conftest import make_generator as _make_generator, make_keyed_rng as _make_keyed_rng
 
 
 def test_node_pipeline_extracts_requested_columns() -> None:
@@ -171,12 +171,13 @@ def test_node_pipeline_splits_grouped_center_random_fn_converters(
         actual_generator,
         "cpu",
     )
+    root = _make_keyed_rng(reference_generator, "apply_node_pipeline")
     expected_latent, expected_extracted = _apply_node_plan_batch(
         None,
         split_node_plan,
         [],
         n_rows=12,
-        rng=FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu"),
+        rng=FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu"),
         device="cpu",
         noise_sigma_multiplier=1.0,
         noise_spec=None,
