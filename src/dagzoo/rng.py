@@ -53,7 +53,9 @@ class KeyedRng:
     def __post_init__(self) -> None:
         """Normalize public path input to an immutable tuple."""
 
-        object.__setattr__(self, "path", tuple(self.path))
+        path = self.path
+        normalized = (path,) if isinstance(path, str | int) else tuple(path)
+        object.__setattr__(self, "path", normalized)
 
     def keyed(self, *components: str | int) -> "KeyedRng":
         """Return a child namespace with the provided semantic path appended."""

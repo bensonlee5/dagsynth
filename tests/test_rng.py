@@ -46,6 +46,18 @@ def test_keyed_rng_normalizes_list_path_to_tuple() -> None:
     assert rng.keyed("weights").child_seed() == derive_seed(42, "node", 3, "weights")
 
 
+def test_keyed_rng_treats_scalar_string_path_as_one_component() -> None:
+    rng = KeyedRng(seed=42, path="node")  # type: ignore[arg-type]
+    assert rng.path == ("node",)
+    assert rng.child_seed() == KeyedRng(seed=42).keyed("node").child_seed()
+
+
+def test_keyed_rng_treats_scalar_int_path_as_one_component() -> None:
+    rng = KeyedRng(seed=42, path=3)  # type: ignore[arg-type]
+    assert rng.path == (3,)
+    assert rng.child_seed() == KeyedRng(seed=42).keyed(3).child_seed()
+
+
 def test_keyed_rng_path_does_not_track_source_list_mutation() -> None:
     source_path = ["node", 3]
     rng = KeyedRng(seed=42, path=source_path)  # type: ignore[arg-type]
