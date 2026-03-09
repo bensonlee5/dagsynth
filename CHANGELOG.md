@@ -10,6 +10,20 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.6.4] - 2026-03-09
+
+### Added
+
+- Added `dagzoo.rng.KeyedRng`, a keyed namespace helper for deriving
+  deterministic child seeds and device-aware `torch.Generator` instances from
+  one base seed plus a semantic path.
+
+### Changed
+
+- `SeedManager.child()` and `SeedManager.torch_rng()` now delegate through the
+  keyed RNG substrate while preserving the existing `derive_seed()` and
+  `offset_seed32()` compatibility surface.
+
 ## [0.6.3] - 2026-03-09
 
 ### Changed

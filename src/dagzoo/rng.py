@@ -43,6 +43,36 @@ def derive_seed(base_seed: int, *components: str | int) -> int:
     return int.from_bytes(h.digest(), "little") % SEED32_MAX
 
 
+@dataclass(slots=True, frozen=True)
+class KeyedRng:
+    """A keyed RNG namespace rooted at one deterministic base seed."""
+
+    seed: int
+    path: tuple[str | int, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Normalize public path input to an immutable tuple."""
+
+        object.__setattr__(self, "path", tuple(self.path))
+
+    def keyed(self, *components: str | int) -> "KeyedRng":
+        """Return a child namespace with the provided semantic path appended."""
+
+        return KeyedRng(seed=self.seed, path=self.path + tuple(components))
+
+    def child_seed(self, *components: str | int) -> int:
+        """Return a deterministic seed for this namespace and child components."""
+
+        return derive_seed(self.seed, *self.path, *components)
+
+    def torch_rng(self, *components: str | int, device: str = "cpu") -> torch.Generator:
+        """Return a torch Generator for this namespace and child components."""
+
+        g = torch.Generator(device=device)
+        g.manual_seed(self.child_seed(*components))
+        return g
+
+
 @dataclass(slots=True)
 class SeedManager:
     """Creates reproducible child seeds from a run-level seed."""
@@ -52,11 +82,9 @@ class SeedManager:
     def child(self, *components: str | int) -> int:
         """Return a deterministic child seed for the provided component path."""
 
-        return derive_seed(self.seed, *components)
+        return KeyedRng(self.seed).child_seed(*components)
 
     def torch_rng(self, *components: str | int, device: str = "cpu") -> torch.Generator:
         """Return a torch Generator seeded from a deterministic child seed."""
 
-        g = torch.Generator(device=device)
-        g.manual_seed(self.child(*components))
-        return g
+        return KeyedRng(self.seed).torch_rng(*components, device=device)
