@@ -18,6 +18,7 @@ def _load_module(name: str, relative_path: str):
 
 
 _load_module("github_to_linear", "scripts/linear/github_to_linear.py")
+_load_module("seed_linear_utils", "scripts/linear/seed_linear_utils.py")
 MODULE = _load_module("seed_harness_backlog", "scripts/linear/seed_harness_backlog.py")
 
 

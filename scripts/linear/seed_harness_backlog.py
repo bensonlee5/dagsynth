@@ -4,17 +4,21 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from github_to_linear import (
     DEFAULT_LINEAR_ENDPOINT,
     LinearClient,
-    LinearLabel,
-    LinearState,
-    MigrationError,
+    LinearState as _LinearState,
     load_linear_api_key,
+)
+from seed_linear_utils import (
+    TicketSpec,
+    create_or_update_issue as _create_or_update_issue,
+    ensure_labels as _ensure_labels,
+    find_existing_project_issues,
+    required_label_specs as _required_label_specs,
+    seed_ticket_specs,
 )
 
 
@@ -28,14 +32,8 @@ LABEL_COLORS = {
     "harness": "#2563EB",
 }
 
-
-@dataclass(frozen=True, slots=True)
-class TicketSpec:
-    title: str
-    state_name: str
-    labels: tuple[str, ...]
-    description: str
-    parent_title: str | None = None
+LinearState = _LinearState
+create_or_update_issue = _create_or_update_issue
 
 
 def _markdown_list(items: list[str]) -> str:
@@ -271,11 +269,7 @@ def build_ticket_specs() -> list[TicketSpec]:
 
 
 def required_label_specs() -> dict[str, str]:
-    names = sorted({label for spec in build_ticket_specs() for label in spec.labels})
-    missing = [name for name in names if name not in LABEL_COLORS]
-    if missing:
-        raise MigrationError(f"Missing configured colors for labels: {', '.join(missing)}")
-    return {name: LABEL_COLORS[name] for name in names}
+    return _required_label_specs(build_ticket_specs(), label_colors=LABEL_COLORS)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -287,145 +281,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def find_existing_project_issues(
-    linear: LinearClient, project_id: str
-) -> dict[str, dict[str, Any]]:
-    data = linear.graphql(
-        """
-        query ProjectIssues($projectId: ID!) {
-          issues(filter: { project: { id: { eq: $projectId } } }, first: 200) {
-            nodes {
-              id
-              identifier
-              url
-              title
-            }
-          }
-        }
-        """,
-        {"projectId": project_id},
-    )
-    return {node["title"]: node for node in data["issues"]["nodes"]}
-
-
 def ensure_labels(
     linear: LinearClient,
     *,
     team_id: str,
-    existing_labels: dict[str, LinearLabel],
-) -> dict[str, LinearLabel]:
-    labels = dict(existing_labels)
-    for name, color in required_label_specs().items():
-        if name in labels:
-            continue
-        if linear.dry_run:
-            print(f"[dry-run] Would create label {name!r}")
-            labels[name] = LinearLabel(id=f"dry-run-{name}", name=name, color=color)
-            continue
-        data = linear.graphql(
-            """
-            mutation CreateLabel($input: IssueLabelCreateInput!) {
-              issueLabelCreate(input: $input) {
-                success
-                issueLabel {
-                  id
-                  name
-                  color
-                }
-              }
-            }
-            """,
-            {"input": {"teamId": team_id, "name": name, "color": color}},
-        )
-        payload = data["issueLabelCreate"]
-        if not payload.get("success"):
-            raise MigrationError(f"Failed to create label {name!r}")
-        node = payload["issueLabel"]
-        labels[name] = LinearLabel(id=node["id"], name=node["name"], color=node.get("color"))
-    return labels
-
-
-def create_or_update_issue(
-    linear: LinearClient,
-    *,
-    existing: dict[str, Any] | None,
-    title: str,
-    description: str,
-    team_id: str,
-    project_id: str,
-    state: LinearState,
-    label_ids: list[str],
-    parent_id: str | None,
-) -> dict[str, str]:
-    create_payload: dict[str, Any] = {
-        "title": title,
-        "description": description,
-        "teamId": team_id,
-        "projectId": project_id,
-        "stateId": state.id,
-        "labelIds": label_ids,
-    }
-    if parent_id:
-        create_payload["parentId"] = parent_id
-
-    if existing is None:
-        if linear.dry_run:
-            print(f"[dry-run] Would create issue {title!r}")
-            return {
-                "id": f"dry-run-{title}",
-                "identifier": "DRY-1",
-                "url": "https://linear.app/fake",
-            }
-        data = linear.graphql(
-            """
-            mutation CreateIssue($input: IssueCreateInput!) {
-              issueCreate(input: $input) {
-                success
-                issue {
-                  id
-                  identifier
-                  url
-                }
-                }
-            }
-            """,
-            {"input": create_payload},
-        )
-        response = data["issueCreate"]
-        if not response.get("success"):
-            raise MigrationError(f"Failed to create issue {title!r}")
-        return response["issue"]
-
-    update_payload: dict[str, Any] = {
-        "title": title,
-        "description": description,
-        "projectId": project_id,
-    }
-    if parent_id:
-        update_payload["parentId"] = parent_id
-
-    if linear.dry_run:
-        print(f"[dry-run] Would update issue {title!r} ({existing['identifier']})")
-        return {"id": existing["id"], "identifier": existing["identifier"], "url": existing["url"]}
-    data = linear.graphql(
-        """
-        mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
-          issueUpdate(id: $id, input: $input) {
-            success
-            issue {
-              id
-              identifier
-              url
-            }
-            }
-        }
-        """,
-        {"id": existing["id"], "input": update_payload},
+    existing_labels: dict[str, object],
+) -> dict[str, object]:
+    return _ensure_labels(
+        linear,
+        team_id=team_id,
+        existing_labels=existing_labels,
+        label_specs=required_label_specs(),
     )
-    response = data["issueUpdate"]
-    if not response.get("success"):
-        raise MigrationError(f"Failed to update issue {title!r}")
-    return response["issue"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -438,31 +305,15 @@ def main(argv: list[str] | None = None) -> int:
     labels = ensure_labels(linear, team_id=team_id, existing_labels=labels)
     existing_issues = find_existing_project_issues(linear, project_id)
 
-    created: dict[str, dict[str, str]] = {}
-    for spec in build_ticket_specs():
-        state = states.get(spec.state_name)
-        if state is None:
-            raise MigrationError(f"Missing Linear state {spec.state_name!r}")
-        parent_id = None
-        if spec.parent_title:
-            parent = created.get(spec.parent_title) or existing_issues.get(spec.parent_title)
-            if not parent:
-                raise MigrationError(f"Parent issue missing: {spec.parent_title}")
-            parent_id = parent["id"]
-        label_ids = [labels[name].id for name in spec.labels]
-        existing = existing_issues.get(spec.title)
-        issue = create_or_update_issue(
-            linear,
-            existing=existing,
-            title=spec.title,
-            description=spec.description,
-            team_id=team_id,
-            project_id=project_id,
-            state=state,
-            label_ids=label_ids,
-            parent_id=parent_id,
-        )
-        created[spec.title] = issue
+    created = seed_ticket_specs(
+        linear,
+        ticket_specs=build_ticket_specs(),
+        states=states,
+        labels=labels,
+        existing_issues=existing_issues,
+        team_id=team_id,
+        project_id=project_id,
+    )
 
     audit = created[RECURRING_AUDIT_TITLE]
     print(f"AUDIT_ISSUE_URL={audit['url']}")
