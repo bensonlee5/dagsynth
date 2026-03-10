@@ -8,11 +8,7 @@ from collections.abc import Callable
 import torch
 
 from dagzoo.bench.constants import (
-    MICROBENCH_BASE_SEED_OFFSET,
     MICROBENCH_DEFAULT_REPEATS,
-    MICROBENCH_GENERATE_ONE_SEED_OFFSET,
-    MICROBENCH_LINEAR_SEED,
-    MICROBENCH_NODE_PIPELINE_SEED,
     MICROBENCH_PARENT_DIM,
     MICROBENCH_SYNTH_FEATURES,
     MICROBENCH_SYNTH_ROWS,
@@ -26,7 +22,7 @@ from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_one
 from dagzoo.core.node_pipeline import ConverterSpec, apply_node_pipeline
 from dagzoo.functions.random_functions import apply_random_function
-from dagzoo.rng import offset_seed32
+from dagzoo.rng import KeyedRng
 
 
 def _time_ms(func: Callable[[], None], repeats: int) -> float:
@@ -61,23 +57,32 @@ def run_microbenchmarks(
 ) -> dict[str, float | int | None]:
     """Run targeted microbenchmarks for core generation components."""
 
-    g_rng = torch.Generator(device="cpu")
-    g_rng.manual_seed(offset_seed32(config.seed, MICROBENCH_BASE_SEED_OFFSET))
-    x = torch.randn(MICROBENCH_SYNTH_ROWS, MICROBENCH_SYNTH_FEATURES, generator=g_rng)
+    micro_root = KeyedRng(int(config.seed)).keyed("bench", "micro")
+    x = torch.randn(
+        MICROBENCH_SYNTH_ROWS,
+        MICROBENCH_SYNTH_FEATURES,
+        generator=micro_root.keyed("inputs", "x").torch_rng(device="cpu"),
+    )
 
     def run_linear() -> None:
-        local_g = torch.Generator(device="cpu")
-        local_g.manual_seed(MICROBENCH_LINEAR_SEED)
         _ = apply_random_function(
             x,
-            local_g,
+            micro_root.keyed("random_function").torch_rng(device="cpu"),
             out_dim=MICROBENCH_SYNTH_FEATURES,
             function_type="linear",
         )
 
     parent_data = [
-        torch.randn(MICROBENCH_SYNTH_ROWS, MICROBENCH_PARENT_DIM),
-        torch.randn(MICROBENCH_SYNTH_ROWS, MICROBENCH_PARENT_DIM),
+        torch.randn(
+            MICROBENCH_SYNTH_ROWS,
+            MICROBENCH_PARENT_DIM,
+            generator=micro_root.keyed("inputs", "parent", 0).torch_rng(device="cpu"),
+        ),
+        torch.randn(
+            MICROBENCH_SYNTH_ROWS,
+            MICROBENCH_PARENT_DIM,
+            generator=micro_root.keyed("inputs", "parent", 1).torch_rng(device="cpu"),
+        ),
     ]
     specs = [
         ConverterSpec(key="feature_0", kind="num", dim=1),
@@ -86,9 +91,13 @@ def run_microbenchmarks(
     ]
 
     def run_node_pipeline() -> None:
-        g = torch.Generator(device="cpu")
-        g.manual_seed(MICROBENCH_NODE_PIPELINE_SEED)
-        _ = apply_node_pipeline(parent_data, MICROBENCH_SYNTH_ROWS, specs, g, "cpu")
+        _ = apply_node_pipeline(
+            parent_data,
+            MICROBENCH_SYNTH_ROWS,
+            specs,
+            micro_root.keyed("node_pipeline").torch_rng(device="cpu"),
+            "cpu",
+        )
 
     micro_cfg = _micro_config(config)
     generate_one_ms: float | None
@@ -97,7 +106,7 @@ def run_microbenchmarks(
         def run_generate_one() -> None:
             _ = generate_one(
                 micro_cfg,
-                seed=offset_seed32(micro_cfg.seed, MICROBENCH_GENERATE_ONE_SEED_OFFSET),
+                seed=micro_root.child_seed("generate_one"),
                 device=device,
             )
 

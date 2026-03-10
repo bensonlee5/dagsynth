@@ -10,7 +10,7 @@ from dagzoo.bench.throughput import (
 )
 from dagzoo.config import GeneratorConfig
 from dagzoo.hardware import HardwareInfo
-from dagzoo.rng import offset_seed32
+from dagzoo.rng import KeyedRng
 
 
 def _tiny_parallel_config() -> GeneratorConfig:
@@ -58,8 +58,8 @@ def test_run_throughput_benchmark_uses_streaming_generation(
     )
 
     assert calls == [
-        (2, offset_seed32(cfg.seed, 1), "cpu"),
-        (3, offset_seed32(cfg.seed, 2), "cpu"),
+        (2, KeyedRng(cfg.seed).child_seed("bench", "throughput", "warmup"), "cpu"),
+        (3, KeyedRng(cfg.seed).child_seed("bench", "throughput", "measure"), "cpu"),
     ]
     assert result["num_datasets"] == 3
     assert result["warmup_datasets"] == 2
@@ -130,8 +130,8 @@ def test_run_throughput_benchmark_uses_sequential_generation(
     )
 
     assert calls == [
-        (2, offset_seed32(cfg.seed, 1), "cpu"),
-        (4, offset_seed32(cfg.seed, 2), "cpu"),
+        (2, KeyedRng(cfg.seed).child_seed("bench", "throughput", "warmup"), "cpu"),
+        (4, KeyedRng(cfg.seed).child_seed("bench", "throughput", "measure"), "cpu"),
     ]
     assert result["num_datasets"] == 4
 

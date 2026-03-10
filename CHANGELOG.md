@@ -10,6 +10,20 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.7.0] - 2026-03-10
+
+### Changed
+
+- Removed the legacy `dagzoo.rng.SeedManager` and `dagzoo.rng.offset_seed32`
+  compatibility helpers so `KeyedRng` is now the repo's only semantic RNG
+  surface.
+- Benchmark throughput, latency, microbench, lineage-guardrail, and
+  reproducibility helpers now derive seeds from explicit keyed benchmark
+  namespaces instead of offset formulas and manual-seeded compatibility paths.
+- Benchmark suite outputs now distinguish exact reproducibility from
+  workload-shape stability by emitting both content and workload match signals
+  for reproducibility checks.
+
 ## [0.6.7] - 2026-03-10
 
 ### Changed

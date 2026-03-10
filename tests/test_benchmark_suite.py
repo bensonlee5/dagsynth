@@ -6,10 +6,12 @@ import pytest
 
 import dagzoo.bench.guardrails as guardrails_mod
 import dagzoo.bench.suite as suite_mod
+from dagzoo.bench.metrics import reproducibility_signature, reproducibility_workload_signature
 from dagzoo.bench.micro import run_microbenchmarks
 from dagzoo.bench.report import write_suite_markdown
 from dagzoo.bench.suite import PresetRunSpec, resolve_preset_run_specs, run_benchmark_suite
 from dagzoo.config import GeneratorConfig
+from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 
 
@@ -73,6 +75,75 @@ def _tiny_noise_cpu_config() -> GeneratorConfig:
         mixture_weights=None,
     )
     return cfg
+
+
+def test_reproducibility_workload_signature_ignores_values_but_tracks_layout_metadata() -> None:
+    bundle_a = DatasetBundle(
+        X_train=np.zeros((2, 2), dtype=np.float32),
+        y_train=np.zeros(2, dtype=np.int64),
+        X_test=np.ones((1, 2), dtype=np.float32),
+        y_test=np.ones(1, dtype=np.int64),
+        feature_types=["num", "num"],
+        metadata={
+            "seed": 11,
+            "dataset_seed": 21,
+            "dataset_index": 0,
+            "attempt_used": 0,
+            "layout_signature": "layout-a",
+            "layout_plan_signature": "plan-a",
+            "n_features": 2,
+            "n_categorical_features": 0,
+            "n_classes": None,
+            "graph_nodes": 3,
+            "graph_edges": 2,
+            "graph_depth_nodes": 2,
+            "noise_distribution": {
+                "family_requested": "mixture",
+                "family_sampled": "gaussian",
+            },
+        },
+    )
+    bundle_b = DatasetBundle(
+        X_train=np.full((2, 2), 7.0, dtype=np.float32),
+        y_train=np.full(2, 4, dtype=np.int64),
+        X_test=np.full((1, 2), 9.0, dtype=np.float32),
+        y_test=np.full(1, 5, dtype=np.int64),
+        feature_types=["num", "num"],
+        metadata=dict(bundle_a.metadata),
+    )
+    bundle_c = DatasetBundle(
+        X_train=np.zeros((2, 2), dtype=np.float32),
+        y_train=np.zeros(2, dtype=np.int64),
+        X_test=np.ones((1, 2), dtype=np.float32),
+        y_test=np.ones(1, dtype=np.int64),
+        feature_types=["num", "num"],
+        metadata={**bundle_a.metadata, "layout_signature": "layout-b"},
+    )
+    bundle_d = DatasetBundle(
+        X_train=np.zeros((2, 2), dtype=np.float32),
+        y_train=np.zeros(2, dtype=np.int64),
+        X_test=np.ones((1, 2), dtype=np.float32),
+        y_test=np.ones(1, dtype=np.int64),
+        feature_types=["num", "num"],
+        metadata={
+            **bundle_a.metadata,
+            "noise_distribution": {
+                "family_requested": "mixture",
+                "family_sampled": "laplace",
+            },
+        },
+    )
+
+    assert reproducibility_signature([bundle_a]) != reproducibility_signature([bundle_b])
+    assert reproducibility_workload_signature([bundle_a]) == reproducibility_workload_signature(
+        [bundle_b]
+    )
+    assert reproducibility_workload_signature([bundle_a]) != reproducibility_workload_signature(
+        [bundle_c]
+    )
+    assert reproducibility_workload_signature([bundle_a]) != reproducibility_workload_signature(
+        [bundle_d]
+    )
 
 
 def test_run_benchmark_suite_smoke_single_profile() -> None:
@@ -429,6 +500,8 @@ def test_run_benchmark_suite_filter_enabled_uses_filter_disabled_generation_conf
             "reproducibility_datasets": int(num_datasets),
             "reproducibility_signature": "stub",
             "reproducibility_match": True,
+            "reproducibility_workload_signature": "workload",
+            "reproducibility_workload_match": True,
         }
 
     def _stub_micro(
@@ -1535,6 +1608,8 @@ def test_write_suite_markdown_profile_table_includes_shift_and_noise_columns(
                 "elapsed_seconds": 1.0,
                 "latency_p95_ms": 4.0,
                 "peak_rss_mb": 10.0,
+                "reproducibility_match": True,
+                "reproducibility_workload_match": False,
                 "diagnostics_enabled": False,
                 "missingness_guardrails": {"enabled": False},
                 "lineage_guardrails": {"enabled": False},
@@ -1548,8 +1623,12 @@ def test_write_suite_markdown_profile_table_includes_shift_and_noise_columns(
     text = path.read_text(encoding="utf-8")
     assert "| Shift |" in text
     assert "| Noise |" in text
+    assert "| Repro |" in text
+    assert "| Workload |" in text
     assert "Filter Reject % (attempt)" in text
     assert "Filter Retry % (dataset)" in text
+    assert "match" in text
+    assert "mismatch" in text
     assert "| shift_smoke |" in text
 
 
@@ -1946,8 +2025,10 @@ def test_collect_reproducibility_uses_streaming_generation(
     out = suite_mod._collect_reproducibility(cfg, device="cpu", num_datasets=3)
     assert out["reproducibility_datasets"] == 3
     assert out["reproducibility_match"] is True
+    assert out["reproducibility_workload_match"] is True
     assert len(calls) == 2
     assert calls[0] == calls[1]
+    assert calls[0][1] == KeyedRng(cfg.seed).child_seed("bench", "suite", "reproducibility")
 
 
 def test_run_benchmark_suite_sanitizes_preset_key_for_diagnostics_paths(tmp_path) -> None:

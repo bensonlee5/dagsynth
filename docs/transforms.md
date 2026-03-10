@@ -1378,8 +1378,8 @@ equals requested family.</li>
 <li>If requested family is <code>mixture</code>:
 <ol type="1">
 <li>Normalize configured mixture weights.</li>
-<li>Use deterministic RNG stream
-<code>SeedManager(run_seed).torch_rng("noise_family")</code>.</li>
+<li>Use deterministic keyed RNG stream
+<code>KeyedRng(run_seed).keyed("dataset", i, "noise_runtime", "family_selection").torch_rng(...)</code>.</li>
 <li>Sample exactly one component family for the dataset.</li>
 </ol></li>
 </ul>

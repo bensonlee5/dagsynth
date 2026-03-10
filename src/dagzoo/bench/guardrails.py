@@ -15,7 +15,6 @@ from dagzoo.bench.constants import (
     LINEAGE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE,
     LINEAGE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE_SMOKE,
     LINEAGE_GUARDRAIL_RUNTIME_TRIALS,
-    LINEAGE_GUARDRAIL_SEED_OFFSET,
     LINEAGE_GUARDRAIL_SMOKE_SAMPLE_CAP,
     SECONDS_PER_MINUTE,
 )
@@ -24,7 +23,7 @@ from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_batch_iter
 from dagzoo.io.parquet_writer import write_packed_parquet_shards_stream
 from dagzoo.math_utils import to_numpy as _to_numpy
-from dagzoo.rng import offset_seed32
+from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 
 
@@ -291,7 +290,7 @@ def _collect_lineage_guardrails(
     if sample_n <= 0:
         return {"enabled": False}
 
-    sample_seed = offset_seed32(config.seed, LINEAGE_GUARDRAIL_SEED_OFFSET)
+    sample_seed = KeyedRng(int(config.seed)).child_seed("bench", "guardrails", "lineage", "sample")
     with tempfile.TemporaryDirectory(prefix="dagzoo_lineage_guardrail_stage_") as tmp_dir:
         stage_root = Path(tmp_dir)
         baseline_stage_dir = stage_root / "baseline"

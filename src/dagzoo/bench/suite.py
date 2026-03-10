@@ -21,13 +21,11 @@ from dagzoo.bench.baseline import compare_summary_to_baseline
 from dagzoo.bench.constants import (
     DIAGNOSTICS_DUPLICATE_PRESET_SUFFIX_BASE,
     KIB,
-    LATENCY_SEED_OFFSET,
     MIB,
     MICROBENCH_REPEATS,
     MISSINGNESS_RATE_FAIL_ABS_ERROR,
     MISSINGNESS_RATE_WARN_ABS_ERROR,
     PRESET_KEY_HASH_SUFFIX_LEN,
-    REPRODUCIBILITY_SEED_OFFSET,
     SMOKE_LATENCY_SAMPLES_CAP,
     SMOKE_N_FEATURES_CAP,
     SMOKE_N_NODES_CAP,
@@ -43,7 +41,7 @@ from dagzoo.bench.micro import run_microbenchmarks
 from dagzoo.bench.metrics import (
     degradation_percent,
     percent_change,
-    reproducibility_signature,
+    reproducibility_signatures,
     summarize_latencies,
 )
 from dagzoo.bench.collectors import (
@@ -93,7 +91,7 @@ from dagzoo.diagnostics import (
 from dagzoo.diagnostics_targets import (
     build_diagnostics_aggregation_config,
 )
-from dagzoo.rng import SeedManager, offset_seed32
+from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 
 
@@ -265,10 +263,10 @@ def _collect_latency(
 ) -> dict[str, float]:
     """Collect per-dataset latency samples by repeatedly calling ``generate_one``."""
 
-    manager = SeedManager(offset_seed32(config.seed, LATENCY_SEED_OFFSET))
+    latency_root = KeyedRng(int(config.seed)).keyed("bench", "suite", "latency")
     samples: list[float] = []
     for i in range(max(1, num_samples)):
-        seed = manager.child("latency", i)
+        seed = latency_root.child_seed("sample", i)
         start = time.perf_counter()
         _ = generate_one(config, seed=seed, device=device)
         samples.append(time.perf_counter() - start)
@@ -284,17 +282,19 @@ def _collect_reproducibility(
     """Generate two deterministic runs and compare content digests."""
 
     n = max(1, num_datasets)
-    run_seed = offset_seed32(config.seed, REPRODUCIBILITY_SEED_OFFSET)
-    sig_a = reproducibility_signature(
+    run_seed = KeyedRng(int(config.seed)).child_seed("bench", "suite", "reproducibility")
+    sig_a, workload_a = reproducibility_signatures(
         generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
     )
-    sig_b = reproducibility_signature(
+    sig_b, workload_b = reproducibility_signatures(
         generate_batch_iter(config, num_datasets=n, seed=run_seed, device=device)
     )
     return {
         "reproducibility_datasets": n,
         "reproducibility_signature": sig_a,
         "reproducibility_match": bool(sig_a == sig_b),
+        "reproducibility_workload_signature": workload_a,
+        "reproducibility_workload_match": bool(workload_a == workload_b),
     }
 
 
