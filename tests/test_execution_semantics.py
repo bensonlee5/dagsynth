@@ -46,6 +46,7 @@ import dagzoo.core.node_pipeline as node_pipeline_mod
 import dagzoo.functions.multi as multi_mod
 import dagzoo.functions.random_functions as random_functions_mod
 import dagzoo.sampling.random_points as random_points_mod
+from dagzoo.rng import KeyedRng
 
 
 @pytest.mark.parametrize(
@@ -133,16 +134,9 @@ def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
         "_log_uniform",
         lambda *_args: calls.append(_args[3]) or 5.0,
     )
-    monkeypatch.setattr(
-        execution_semantics_mod.KeyedRng,
-        "torch_rng",
-        lambda _self, *args, **kwargs: _make_generator(999),
-    )
     monkeypatch.setattr(execution_semantics_mod, "_generator_device", lambda *_args: "cuda")
     monkeypatch.setattr(execution_semantics_mod, "_randint_scalar", lambda *_args, **_kwargs: 2)
-    monkeypatch.setattr(
-        execution_semantics_mod, "_sample_bool_keyed", lambda *_args, **_kwargs: False
-    )
+    monkeypatch.setattr(execution_semantics_mod, "_sample_bool", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         execution_semantics_mod,
         "sample_activation_plan",
@@ -165,13 +159,11 @@ def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
     assert calls == ["cuda"]
 
 
-def test_keyed_discrete_plan_sampling_uses_generator_device(
+def test_keyed_plan_sampling_uses_explicit_device(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    generator = _make_generator(124)
     devices: list[str] = []
 
-    monkeypatch.setattr(execution_semantics_mod, "_generator_device", lambda *_args: "cuda")
     monkeypatch.setattr(
         execution_semantics_mod.KeyedRng,
         "torch_rng",
@@ -185,35 +177,71 @@ def test_keyed_discrete_plan_sampling_uses_generator_device(
         lambda *_args, **_kwargs: LinearFunctionPlan(matrix=GaussianMatrixPlan()),
     )
 
+    root = KeyedRng(124)
     execution_semantics_mod.sample_function_family(
-        generator,
+        keyed_rng=root.keyed("family"),
         mechanism_logit_tilt=0.0,
         function_family_mix=None,
+        device="cuda",
     )
-    execution_semantics_mod.sample_matrix_plan(generator)
-    execution_semantics_mod.sample_activation_plan(generator)
+    execution_semantics_mod.sample_matrix_plan(keyed_rng=root.keyed("matrix"), device="cuda")
+    execution_semantics_mod.sample_activation_plan(
+        keyed_rng=root.keyed("activation"), device="cuda"
+    )
     execution_semantics_mod.sample_converter_plan(
         ConverterSpec(key="feature", kind="cat", dim=3, cardinality=5),
-        generator,
+        keyed_rng=root.keyed("converter"),
         mechanism_logit_tilt=0.0,
         function_family_mix=None,
+        device="cuda",
     )
     execution_semantics_mod.sample_multi_source_plan(
-        generator,
+        keyed_rng=root.keyed("multi"),
         parent_count=2,
         out_dim=3,
         mechanism_logit_tilt=0.0,
         function_family_mix=None,
+        device="cuda",
     )
     execution_semantics_mod.sample_root_source_plan(
-        generator,
+        keyed_rng=root.keyed("root"),
         out_dim=3,
         mechanism_logit_tilt=0.0,
         function_family_mix=None,
+        device="cuda",
     )
 
     assert devices
     assert all(device == "cuda" for device in devices)
+
+
+def test_keyed_node_plan_sampling_matches_generator_seed() -> None:
+    converter_specs = [
+        ConverterSpec(key="value", kind="num", dim=1),
+        ConverterSpec(key="feature", kind="cat", dim=3, cardinality=5),
+    ]
+    keyed_root = KeyedRng(125)
+
+    generator_plan = execution_semantics_mod.sample_node_plan(
+        node_index=0,
+        parent_indices=(0, 1),
+        converter_specs=converter_specs,
+        generator=keyed_root.torch_rng(device="cpu"),
+        device="cpu",
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+    keyed_plan = execution_semantics_mod.sample_node_plan(
+        node_index=0,
+        parent_indices=(0, 1),
+        converter_specs=converter_specs,
+        keyed_rng=keyed_root,
+        device="cpu",
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+    )
+
+    assert keyed_plan == generator_plan
 
 
 @pytest.mark.parametrize(

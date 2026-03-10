@@ -87,18 +87,19 @@ def build_fixed_layout_execution_plan(
 ) -> FixedLayoutExecutionPlan:
     """Build one reusable per-node execution-plan payload for fixed-layout batches."""
 
-    root = KeyedRng(int(plan_seed))
+    manager = SeedManager(int(plan_seed))
     task = str(config.dataset.task)
     node_plans: list[FixedLayoutNodePlan] = []
     for node_index, parent_indices in enumerate(_parent_index_lists(layout)):
-        spec_gen = root.keyed("node_spec", node_index).torch_rng(device="cpu")
+        spec_gen = _cpu_generator(manager.child("node_spec", node_index))
+        plan_gen = _cpu_generator(manager.child("node_plan", node_index))
         converter_specs = _build_node_specs(node_index, layout, task, spec_gen)
         node_plans.append(
             sample_node_plan(
                 node_index=int(node_index),
                 parent_indices=parent_indices,
                 converter_specs=converter_specs,
-                keyed_rng=root.keyed("node_plan", node_index),
+                generator=plan_gen,
                 device="cpu",
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=config.mechanism.function_family_mix,

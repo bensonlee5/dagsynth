@@ -46,7 +46,7 @@ from dagzoo.core.layout_types import AggregationKind, ConverterKind, MechanismFa
 from dagzoo.core.shift import MECHANISM_FAMILY_ORDER, mechanism_family_probabilities
 from dagzoo.functions.activations import fixed_activation_names
 from dagzoo.math_utils import log_uniform as _log_uniform
-from dagzoo.rng import KeyedRng, keyed_rng_from_generator
+from dagzoo.rng import KeyedRng
 
 _MATRIX_KIND_CHOICES: tuple[str, ...] = (
     "gaussian",
@@ -109,19 +109,6 @@ def _randint_scalar(low: int, high: int, generator: torch.Generator) -> int:
     return int(torch.randint(low, high, (1,), generator=generator, device=generator.device).item())
 
 
-def _resolve_keyed_rng(
-    *,
-    generator: torch.Generator | None,
-    keyed_rng: KeyedRng | None,
-    namespace: tuple[str | int, ...],
-) -> KeyedRng:
-    if keyed_rng is not None:
-        return keyed_rng
-    if generator is None:
-        raise TypeError("Either generator or keyed_rng must be provided.")
-    return keyed_rng_from_generator(generator, *namespace)
-
-
 def _resolve_sampling_device(
     *,
     generator: torch.Generator | None,
@@ -134,25 +121,18 @@ def _resolve_sampling_device(
     return "cpu"
 
 
-def _rand_scalar_keyed(keyed_rng: KeyedRng, *, device: str) -> float:
-    return _rand_scalar(keyed_rng.torch_rng(device=device))
-
-
-def _randint_scalar_keyed(low: int, high: int, keyed_rng: KeyedRng, *, device: str) -> int:
-    return _randint_scalar(low, high, keyed_rng.torch_rng(device=device))
-
-
-def _sample_bool_keyed(keyed_rng: KeyedRng, *, p: float = 0.5, device: str) -> bool:
-    return bool(_rand_scalar_keyed(keyed_rng, device=device) < p)
-
-
-def _log_uniform_keyed(
-    keyed_rng: KeyedRng,
-    low: float,
-    high: float,
-    device: str,
-) -> float:
-    return float(_log_uniform(keyed_rng.torch_rng(device=device), low, high, device))
+def _resolve_sampling_generator(
+    *,
+    generator: torch.Generator | None,
+    keyed_rng: KeyedRng | None,
+    device: str | None,
+) -> tuple[torch.Generator, str]:
+    resolved_device = _resolve_sampling_device(generator=generator, device=device)
+    if generator is not None:
+        return generator, resolved_device
+    if keyed_rng is None:
+        raise TypeError("Either generator or keyed_rng must be provided.")
+    return keyed_rng.torch_rng(device=resolved_device), resolved_device
 
 
 def sample_function_family(
@@ -165,19 +145,13 @@ def sample_function_family(
 ) -> MechanismFamily:
     """Sample one mechanism family with optional logit tilt."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_function_family",),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
     if mechanism_logit_tilt <= 0.0 and function_family_mix is None:
-        idx = _randint_scalar_keyed(
-            0,
-            len(MECHANISM_FAMILY_ORDER),
-            root.keyed("uniform"),
-            device=resolved_device,
-        )
+        idx = _randint_scalar(0, len(MECHANISM_FAMILY_ORDER), generator)
         return MECHANISM_FAMILY_ORDER[int(idx)]
 
     probs_by_family = mechanism_family_probabilities(
@@ -190,7 +164,7 @@ def sample_function_family(
     ]
     if not positive_families:
         raise ValueError("No eligible mechanism families are available for sampling.")
-    draw = float(_rand_scalar_keyed(root.keyed("weighted_draw"), device=resolved_device))
+    draw = float(_rand_scalar(generator))
     cumulative = 0.0
     for family in positive_families:
         cumulative += float(probs_by_family[family])
@@ -233,13 +207,16 @@ def _sample_product_component_family(
     function_family_mix: dict[MechanismFamily, float] | None,
     device: str | None = None,
 ) -> MechanismFamily:
+    generator, _ = _resolve_sampling_generator(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+    )
     component_mix = _product_component_mix(function_family_mix)
     family = sample_function_family(
         generator,
-        keyed_rng=keyed_rng,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=component_mix,
-        device=device,
     )
     if family == "product":
         raise ValueError("Product subplans must resolve to non-product mechanism families.")
@@ -254,35 +231,23 @@ def sample_activation_plan(
 ) -> FixedLayoutActivationPlan:
     """Sample one activation plan using the shared fixed-layout schema."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_activation_plan",),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
-    if _rand_scalar_keyed(root.keyed("parametric_gate"), device=resolved_device) < (1.0 / 3.0):
+    if _rand_scalar(generator) < (1.0 / 3.0):
         choice = _PARAM_ACTIVATION_CHOICES[
-            int(
-                _randint_scalar_keyed(
-                    0,
-                    len(_PARAM_ACTIVATION_CHOICES),
-                    root.keyed("kind"),
-                    device=resolved_device,
-                )
-            )
+            int(_randint_scalar(0, len(_PARAM_ACTIVATION_CHOICES), generator))
         ]
         if choice == "poly":
             return ParametricActivationPlan(
                 kind=choice,
-                poly_power=int(
-                    _randint_scalar_keyed(2, 6, root.keyed("poly_power"), device=resolved_device)
-                ),
+                poly_power=int(_randint_scalar(2, 6, generator)),
             )
         return ParametricActivationPlan(kind=choice)
     fixed = fixed_activation_names()
-    name = fixed[
-        int(_randint_scalar_keyed(0, len(fixed), root.keyed("fixed_name"), device=resolved_device))
-    ]
+    name = fixed[int(_randint_scalar(0, len(fixed), generator))]
     return FixedActivationPlan(name=name)
 
 
@@ -294,22 +259,12 @@ def sample_matrix_plan(
 ) -> FixedLayoutMatrixPlan:
     """Sample one matrix-family plan."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_matrix_plan",),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
-    kind = _MATRIX_KIND_CHOICES[
-        int(
-            _randint_scalar_keyed(
-                0,
-                len(_MATRIX_KIND_CHOICES),
-                root.keyed("kind"),
-                device=resolved_device,
-            )
-        )
-    ]
+    kind = _MATRIX_KIND_CHOICES[int(_randint_scalar(0, len(_MATRIX_KIND_CHOICES), generator))]
     if kind == "gaussian":
         return GaussianMatrixPlan()
     if kind == "weights":
@@ -319,20 +274,11 @@ def sample_matrix_plan(
     if kind == "kernel":
         return KernelMatrixPlan()
     base_kind = _MATRIX_BASE_KIND_CHOICES[
-        int(
-            _randint_scalar_keyed(
-                0,
-                len(_MATRIX_BASE_KIND_CHOICES),
-                root.keyed("base_kind"),
-                device=resolved_device,
-            )
-        )
+        int(_randint_scalar(0, len(_MATRIX_BASE_KIND_CHOICES), generator))
     ]
     return ActivationMatrixPlan(
         base_kind=base_kind,
-        activation=sample_activation_plan(
-            keyed_rng=root.keyed("activation"), device=resolved_device
-        ),
+        activation=sample_activation_plan(generator),
     )
 
 
@@ -348,92 +294,50 @@ def sample_function_plan_for_family(
 ) -> FixedLayoutFunctionPlan:
     """Sample one typed function plan for an explicit family."""
 
-    root = _resolve_keyed_rng(
+    generator, resolved_device = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_function_plan_for_family", family),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
     if family == "linear":
-        return LinearFunctionPlan(
-            matrix=sample_matrix_plan(keyed_rng=root.keyed("matrix"), device=resolved_device)
-        )
+        return LinearFunctionPlan(matrix=sample_matrix_plan(generator))
     if family == "quadratic":
-        return QuadraticFunctionPlan(
-            matrix=sample_matrix_plan(keyed_rng=root.keyed("matrix"), device=resolved_device)
-        )
+        return QuadraticFunctionPlan(matrix=sample_matrix_plan(generator))
     if family == "nn":
-        n_layers = int(_randint_scalar_keyed(1, 4, root.keyed("n_layers"), device=resolved_device))
-        hidden_width = int(
-            _log_uniform_keyed(root.keyed("hidden_width"), 1.0, 127.0, resolved_device)
-        )
-        input_activation = (
-            sample_activation_plan(
-                keyed_rng=root.keyed("input_activation", "plan"),
-                device=resolved_device,
-            )
-            if _sample_bool_keyed(root.keyed("input_activation", "enabled"), device=resolved_device)
-            else None
-        )
-        output_activation = (
-            sample_activation_plan(
-                keyed_rng=root.keyed("output_activation", "plan"),
-                device=resolved_device,
-            )
-            if _sample_bool_keyed(
-                root.keyed("output_activation", "enabled"), device=resolved_device
-            )
-            else None
-        )
+        n_layers = int(_randint_scalar(1, 4, generator))
+        hidden_width = int(_log_uniform(generator, 1.0, 127.0, resolved_device))
+        input_activation = sample_activation_plan(generator) if _sample_bool(generator) else None
+        output_activation = sample_activation_plan(generator) if _sample_bool(generator) else None
         layer_count = max(1, n_layers)
         return NeuralNetFunctionPlan(
             n_layers=n_layers,
             hidden_width=max(1, hidden_width),
             input_activation=input_activation,
             output_activation=output_activation,
-            layer_matrices=tuple(
-                sample_matrix_plan(
-                    keyed_rng=root.keyed("layer_matrix", index), device=resolved_device
-                )
-                for index in range(layer_count)
-            ),
+            layer_matrices=tuple(sample_matrix_plan(generator) for _ in range(layer_count)),
             hidden_activations=tuple(
-                sample_activation_plan(
-                    keyed_rng=root.keyed("hidden_activation", index),
-                    device=resolved_device,
-                )
-                for index in range(max(0, layer_count - 1))
+                sample_activation_plan(generator) for _ in range(max(0, layer_count - 1))
             ),
         )
     if family == "tree":
-        n_trees = int(_log_uniform_keyed(root.keyed("n_trees"), 1.0, 32.0, resolved_device))
+        n_trees = int(_log_uniform(generator, 1.0, 32.0, resolved_device))
         n_trees = max(1, n_trees)
         return TreeFunctionPlan(
             n_trees=n_trees,
-            depths=tuple(
-                int(_randint_scalar_keyed(1, 8, root.keyed("depth", index), device=resolved_device))
-                for index in range(n_trees)
-            ),
+            depths=tuple(int(_randint_scalar(1, 8, generator)) for _ in range(n_trees)),
         )
     if family == "discretization":
-        n_centers = int(_log_uniform_keyed(root.keyed("n_centers"), 2.0, 128.0, resolved_device))
+        n_centers = int(_log_uniform(generator, 2.0, 128.0, resolved_device))
         return DiscretizationFunctionPlan(
             n_centers=max(2, n_centers),
-            linear_matrix=sample_matrix_plan(
-                keyed_rng=root.keyed("linear_matrix"),
-                device=resolved_device,
-            ),
+            linear_matrix=sample_matrix_plan(generator),
         )
     if family == "gp":
-        return GpFunctionPlan(
-            branch_kind="ha"
-            if _sample_bool_keyed(root.keyed("branch_kind"), device=resolved_device)
-            else "projected"
-        )
+        return GpFunctionPlan(branch_kind="ha" if _sample_bool(generator) else "projected")
     if family == "em":
         m_val = int(
-            _log_uniform_keyed(
-                root.keyed("m_val"),
+            _log_uniform(
+                generator,
                 2.0,
                 float(max(16, 2 * out_dim)),
                 resolved_device,
@@ -441,40 +345,33 @@ def sample_function_plan_for_family(
         )
         return EmFunctionPlan(
             m_val=max(2, m_val),
-            linear_matrix=sample_matrix_plan(
-                keyed_rng=root.keyed("linear_matrix"),
-                device=resolved_device,
-            ),
+            linear_matrix=sample_matrix_plan(generator),
         )
     if family == "product":
         lhs_family = _sample_product_component_family(
-            keyed_rng=root.keyed("lhs", "family"),
+            generator,
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
-            device=resolved_device,
         )
         rhs_family = _sample_product_component_family(
-            keyed_rng=root.keyed("rhs", "family"),
+            generator,
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
-            device=resolved_device,
         )
         return ProductFunctionPlan(
             lhs=sample_function_plan_for_family(
-                keyed_rng=root.keyed("lhs", "plan"),
+                generator,
                 family=lhs_family,
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
-                device=resolved_device,
             ),
             rhs=sample_function_plan_for_family(
-                keyed_rng=root.keyed("rhs", "plan"),
+                generator,
                 family=rhs_family,
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
-                device=resolved_device,
             ),
         )
     raise ValueError(f"Unsupported mechanism family in fixed-layout plan sampling: {family!r}")
@@ -491,25 +388,22 @@ def sample_function_plan(
 ) -> FixedLayoutFunctionPlan:
     """Sample one typed function plan using the shared family sampler."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_function_plan",),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
     family = sample_function_family(
-        keyed_rng=root.keyed("family"),
+        generator,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
-        device=resolved_device,
     )
     return sample_function_plan_for_family(
-        keyed_rng=root.keyed("family_plan"),
+        generator,
         family=family,
         out_dim=out_dim,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
-        device=resolved_device,
     )
 
 
@@ -525,24 +419,18 @@ def sample_converter_plan(
 ) -> FixedLayoutConverterPlan:
     """Sample one typed converter plan for a converter spec."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_converter_plan", spec.key),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
     if spec.kind in {"num", "target_reg"}:
         return NumericConverterPlan(
             kind=cast(Literal["num", "target_reg"], spec.kind),
-            warp_enabled=not _sample_bool_keyed(root.keyed("warp_enabled"), device=resolved_device),
+            warp_enabled=not _sample_bool(generator),
         )
 
-    idx_joint = _randint_scalar_keyed(
-        0,
-        len(_JOINT_VARIANTS),
-        root.keyed("joint_variant"),
-        device=resolved_device,
-    )
+    idx_joint = _randint_scalar(0, len(_JOINT_VARIANTS), generator)
     selected_method_raw, variant_raw = _JOINT_VARIANTS[int(idx_joint)]
     if method_override is None:
         selected_method = selected_method_raw
@@ -558,11 +446,10 @@ def sample_converter_plan(
             method=selected_method,
             variant=variant,
             function=sample_function_plan(
-                keyed_rng=root.keyed("function"),
+                generator,
                 out_dim=max(1, int(spec.dim)),
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
-                device=resolved_device,
             ),
         )
     return CategoricalConverterPlan(
@@ -604,13 +491,13 @@ def sample_latent_plan(
 ) -> FixedLayoutLatentPlan:
     """Sample the shared latent-width plan for one node."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_latent_plan",),
+        device=device,
     )
     required_dim = int(sum(max(1, int(spec.dim)) for spec in converter_specs))
-    extra_dim = max(1, int(_log_uniform_keyed(root.keyed("extra_dim"), 1.0, 32.0, device)))
+    extra_dim = max(1, int(_log_uniform(generator, 1.0, 32.0, device)))
     return FixedLayoutLatentPlan(
         required_dim=required_dim,
         extra_dim=extra_dim,
@@ -629,30 +516,21 @@ def sample_root_source_plan(
 ) -> RandomPointsNodeSource:
     """Sample one root-source plan."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_root_source_plan",),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
     base_kind = _ROOT_BASE_KIND_CHOICES[
-        int(
-            _randint_scalar_keyed(
-                0,
-                len(_ROOT_BASE_KIND_CHOICES),
-                root.keyed("base_kind"),
-                device=resolved_device,
-            )
-        )
+        int(_randint_scalar(0, len(_ROOT_BASE_KIND_CHOICES), generator))
     ]
     return RandomPointsNodeSource(
         base_kind=base_kind,
         function=sample_function_plan(
-            keyed_rng=root.keyed("function"),
+            generator,
             out_dim=out_dim,
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
-            device=resolved_device,
         ),
     )
 
@@ -672,50 +550,36 @@ def sample_multi_source_plan(
 
     if parent_count <= 0:
         raise ValueError(f"parent_count must be > 0, got {parent_count}")
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_multi_source_plan", parent_count),
+        device=device,
     )
-    resolved_device = _resolve_sampling_device(generator=generator, device=device)
-    combine_kind = (
-        "concat"
-        if _sample_bool_keyed(root.keyed("combine_kind"), device=resolved_device)
-        else "stack"
-    )
+    combine_kind = "concat" if _sample_bool(generator) else "stack"
     if combine_kind == "concat":
         return ConcatNodeSource(
             function=sample_function_plan(
-                keyed_rng=root.keyed("concat_function"),
+                generator,
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
-                device=resolved_device,
             )
         )
     resolved_aggregation_kind = aggregation_kind
     if resolved_aggregation_kind is None:
         resolved_aggregation_kind = _AGGREGATION_KIND_ORDER[
-            int(
-                _randint_scalar_keyed(
-                    0,
-                    len(_AGGREGATION_KIND_ORDER),
-                    root.keyed("aggregation_kind"),
-                    device=resolved_device,
-                )
-            )
+            int(_randint_scalar(0, len(_AGGREGATION_KIND_ORDER), generator))
         ]
     return StackedNodeSource(
         aggregation_kind=resolved_aggregation_kind,
         parent_functions=tuple(
             sample_function_plan(
-                keyed_rng=root.keyed("parent_function", index),
+                generator,
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
-                device=resolved_device,
             )
-            for index in range(parent_count)
+            for _ in range(parent_count)
         ),
     )
 
@@ -733,44 +597,41 @@ def sample_node_plan(
 ) -> FixedLayoutNodePlan:
     """Sample one typed node execution plan."""
 
-    root = _resolve_keyed_rng(
+    generator, _ = _resolve_sampling_generator(
         generator=generator,
         keyed_rng=keyed_rng,
-        namespace=("sample_node_plan", node_index),
+        device=device,
     )
     latent = sample_latent_plan(
         converter_specs,
-        keyed_rng=root.keyed("latent"),
+        generator=generator,
         device=device,
     )
     typed_specs = typed_converter_specs(converter_specs)
     converter_plans = tuple(
         sample_converter_plan(
             spec,
-            keyed_rng=root.keyed("converter", spec_index),
+            generator,
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
-            device=device,
         )
-        for spec_index, spec in enumerate(converter_specs)
+        for spec in converter_specs
     )
     source: ConcatNodeSource | StackedNodeSource | RandomPointsNodeSource
     if parent_indices:
         source = sample_multi_source_plan(
-            keyed_rng=root.keyed("source"),
+            generator,
             parent_count=len(parent_indices),
             out_dim=int(latent.total_dim),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
-            device=device,
         )
     else:
         source = sample_root_source_plan(
-            keyed_rng=root.keyed("source"),
+            generator,
             out_dim=int(latent.total_dim),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
-            device=device,
         )
     return FixedLayoutNodePlan(
         node_index=int(node_index),
