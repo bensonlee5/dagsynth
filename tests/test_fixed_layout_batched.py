@@ -16,6 +16,7 @@ from dagzoo.core.fixed_layout_batched import (
     _lp_distances_to_centers,
     _nearest_lp_center_indices,
     _sample_random_matrix_from_plan_batch,
+    build_fixed_layout_execution_plan,
     generate_fixed_layout_graph_batch,
     generate_fixed_layout_label_batch,
 )
@@ -43,6 +44,7 @@ from dagzoo.core.fixed_layout_plan_types import (
 from dagzoo.functions.activations import _fixed_activation
 from dagzoo.core.node_pipeline import ConverterSpec
 from dagzoo.core.layout_types import LayoutPlan
+from dagzoo.rng import KeyedRng
 
 
 @pytest.mark.parametrize(
@@ -185,6 +187,110 @@ def test_fixed_layout_batch_rng_keyed_is_stable_and_flat_equivalent() -> None:
         .keyed("parent", 2)
         .uniform((2, 4), low=0.0, high=1.0),
     )
+
+
+def test_fixed_layout_batch_rng_seed_matches_manual_seed_root_stream() -> None:
+    seeded = FixedLayoutBatchRng(seed=29, batch_size=2, device="cpu")
+    manual_generator = torch.Generator(device="cpu")
+    manual_generator.manual_seed(29)
+    manual = FixedLayoutBatchRng.from_generator(manual_generator, batch_size=2, device="cpu")
+
+    torch.testing.assert_close(seeded.normal((2, 3)), manual.normal((2, 3)))
+    torch.testing.assert_close(
+        seeded.uniform((2, 3), low=-1.0, high=1.0),
+        manual.uniform((2, 3), low=-1.0, high=1.0),
+    )
+    torch.testing.assert_close(seeded.randint(0, 7, (2, 3)), manual.randint(0, 7, (2, 3)))
+    assert seeded.keyed_root == KeyedRng(29)
+
+
+def test_build_fixed_layout_execution_plan_uses_keyed_node_roots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = GeneratorConfig.from_yaml("configs/default.yaml")
+    config.dataset.task = "regression"
+
+    layout = LayoutPlan(
+        n_features=1,
+        n_cat=1,
+        cat_idx=[0],
+        cardinalities=[4],
+        card_by_feature={0: 4},
+        n_classes=3,
+        feature_types=["cat"],
+        graph_nodes=2,
+        graph_edges=1,
+        graph_depth_nodes=2,
+        graph_edge_density=0.5,
+        adjacency=torch.tensor([[False, True], [False, False]], dtype=torch.bool),
+        feature_node_assignment=[0],
+        target_node_assignment=1,
+    )
+    observed_spec_roots: list[tuple[int, int]] = []
+    observed_plan_roots: list[tuple[int, int]] = []
+
+    def fake_build_node_specs(
+        node_index: int,
+        _layout: LayoutPlan,
+        task: str,
+        keyed_rng: KeyedRng,
+    ) -> list[ConverterSpec]:
+        assert task == "regression"
+        observed_spec_roots.append((node_index, keyed_rng.child_seed("probe")))
+        return [ConverterSpec(key=f"feature_{node_index}", kind="num", dim=1)]
+
+    def fake_sample_node_plan(
+        *,
+        node_index: int,
+        parent_indices: tuple[int, ...] | list[int],
+        converter_specs: list[ConverterSpec],
+        generator: torch.Generator | None = None,
+        keyed_rng: KeyedRng | None = None,
+        device: str,
+        mechanism_logit_tilt: float,
+        function_family_mix: dict[str, float] | None,
+    ) -> FixedLayoutNodePlan:
+        del device, mechanism_logit_tilt, function_family_mix
+        assert generator is None
+        assert keyed_rng is not None
+        observed_plan_roots.append((node_index, keyed_rng.child_seed("probe")))
+        typed_specs = typed_converter_specs(converter_specs)
+        converter_plans = (NumericConverterPlan(kind="num", warp_enabled=False),)
+        return FixedLayoutNodePlan(
+            node_index=node_index,
+            parent_indices=tuple(int(parent_index) for parent_index in parent_indices),
+            converter_specs=typed_specs,
+            converter_plans=converter_plans,
+            converter_groups=fixed_layout_converter_groups(typed_specs, converter_plans),
+            latent=FixedLayoutLatentPlan(required_dim=1, extra_dim=1, total_dim=2),
+            source=RandomPointsNodeSource(
+                base_kind="normal",
+                function=LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            ),
+        )
+
+    monkeypatch.setattr("dagzoo.core.fixed_layout_batched._build_node_specs", fake_build_node_specs)
+    monkeypatch.setattr(
+        "dagzoo.core.fixed_layout_batched.sample_node_plan",
+        fake_sample_node_plan,
+    )
+
+    execution_plan = build_fixed_layout_execution_plan(
+        config,
+        layout,
+        plan_seed=31,
+        mechanism_logit_tilt=0.0,
+    )
+
+    assert len(execution_plan.node_plans) == 2
+    assert observed_spec_roots == [
+        (0, KeyedRng(31).child_seed("node_spec", 0, "probe")),
+        (1, KeyedRng(31).child_seed("node_spec", 1, "probe")),
+    ]
+    assert observed_plan_roots == [
+        (0, KeyedRng(31).child_seed("node_plan", 0, "probe")),
+        (1, KeyedRng(31).child_seed("node_plan", 1, "probe")),
+    ]
 
 
 def test_apply_node_plan_batch_grouped_numeric_converters_match_split_execution() -> None:

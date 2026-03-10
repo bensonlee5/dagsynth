@@ -12,6 +12,7 @@ from dagzoo.core.layout_types import FeatureType, LayoutPlan
 from dagzoo.core.node_pipeline import ConverterSpec
 from dagzoo.graph import dag_edge_density, dag_longest_path_nodes, sample_dag
 from dagzoo.core.shift import resolve_shift_runtime_params
+from dagzoo.rng import KeyedRng
 from dagzoo.sampling import CorrelatedSampler
 
 
@@ -167,7 +168,7 @@ def _build_node_specs(
     node_index: int,
     layout: LayoutPlan,
     task: str,
-    generator: torch.Generator,
+    keyed_rng: KeyedRng,
 ) -> list[ConverterSpec]:
     """Build converter specs for one node in the graph execution order."""
 
@@ -181,9 +182,13 @@ def _build_node_specs(
     ]
     for feature_index in feature_indices:
         if feature_types[feature_index] == "cat":
+            feature_generator = keyed_rng.keyed("feature", feature_index).torch_rng(device="cpu")
             cardinality = int(card_by_feature[feature_index])
-            if cardinality > 2 and torch.empty(1).uniform_(0, 1, generator=generator).item() >= 0.5:
-                output_dim = int(randint_scalar(1, cardinality, generator))
+            if (
+                cardinality > 2
+                and torch.empty(1).uniform_(0, 1, generator=feature_generator).item() >= 0.5
+            ):
+                output_dim = int(randint_scalar(1, cardinality, feature_generator))
             else:
                 output_dim = cardinality
             specs.append(

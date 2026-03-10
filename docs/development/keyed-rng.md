@@ -170,19 +170,36 @@ branches for `BL-134` and later must perform the repo-policy version bump and
 
 - Migrate `execution_semantics`, scalar helpers, node execution, and
   fixed-layout batch execution to semantic subkeys.
+- Make keyed RNG the only internal semantic-sampling contract for this layer;
+  public generator-taking helpers remain boundary adapters that convert once to
+  a keyed root.
 - Remove reliance on shared ambient draw order inside grouped execution.
+- Treat sibling plan parts as the keyed boundary: product `lhs`/`rhs`, stacked
+  parent functions, node converters, latent width, and node source plans must
+  sample from separate semantic child namespaces.
+- Route fixed-layout plan construction and node-spec sampling through keyed
+  node roots so the production fixed-layout runtime exercises the same
+  determinism contract as the standalone helpers.
+- Keep leaf-family internals allowed to use one local generator per semantic
+  subplan so the ticket can close the reproducibility holes without giving back
+  the BL-135 throughput recovery.
 
 ### BL-136: Runtime and postprocess migration
 
-- Migrate orchestration, noise selection, split permutation, missingness, and
-  postprocess flows onto explicit keyed namespaces.
+- Migrate remaining orchestration, layout/runtime, noise selection, split
+  permutation, missingness, and postprocess flows onto explicit keyed
+  namespaces.
 - Eliminate offset-only stage derivations from core runtime paths.
+- Do not defer remaining typed-plan sibling-independence work into BL-136; that
+  belongs in BL-135.
 
 ### BL-137: Hardening and docs
 
 - Update user-facing reproducibility docs once the runtime contract is real.
 - Add end-to-end regression coverage for regrouping, retries, replay, and
   benchmark reproducibility.
+- Add benchmark and perf hardening coverage for the selective keyed-plan
+  strategy, including representative smoke throughput checks.
 
 ## Out Of Scope For BL-133
 

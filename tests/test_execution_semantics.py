@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import pytest
 import torch
 
@@ -16,6 +18,7 @@ from dagzoo.core.fixed_layout_plan_types import (
     ActivationMatrixPlan,
     CategoricalConverterPlan,
     FixedActivationPlan,
+    FixedLayoutConverterPlan,
     FixedLayoutLatentPlan,
     FixedLayoutNodePlan,
     GaussianMatrixPlan,
@@ -32,6 +35,7 @@ from dagzoo.core.fixed_layout_plan_types import (
     EmFunctionPlan,
     fixed_layout_converter_groups,
 )
+from dagzoo.core.layout_types import MechanismFamily
 from dagzoo.core.node_pipeline import ConverterSpec, apply_node_pipeline
 from dagzoo.diagnostics.effective_diversity import AblationArm, _runtime_override_context
 from dagzoo.functions.multi import apply_multi_function
@@ -135,6 +139,11 @@ def test_sample_function_plan_for_family_uses_generator_device_for_log_uniform(
         lambda *_args: calls.append(_args[3]) or 5.0,
     )
     monkeypatch.setattr(execution_semantics_mod, "_generator_device", lambda *_args: "cuda")
+    monkeypatch.setattr(
+        execution_semantics_mod.KeyedRng,
+        "torch_rng",
+        lambda _self, *args, **kwargs: _make_generator(1000),
+    )
     monkeypatch.setattr(execution_semantics_mod, "_randint_scalar", lambda *_args, **_kwargs: 2)
     monkeypatch.setattr(execution_semantics_mod, "_sample_bool", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
@@ -215,33 +224,333 @@ def test_keyed_plan_sampling_uses_explicit_device(
     assert all(device == "cuda" for device in devices)
 
 
-def test_keyed_node_plan_sampling_matches_generator_seed() -> None:
+def test_keyed_product_rhs_sampling_is_independent_of_lhs_draw_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def rhs_probe(lhs_extra_draws: int) -> tuple[int, ...]:
+        matrix_call_index = 0
+        rhs_tokens: list[tuple[int, ...]] = []
+
+        def fake_sample_matrix_plan(
+            generator: torch.Generator | None = None,
+            *,
+            keyed_rng: KeyedRng | None = None,
+            device: str | None = None,
+        ) -> GaussianMatrixPlan:
+            nonlocal matrix_call_index
+            rng, _ = execution_semantics_mod._resolve_sampling_generator(
+                generator=generator,
+                keyed_rng=keyed_rng,
+                device=device,
+            )
+            if matrix_call_index == 0:
+                _ = torch.rand(lhs_extra_draws, generator=rng, device=rng.device)
+            else:
+                rhs_tokens.append(
+                    tuple(
+                        int(value)
+                        for value in torch.randint(
+                            0,
+                            2**31,
+                            (4,),
+                            generator=rng,
+                            device=rng.device,
+                        ).tolist()
+                    )
+                )
+            matrix_call_index += 1
+            return GaussianMatrixPlan()
+
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "_sample_product_component_family",
+            lambda *args, **kwargs: "linear",
+        )
+        monkeypatch.setattr(execution_semantics_mod, "sample_matrix_plan", fake_sample_matrix_plan)
+
+        plan = execution_semantics_mod.sample_function_plan_for_family(
+            keyed_rng=KeyedRng(125),
+            family="product",
+            out_dim=4,
+            mechanism_logit_tilt=0.0,
+            function_family_mix=None,
+            device="cpu",
+        )
+
+        assert isinstance(plan, ProductFunctionPlan)
+        assert isinstance(plan.lhs, LinearFunctionPlan)
+        assert isinstance(plan.rhs, LinearFunctionPlan)
+        return rhs_tokens[0]
+
+    assert rhs_probe(32) == rhs_probe(1)
+
+
+def test_keyed_sample_function_plan_preserves_product_subroots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def rhs_probe(lhs_extra_draws: int) -> tuple[int, ...]:
+        matrix_call_index = 0
+        rhs_tokens: list[tuple[int, ...]] = []
+
+        def fake_sample_matrix_plan(
+            generator: torch.Generator | None = None,
+            *,
+            keyed_rng: KeyedRng | None = None,
+            device: str | None = None,
+        ) -> GaussianMatrixPlan:
+            nonlocal matrix_call_index
+            rng, _ = execution_semantics_mod._resolve_sampling_generator(
+                generator=generator,
+                keyed_rng=keyed_rng,
+                device=device,
+            )
+            if matrix_call_index == 0:
+                _ = torch.rand(lhs_extra_draws, generator=rng, device=rng.device)
+            else:
+                rhs_tokens.append(
+                    tuple(
+                        int(value)
+                        for value in torch.randint(
+                            0,
+                            2**31,
+                            (4,),
+                            generator=rng,
+                            device=rng.device,
+                        ).tolist()
+                    )
+                )
+            matrix_call_index += 1
+            return GaussianMatrixPlan()
+
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "sample_function_family",
+            lambda *args, **kwargs: "product",
+        )
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "_sample_product_component_family",
+            lambda *args, **kwargs: "linear",
+        )
+        monkeypatch.setattr(execution_semantics_mod, "sample_matrix_plan", fake_sample_matrix_plan)
+
+        plan = execution_semantics_mod.sample_function_plan(
+            keyed_rng=KeyedRng(128),
+            out_dim=4,
+            mechanism_logit_tilt=0.0,
+            function_family_mix=None,
+            device="cpu",
+        )
+
+        assert isinstance(plan, ProductFunctionPlan)
+        assert isinstance(plan.lhs, LinearFunctionPlan)
+        assert isinstance(plan.rhs, LinearFunctionPlan)
+        return rhs_tokens[0]
+
+    assert rhs_probe(32) == rhs_probe(1)
+
+
+def test_keyed_multi_parent_sampling_is_independent_across_parent_plans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_sample_bool = execution_semantics_mod._sample_bool
+
+    def parent_probe(first_parent_extra_draws: int) -> tuple[int, ...]:
+        parent_call_index = 0
+        second_parent_tokens: list[tuple[int, ...]] = []
+        combine_call = 0
+
+        def force_stack(generator: torch.Generator, *, p: float = 0.5) -> bool:
+            nonlocal combine_call
+            if combine_call == 0:
+                combine_call += 1
+                return False
+            return original_sample_bool(generator, p=p)
+
+        def fake_sample_function_plan(
+            generator: torch.Generator | None = None,
+            *,
+            keyed_rng: KeyedRng | None = None,
+            out_dim: int,
+            mechanism_logit_tilt: float,
+            function_family_mix: dict[MechanismFamily, float] | None,
+            device: str | None = None,
+        ) -> LinearFunctionPlan:
+            nonlocal parent_call_index
+            rng, _ = execution_semantics_mod._resolve_sampling_generator(
+                generator=generator,
+                keyed_rng=keyed_rng,
+                device=device,
+            )
+            if parent_call_index == 0:
+                _ = torch.rand(first_parent_extra_draws, generator=rng, device=rng.device)
+            else:
+                second_parent_tokens.append(
+                    tuple(
+                        int(value)
+                        for value in torch.randint(
+                            0,
+                            2**31,
+                            (4,),
+                            generator=rng,
+                            device=rng.device,
+                        ).tolist()
+                    )
+                )
+            parent_call_index += 1
+            return LinearFunctionPlan(matrix=GaussianMatrixPlan())
+
+        monkeypatch.setattr(execution_semantics_mod, "_sample_bool", force_stack)
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "sample_function_plan",
+            fake_sample_function_plan,
+        )
+
+        source = execution_semantics_mod.sample_multi_source_plan(
+            keyed_rng=KeyedRng(126),
+            parent_count=2,
+            out_dim=4,
+            aggregation_kind="sum",
+            mechanism_logit_tilt=0.0,
+            function_family_mix=None,
+            device="cpu",
+        )
+
+        assert isinstance(source, StackedNodeSource)
+        return second_parent_tokens[0]
+
+    assert parent_probe(32) == parent_probe(1)
+
+
+def test_keyed_node_plan_sampling_keeps_later_converters_and_source_stable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     converter_specs = [
-        ConverterSpec(key="value", kind="num", dim=1),
-        ConverterSpec(key="feature", kind="cat", dim=3, cardinality=5),
+        ConverterSpec(key="feature_0", kind="cat", dim=3, cardinality=5),
+        ConverterSpec(key="feature_1", kind="num", dim=1),
     ]
-    keyed_root = KeyedRng(125)
 
-    generator_plan = execution_semantics_mod.sample_node_plan(
-        node_index=0,
-        parent_indices=(0, 1),
-        converter_specs=converter_specs,
-        generator=keyed_root.torch_rng(device="cpu"),
-        device="cpu",
-        mechanism_logit_tilt=0.0,
-        function_family_mix=None,
-    )
-    keyed_plan = execution_semantics_mod.sample_node_plan(
-        node_index=0,
-        parent_indices=(0, 1),
-        converter_specs=converter_specs,
-        keyed_rng=keyed_root,
-        device="cpu",
-        mechanism_logit_tilt=0.0,
-        function_family_mix=None,
-    )
+    def sample_with_first_converter_draws(
+        first_converter_extra_draws: int,
+    ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        converter_call_index = 0
+        second_converter_tokens: list[tuple[int, ...]] = []
+        source_tokens: list[tuple[int, ...]] = []
 
-    assert keyed_plan == generator_plan
+        def fake_sample_latent_plan(
+            converter_specs: Sequence[execution_semantics_mod.ConverterSpecLike],
+            *,
+            generator: torch.Generator | None = None,
+            keyed_rng: KeyedRng | None = None,
+            device: str,
+        ) -> FixedLayoutLatentPlan:
+            del converter_specs, generator, keyed_rng, device
+            return FixedLayoutLatentPlan(required_dim=4, extra_dim=2, total_dim=6)
+
+        def fake_sample_converter_plan(
+            spec: ConverterSpec,
+            generator: torch.Generator | None = None,
+            *,
+            keyed_rng: KeyedRng | None = None,
+            mechanism_logit_tilt: float,
+            function_family_mix: dict[MechanismFamily, float] | None,
+            method_override: str | None = None,
+            device: str | None = None,
+        ) -> FixedLayoutConverterPlan:
+            del spec, mechanism_logit_tilt, function_family_mix, method_override
+            nonlocal converter_call_index
+            rng, _ = execution_semantics_mod._resolve_sampling_generator(
+                generator=generator,
+                keyed_rng=keyed_rng,
+                device=device,
+            )
+            if converter_call_index == 0:
+                _ = torch.rand(first_converter_extra_draws, generator=rng, device=rng.device)
+                plan: FixedLayoutConverterPlan = CategoricalConverterPlan(
+                    kind="cat",
+                    method="neighbor",
+                    variant="center",
+                )
+            else:
+                second_converter_tokens.append(
+                    tuple(
+                        int(value)
+                        for value in torch.randint(
+                            0,
+                            2**31,
+                            (4,),
+                            generator=rng,
+                            device=rng.device,
+                        ).tolist()
+                    )
+                )
+                plan = NumericConverterPlan(kind="num", warp_enabled=False)
+            converter_call_index += 1
+            return plan
+
+        def fake_sample_root_source_plan(
+            generator: torch.Generator | None = None,
+            *,
+            keyed_rng: KeyedRng | None = None,
+            out_dim: int,
+            mechanism_logit_tilt: float,
+            function_family_mix: dict[MechanismFamily, float] | None,
+            device: str | None = None,
+        ) -> RandomPointsNodeSource:
+            del out_dim, mechanism_logit_tilt, function_family_mix
+            rng, _ = execution_semantics_mod._resolve_sampling_generator(
+                generator=generator,
+                keyed_rng=keyed_rng,
+                device=device,
+            )
+            source_tokens.append(
+                tuple(
+                    int(value)
+                    for value in torch.randint(
+                        0,
+                        2**31,
+                        (4,),
+                        generator=rng,
+                        device=rng.device,
+                    ).tolist()
+                )
+            )
+            return RandomPointsNodeSource(
+                base_kind="normal",
+                function=LinearFunctionPlan(matrix=GaussianMatrixPlan()),
+            )
+
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "sample_latent_plan",
+            fake_sample_latent_plan,
+        )
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "sample_converter_plan",
+            fake_sample_converter_plan,
+        )
+        monkeypatch.setattr(
+            execution_semantics_mod,
+            "sample_root_source_plan",
+            fake_sample_root_source_plan,
+        )
+
+        node_plan = execution_semantics_mod.sample_node_plan(
+            node_index=0,
+            parent_indices=(),
+            converter_specs=converter_specs,
+            keyed_rng=KeyedRng(127),
+            device="cpu",
+            mechanism_logit_tilt=0.0,
+            function_family_mix=None,
+        )
+
+        assert node_plan.converter_groups
+        return second_converter_tokens[0], source_tokens[0]
+
+    assert sample_with_first_converter_draws(32) == sample_with_first_converter_draws(1)
 
 
 @pytest.mark.parametrize(

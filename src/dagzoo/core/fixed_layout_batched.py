@@ -62,12 +62,6 @@ _PAIRWISE_CENTER_BLOCK_SIZE = 32
 _FIXED_LAYOUT_EXECUTION_CONTRACT = DEFAULT_FIXED_LAYOUT_EXECUTION_CONTRACT
 
 
-def _cpu_generator(seed: int) -> torch.Generator:
-    generator = torch.Generator(device="cpu")
-    generator.manual_seed(int(seed))
-    return generator
-
-
 def _parent_index_lists(layout: LayoutPlan) -> list[list[int]]:
     adjacency = layout.adjacency
     if not isinstance(adjacency, torch.Tensor):
@@ -87,19 +81,19 @@ def build_fixed_layout_execution_plan(
 ) -> FixedLayoutExecutionPlan:
     """Build one reusable per-node execution-plan payload for fixed-layout batches."""
 
-    manager = SeedManager(int(plan_seed))
+    plan_root = KeyedRng(int(plan_seed))
     task = str(config.dataset.task)
     node_plans: list[FixedLayoutNodePlan] = []
     for node_index, parent_indices in enumerate(_parent_index_lists(layout)):
-        spec_gen = _cpu_generator(manager.child("node_spec", node_index))
-        plan_gen = _cpu_generator(manager.child("node_plan", node_index))
-        converter_specs = _build_node_specs(node_index, layout, task, spec_gen)
+        spec_root = plan_root.keyed("node_spec", node_index)
+        node_root = plan_root.keyed("node_plan", node_index)
+        converter_specs = _build_node_specs(node_index, layout, task, spec_root)
         node_plans.append(
             sample_node_plan(
                 node_index=int(node_index),
                 parent_indices=parent_indices,
                 converter_specs=converter_specs,
-                generator=plan_gen,
+                keyed_rng=node_root,
                 device="cpu",
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=config.mechanism.function_family_mix,
@@ -250,14 +244,14 @@ class FixedLayoutBatchRng:
         if self.keyed_root is None and self.seed is not None:
             self.keyed_root = KeyedRng(int(self.seed))
         if self.generator is None:
-            if self.keyed_root is not None:
-                self.generator = self.keyed_root.torch_rng(device=self.device)
-            else:
-                if self.seed is None:
-                    raise ValueError("FixedLayoutBatchRng requires either seed or generator.")
+            if self.seed is not None:
                 generator = torch.Generator(device=self.device)
                 generator.manual_seed(int(self.seed))
                 self.generator = generator
+            elif self.keyed_root is not None:
+                self.generator = self.keyed_root.torch_rng(device=self.device)
+            else:
+                raise ValueError("FixedLayoutBatchRng requires either seed or generator.")
 
     @classmethod
     def from_generator(
