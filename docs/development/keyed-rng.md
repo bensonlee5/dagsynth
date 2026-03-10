@@ -11,9 +11,9 @@ Related docs:
 
 ## Summary
 
-`dagzoo` already has a strong deterministic seed-derivation baseline:
-`SeedManager`, `derive_seed()`, and a small number of offset helpers isolate
-major stages like dataset selection, fixed-layout planning, and missingness.
+`dagzoo` now uses `KeyedRng` as its single semantic RNG surface, with
+`derive_seed()` retained as the low-level BLAKE2s primitive behind keyed child
+seed derivation.
 
 The remaining problem is semantic coupling inside those stages. Many helpers
 still share one ambient `torch.Generator`, one batch generator, or one
@@ -43,7 +43,7 @@ This contract is stronger than the current “same draw order gives the same
 result” baseline and is the compatibility target for `BL-134` through
 `BL-137`.
 
-## Current RNG Inventory
+## Epic-Start RNG Inventory
 
 | Semantic stage                            | Current sites                                                                                                                                              | Current primitive                                                                                      | Current coupling risk                                                                          | Migration target                                                                                                                                           |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -57,10 +57,10 @@ result” baseline and is the compatibility target for `BL-134` through
 | Benchmarks and reproducibility checks     | `src/dagzoo/bench/suite.py`, `src/dagzoo/bench/micro.py`                                                                                                   | `SeedManager`, `offset_seed32`, local manual seeds for microbenches                                    | Bench-specific offsets are deterministic but not semantically aligned with runtime namespaces. | Keep bench-only reproducibility independent from public generation, but move benchmark substreams onto named keys where they exercise generation behavior. |
 | Diagnostics / audit utilities             | `src/dagzoo/diagnostics/effective_diversity.py`                                                                                                            | Local CPU generator factories and explicit `manual_seed()`                                             | Not part of the public generation contract, but still a source of duplicated RNG policy.       | Document as lower-priority follow-up unless it blocks the keyed runtime substrate.                                                                         |
 
-## Proposed RNG Surface
+## RNG Surface
 
-`BL-134` should add a new preferred RNG substrate in `src/dagzoo/rng.py` while
-keeping the hash primitive unchanged:
+The keyed RNG substrate in `src/dagzoo/rng.py` keeps the hash primitive
+unchanged:
 
 ```python
 @dataclass(slots=True, frozen=True)
@@ -81,10 +81,6 @@ Rules for the new surface:
 
 - `derive_seed()` remains the hash-backed primitive.
 - `KeyedRng.keyed(...)` is the preferred way to create semantic substreams.
-- `SeedManager` remains as a compatibility wrapper and should delegate to
-  `KeyedRng`, not remain a separate policy surface.
-- `offset_seed32()` remains available only for existing compatibility seams and
-  must not be used for new keyed namespaces.
 - No new code may call `manual_seed()` on ad hoc local generators unless the
   seed came from an explicit keyed substream documented in the design.
 
@@ -153,8 +149,8 @@ generator-order implementation:
   sampling is not a compatibility target.
 - Raw fixed-layout batched generation still uses chunk-scoped kernels, so
   chunk-size invariance is not part of the BL-136 compatibility contract.
-- Benchmark microbench helper seeds may move to named namespaces without
-  preserving their current offset formulas.
+- Benchmark helper seeds may move to named keyed namespaces without
+  preserving prior offset formulas.
 
 Because the implementation tickets will change `src/dagzoo` behavior, merge
 branches for `BL-134` and later must perform the repo-policy version bump and
@@ -202,6 +198,10 @@ branches for `BL-134` and later must perform the repo-policy version bump and
 
 ### BL-137: Hardening and docs
 
+- Remove the remaining legacy RNG surfaces (`SeedManager` and
+  `offset_seed32`) so the repo has one semantic RNG model internally.
+- Move benchmark throughput, latency, guardrail, microbench, and
+  reproducibility helpers onto named keyed namespaces.
 - Treat BL-136's metadata contract as settled:
   - `dataset_seed` and `layout_plan_seed` remain stable child-seed identifiers
   - `keyed_replay` is the exact keyed subtree replay source of truth
@@ -209,16 +209,9 @@ branches for `BL-134` and later must perform the repo-policy version bump and
   - `seed` + `dataset_index` + `run_num_datasets` for canonical bundle replay
   - `dataset_seed` for deferred filter / diagnostics compatibility
   - `keyed_replay` for exact keyed subtree replay
-- Add end-to-end regression coverage for persisted-artifact replay, regrouping,
-  retries, and benchmark reproducibility under the `keyed_replay` contract.
-- Audit downstream consumers that currently assume `dataset_seed` or
-  `layout_plan_seed` alone are exact keyed runtime roots and update them to use
-  the correct replay source.
-- Add benchmark and perf hardening coverage so smoke regressions can
-  distinguish engine slowdown from workload-shape drift caused by changed
-  sampled layouts/plans.
-- Keep chunk-size-invariant fixed-layout raw generation as an optional follow-up
-  investigation rather than the main BL-137 deliverable.
+- Add benchmark diagnostics that separate exact reproducibility from
+  workload-shape stability so throughput regressions can be interpreted
+  without guessing whether the sampled layouts/plans changed.
 
 ## Out Of Scope For BL-133
 

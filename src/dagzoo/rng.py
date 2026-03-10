@@ -9,7 +9,6 @@ import torch
 
 SEED32_MIN = 0
 SEED32_MAX = (2**32) - 1
-_SEED32_MODULUS = 2**32
 _AMBIENT_NONCE_MARKER = "__ambient_nonce__"
 _AMBIENT_NONCE_WORDS = 4
 
@@ -26,12 +25,6 @@ def validate_seed32(seed: int, *, field_name: str = "seed") -> int:
             f"{field_name} must be an integer in [{SEED32_MIN}, {SEED32_MAX}], got {seed!r}."
         )
     return int(seed)
-
-
-def offset_seed32(seed: int, offset: int) -> int:
-    """Derive a wrapped child seed via 32-bit modular arithmetic."""
-
-    return (int(seed) + int(offset)) % _SEED32_MODULUS
 
 
 def derive_seed(base_seed: int, *components: str | int) -> int:
@@ -107,20 +100,3 @@ def keyed_rng_from_generator(generator: torch.Generator, *components: str | int)
         validate_seed32(words[0]),
         _ambient_nonce=words[1:],
     ).keyed(*components)
-
-
-@dataclass(slots=True)
-class SeedManager:
-    """Creates reproducible child seeds from a run-level seed."""
-
-    seed: int
-
-    def child(self, *components: str | int) -> int:
-        """Return a deterministic child seed for the provided component path."""
-
-        return KeyedRng(self.seed).child_seed(*components)
-
-    def torch_rng(self, *components: str | int, device: str = "cpu") -> torch.Generator:
-        """Return a torch Generator seeded from a deterministic child seed."""
-
-        return KeyedRng(self.seed).torch_rng(*components, device=device)

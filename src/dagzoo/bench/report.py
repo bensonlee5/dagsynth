@@ -40,12 +40,20 @@ def _format_percent(value: Any, digits: int = 2) -> str:
     return f"{float(value) * 100.0:.{digits}f}"
 
 
+def _format_match(value: Any) -> str:
+    """Render benchmark reproducibility booleans for markdown tables."""
+
+    if isinstance(value, bool):
+        return "match" if value else "mismatch"
+    return "-"
+
+
 def _build_preset_table(preset_results: list[dict[str, Any]]) -> list[str]:
     """Create a markdown table summarizing per-preset performance metrics."""
 
     lines = [
-        "| Preset | Rows | Mode | Device | Backend | Datasets/min | Gen/min | Write/min | Filter/min | Filter Reject % (attempt) | Filter Retry % (dataset) | Elapsed (s) | Latency p95 (ms) | Peak RSS (MB) | Diagnostics | Missingness | Lineage | Shift | Noise |",
-        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|---|",
+        "| Preset | Rows | Mode | Device | Backend | Datasets/min | Gen/min | Write/min | Filter/min | Repro | Workload | Filter Reject % (attempt) | Filter Retry % (dataset) | Elapsed (s) | Latency p95 (ms) | Peak RSS (MB) | Diagnostics | Missingness | Lineage | Shift | Noise |",
+        "|---|---:|---|---|---:|---:|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---|---|---|---|---|",
     ]
     for result in preset_results:
         diagnostics_state = "on" if bool(result.get("diagnostics_enabled")) else "off"
@@ -76,6 +84,8 @@ def _build_preset_table(preset_results: list[dict[str, Any]]) -> list[str]:
             f"{_format_float(result.get('generation_datasets_per_minute'), 2)} | "
             f"{_format_float(result.get('write_datasets_per_minute'), 2)} | "
             f"{_format_float(result.get('filter_datasets_per_minute'), 2)} | "
+            f"{_format_match(result.get('reproducibility_match'))} | "
+            f"{_format_match(result.get('reproducibility_workload_match'))} | "
             f"{_format_percent(result.get('filter_rejection_rate_attempt_level'), 2)} | "
             f"{_format_percent(result.get('filter_retry_dataset_rate'), 2)} | "
             f"{_format_float(result.get('elapsed_seconds'), 3)} | "

@@ -440,6 +440,7 @@ metadata JSON contract, and DAG lineage schema.
 - Repo touchpoints: `src/dagzoo/rng.py`, `src/dagzoo/core/`, `src/dagzoo/postprocess/`, `src/dagzoo/sampling/`, `src/dagzoo/bench/`, `docs/`
 - Exit criteria:
   - Core generation/runtime randomness is keyed by semantic namespace rather than draw order or offset-only coupling.
+  - Legacy RNG helpers are removed so `KeyedRng` is the only semantic RNG surface in repo code.
   - Retrying one stage does not perturb sibling-stage randomness.
   - Scalar and batched typed-plan execution preserve semantic equivalence under the keyed contract.
   - Reproducibility docs describe the new contract and its intended non-goals,

@@ -9,9 +9,7 @@ from typing import Any
 
 from dagzoo.bench.constants import (
     SECONDS_PER_MINUTE,
-    THROUGHPUT_MEASURE_SEED_OFFSET,
     THROUGHPUT_SLO_DATASETS_PER_MINUTE,
-    THROUGHPUT_WARMUP_SEED_OFFSET,
 )
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_batch_iter
@@ -20,7 +18,7 @@ from dagzoo.hardware_policy import (
     resolve_cuda_fixed_layout_target_cells_limits,
     round_fixed_layout_target_cells,
 )
-from dagzoo.rng import offset_seed32
+from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 
 _CPU_FIXED_LAYOUT_TARGET_CELLS_SWEEP: tuple[int, ...] = (
@@ -155,11 +153,12 @@ def run_throughput_benchmark(
 ) -> dict[str, Any]:
     """Measure end-to-end generation throughput for a benchmark preset."""
 
+    throughput_root = KeyedRng(int(config.seed)).keyed("bench", "throughput")
     if warmup_datasets > 0:
         _consume_generation(
             config,
             num_datasets=warmup_datasets,
-            seed=offset_seed32(config.seed, THROUGHPUT_WARMUP_SEED_OFFSET),
+            seed=throughput_root.child_seed("warmup"),
             device=device,
         )
 
@@ -167,7 +166,7 @@ def run_throughput_benchmark(
     _consume_generation(
         config,
         num_datasets=num_datasets,
-        seed=offset_seed32(config.seed, THROUGHPUT_MEASURE_SEED_OFFSET),
+        seed=throughput_root.child_seed("measure"),
         device=device,
         on_bundle=on_bundle,
     )

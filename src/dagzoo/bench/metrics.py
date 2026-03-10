@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 
@@ -82,32 +83,70 @@ def summarize_latencies(latencies_seconds: Iterable[float]) -> dict[str, float]:
     }
 
 
-def reproducibility_signature(bundles: Iterable[DatasetBundle]) -> str:
-    """Build a deterministic digest for a sequence or stream of dataset bundles."""
+def _update_digest(digest: Any, *values: object) -> None:
+    """Append normalized values to one digest."""
 
-    h = hashlib.blake2s(digest_size=16)
+    for value in values:
+        digest.update(str(value).encode("utf-8"))
+        digest.update(b"|")
+
+
+def reproducibility_signatures(bundles: Iterable[DatasetBundle]) -> tuple[str, str]:
+    """Build content and workload digests for a sequence or stream of bundles."""
+
+    content = hashlib.blake2s(digest_size=16)
+    workload = hashlib.blake2s(digest_size=16)
     for bundle in bundles:
         for arr in (bundle.X_train, bundle.y_train, bundle.X_test, bundle.y_test):
             np_arr = _to_numpy(arr)
-            h.update(str(np_arr.shape).encode("utf-8"))
-            h.update(str(np_arr.dtype).encode("utf-8"))
-            h.update(np.ascontiguousarray(np_arr).tobytes())
+            _update_digest(content, np_arr.shape, np_arr.dtype)
+            content.update(np.ascontiguousarray(np_arr).tobytes())
+            _update_digest(workload, np_arr.shape, np_arr.dtype)
 
         for ft in bundle.feature_types:
-            h.update(ft.encode("utf-8"))
-            h.update(b"|")
+            _update_digest(content, ft)
+            _update_digest(workload, ft)
 
         seed = bundle.metadata.get("seed")
         dataset_seed = bundle.metadata.get("dataset_seed")
         dataset_index = bundle.metadata.get("dataset_index")
         attempt = bundle.metadata.get("attempt_used")
-        h.update(str(seed).encode("utf-8"))
-        h.update(b":")
-        h.update(str(dataset_seed).encode("utf-8"))
-        h.update(b":")
-        h.update(str(dataset_index).encode("utf-8"))
-        h.update(b":")
-        h.update(str(attempt).encode("utf-8"))
-        h.update(b";")
+        _update_digest(content, seed, dataset_seed, dataset_index, attempt)
+        _update_digest(
+            workload,
+            bundle.metadata.get("layout_signature"),
+            bundle.metadata.get("layout_plan_signature"),
+            bundle.metadata.get("n_features"),
+            bundle.metadata.get("n_categorical_features"),
+            bundle.metadata.get("n_classes"),
+            bundle.metadata.get("graph_nodes"),
+            bundle.metadata.get("graph_edges"),
+            bundle.metadata.get("graph_depth_nodes"),
+            dataset_index,
+            attempt,
+        )
+        noise_distribution = bundle.metadata.get("noise_distribution")
+        if isinstance(noise_distribution, dict):
+            _update_digest(
+                workload,
+                noise_distribution.get("family_sampled"),
+                noise_distribution.get("family_requested"),
+            )
+        else:
+            _update_digest(workload, None)
 
-    return h.hexdigest()
+    return content.hexdigest(), workload.hexdigest()
+
+
+def reproducibility_signature(bundles: Iterable[DatasetBundle]) -> str:
+    """Build a deterministic content digest for a sequence or stream of bundles."""
+
+    content, _ = reproducibility_signatures(bundles)
+    return content
+
+
+def reproducibility_workload_signature(bundles: Iterable[DatasetBundle]) -> str:
+    """Build a workload-shape digest for a sequence or stream of bundles."""
+
+    _, workload = reproducibility_signatures(bundles)
+    return workload

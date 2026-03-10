@@ -78,23 +78,31 @@ flowchart LR
 
 ### 2. Reproducibility tree {#2-reproducibility-tree}
 
-Reproducibility is driven by deterministic seed derivation using
-`SeedManager` and explicit offset helpers.
+Reproducibility is driven by `KeyedRng`, which maps one base seed onto
+named semantic subtrees.
 
-- One run seed fans out into deterministic dataset/component seeds.
-- Layout sampling, node-spec derivation, split permutation, missingness
-  masks, and noise-family selection use isolated RNG streams.
+- One run seed fans out into deterministic run, dataset, layout, split,
+  missingness, noise, and benchmark subtrees.
+- Canonical bundle replay uses `seed` together with
+  `dataset_index`/`run_num_datasets`, while exact internal subtree replay
+  uses `metadata.keyed_replay`.
+- `dataset_seed` remains a stable child-seed identifier for deferred
+  filter and diagnostics compatibility; it is not the exact keyed runtime
+  root.
 - Changing one component path should not perturb unrelated component
   randomness.
 
 Illustrative derivation chain:
 
 ```text
-run_seed -> child("dataset", i)
-         -> child("data")
-         -> attempt_seed(run_seed, attempt_idx)
-         -> node_spec_seed(run_seed, node_idx)
-         -> split_permutation_seed(run_seed, attempt_idx)
+KeyedRng(run_seed)
+  -> keyed("rows")
+  -> keyed("plan_candidate", attempt, "layout")
+  -> keyed("plan_candidate", attempt, "execution_plan")
+  -> keyed("dataset", i, "noise_runtime")
+  -> keyed("dataset", i, "attempt", attempt, "split")
+  -> keyed("dataset", i, "attempt", attempt, "postprocess")
+  -> keyed("dataset", i, "attempt", attempt, "missingness")
 ```
 
 ### 3. Split validity retries and deferred filter stage {#3-split-validity-retries-and-deferred-filter-stage}
@@ -305,7 +313,7 @@ status, shift, noise distribution, and resolved config snapshot.
 - `requested_device`, `resolved_device`, and optional fallback reason
   are emitted for runtime observability.
 - Canonical generation outputs add `layout_mode`, `layout_plan_seed`,
-  and `layout_signature`.
+  `layout_signature`, `dataset_seed`, and `keyed_replay`.
 
 ## DAG/node data flow
 

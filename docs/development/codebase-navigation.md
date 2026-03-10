@@ -31,7 +31,7 @@ Follow this sequence to understand how a latent causal structure becomes a reali
 
 Infrastructure that ensures reproducibility, deterministic behavior, and data quality.
 
-- [`src/dagzoo/rng.py`](../../src/dagzoo/rng.py): The `SeedManager` ensures strictly isolated, deterministic child seeds for every component.
+- [`src/dagzoo/rng.py`](../../src/dagzoo/rng.py): `KeyedRng` is the repo's single semantic RNG surface for deterministic child seeds and keyed torch generators.
 - [`docs/development/keyed-rng.md`](keyed-rng.md): Design note for the keyed RNG migration and semantic reproducibility contract.
 - [`src/dagzoo/filtering/`](../../src/dagzoo/filtering/): Implements deferred CPU ExtraTrees filtering (`dagzoo filter`) and filter replay utilities.
 - [`src/dagzoo/core/metrics_torch.py`](../../src/dagzoo/core/metrics_torch.py): Unified torch-native metric extraction used by diagnostics and generation telemetry.
