@@ -13,6 +13,7 @@ from dagzoo.core.fixed_layout_plan_types import (
     FixedLayoutNodePlan,
 )
 from dagzoo.core.layout_types import ConverterKind, MechanismFamily
+from dagzoo.rng import keyed_rng_from_generator
 from dagzoo.sampling.noise import NoiseSamplingSpec
 
 
@@ -65,18 +66,19 @@ def apply_node_pipeline(
     """Apply one sampled typed node plan in torch."""
     from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, _apply_node_plan_batch
 
+    root = keyed_rng_from_generator(generator, "apply_node_pipeline")
     node_plan = sample_node_plan(
         node_index=0,
         parent_indices=tuple(range(len(parent_data))),
         converter_specs=converter_specs,
-        generator=generator,
-        device=device,
+        keyed_rng=root.keyed("plan"),
+        device=str(generator.device),
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
     )
     node_plan = _standalone_safe_node_plan(node_plan)
-    rng = FixedLayoutBatchRng.from_generator(
-        generator,
+    rng = FixedLayoutBatchRng.from_keyed_rng(
+        root.keyed("execution"),
         batch_size=1,
         device=device,
     )

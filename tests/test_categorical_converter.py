@@ -4,6 +4,9 @@ import pytest
 import torch
 
 from dagzoo.converters.categorical import apply_categorical_converter
+from dagzoo.core.fixed_layout_plan_types import CategoricalConverterPlan
+from dagzoo.rng import KeyedRng
+import dagzoo.converters.categorical as categorical_mod
 from conftest import make_generator as _make_generator
 
 
@@ -63,3 +66,38 @@ def test_unknown_method_raises() -> None:
     x = torch.randn(32, 4, generator=g)
     with pytest.raises(ValueError, match=r"Unsupported categorical converter method"):
         apply_categorical_converter(x, g, n_categories=8, method="unknown")
+
+
+def test_apply_categorical_converter_passes_generator_device_to_plan_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_devices: list[str] = []
+
+    class FakeGenerator:
+        device = "cuda"
+
+    monkeypatch.setattr(categorical_mod, "keyed_rng_from_generator", lambda *_args: KeyedRng(7))
+
+    def _stub_sample_converter_plan(*_args, **kwargs) -> CategoricalConverterPlan:
+        seen_devices.append(str(kwargs["device"]))
+        return CategoricalConverterPlan(kind="cat", method="neighbor", variant="input")
+
+    monkeypatch.setattr(categorical_mod, "sample_converter_plan", _stub_sample_converter_plan)
+    monkeypatch.setattr(
+        categorical_mod,
+        "_apply_categorical_group_batch",
+        lambda x, _rng, _plan, **_kwargs: (
+            x.to(torch.float32),
+            torch.zeros((x.shape[0], x.shape[1], x.shape[2]), dtype=torch.int64),
+        ),
+    )
+
+    out, labels = apply_categorical_converter(
+        torch.randn(8, 3),
+        FakeGenerator(),  # type: ignore[arg-type]
+        n_categories=5,
+    )
+
+    assert seen_devices == ["cuda"]
+    assert out.shape == (8, 3)
+    assert labels.shape == (8,)

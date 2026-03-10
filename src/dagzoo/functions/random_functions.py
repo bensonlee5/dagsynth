@@ -12,6 +12,7 @@ from dagzoo.core.execution_semantics import (
 from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_function_plan_batch
 from dagzoo.core.layout_types import MechanismFamily
 from dagzoo.math_utils import sanitize_and_standardize
+from dagzoo.rng import KeyedRng, keyed_rng_from_generator
 from dagzoo.sampling.noise import NoiseSamplingSpec
 
 # Retained as a stable monkeypatch point for diagnostics tests and audit tools.
@@ -33,6 +34,7 @@ def apply_random_function(
     function_family_mix: dict[MechanismFamily, float] | None = None,
     noise_sigma_multiplier: float = 1.0,
     noise_spec: NoiseSamplingSpec | None = None,
+    _keyed_root: KeyedRng | None = None,
 ) -> torch.Tensor:
     """Apply one sampled typed function plan to `x` in torch."""
     y = x.to(torch.float32)
@@ -41,13 +43,16 @@ def apply_random_function(
     y = _standardize(y)
 
     dout = out_dim if out_dim is not None else y.shape[1]
+    root = _keyed_root or keyed_rng_from_generator(generator, "apply_random_function")
+    sampling_device = str(generator.device)
 
     if function_type is None:
         plan = sample_function_plan(
-            generator,
+            keyed_rng=root.keyed("plan"),
             out_dim=int(dout),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=sampling_device,
         )
     else:
         if function_family_mix is not None and function_type not in function_family_mix:
@@ -56,19 +61,20 @@ def apply_random_function(
             )
         try:
             plan = sample_function_plan_for_family(
-                generator,
+                keyed_rng=root.keyed("plan"),
                 family=function_type,
                 out_dim=int(dout),
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=sampling_device,
             )
         except ValueError as exc:
             if "Unsupported mechanism family" in str(exc):
                 raise ValueError(f"Unknown random function family: {function_type}") from exc
             raise
 
-    rng = FixedLayoutBatchRng.from_generator(
-        generator,
+    rng = FixedLayoutBatchRng.from_keyed_rng(
+        root.keyed("execution"),
         batch_size=1,
         device=str(y.device),
     )

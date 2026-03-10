@@ -10,6 +10,23 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.6.5] - 2026-03-09
+
+### Changed
+
+- Fixed-layout typed plan sampling and execution now derive randomness from
+  semantic keyed namespaces instead of shared ambient draw order, so regrouping
+  parent execution, converter execution, and nested function-plan sampling no
+  longer perturbs sibling randomness.
+- `apply_random_function()`, `apply_multi_function()`, `apply_node_pipeline()`,
+  numeric/categorical converter helpers, and random-points sampling now route
+  generator-based entrypoints through keyed `plan` and `execution` roots while
+  preserving their public call surface.
+- Fixed-layout batch execution now keys batched matrix, activation, parent,
+  source, product, tree, and converter draws by semantic role, and grouped vs
+  split converter execution paths now remain deterministic for the same keyed
+  root.
+
 ## [0.6.4] - 2026-03-09
 
 ### Added

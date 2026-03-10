@@ -1140,12 +1140,16 @@ def test_sample_fixed_layout_propagates_mechanism_drift_tilt(
     observed_tilts: list[float] = []
 
     def _stub_sample_function_family(
-        _generator,
+        _generator=None,
         *,
+        keyed_rng=None,
         mechanism_logit_tilt: float,
         function_family_mix=None,
+        device=None,
     ) -> str:
+        _ = keyed_rng
         _ = function_family_mix
+        _ = device
         observed_tilts.append(float(mechanism_logit_tilt))
         return "linear"
 

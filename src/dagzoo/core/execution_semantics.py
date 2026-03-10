@@ -46,6 +46,7 @@ from dagzoo.core.layout_types import AggregationKind, ConverterKind, MechanismFa
 from dagzoo.core.shift import MECHANISM_FAMILY_ORDER, mechanism_family_probabilities
 from dagzoo.functions.activations import fixed_activation_names
 from dagzoo.math_utils import log_uniform as _log_uniform
+from dagzoo.rng import KeyedRng, keyed_rng_from_generator
 
 _MATRIX_KIND_CHOICES: tuple[str, ...] = (
     "gaussian",
@@ -108,14 +109,64 @@ def _randint_scalar(low: int, high: int, generator: torch.Generator) -> int:
     return int(torch.randint(low, high, (1,), generator=generator, device=generator.device).item())
 
 
-def sample_function_family(
-    generator: torch.Generator,
+def _resolve_sampling_device(
     *,
+    generator: torch.Generator | None,
+    device: str | None,
+) -> str:
+    if device is not None:
+        return str(device)
+    if generator is not None:
+        return _generator_device(generator)
+    return "cpu"
+
+
+def _resolve_sampling_generator(
+    *,
+    generator: torch.Generator | None,
+    keyed_rng: KeyedRng | None,
+    device: str | None,
+) -> tuple[torch.Generator, str]:
+    resolved_device = _resolve_sampling_device(generator=generator, device=device)
+    if generator is not None:
+        return generator, resolved_device
+    if keyed_rng is None:
+        raise TypeError("Either generator or keyed_rng must be provided.")
+    return keyed_rng.torch_rng(device=resolved_device), resolved_device
+
+
+def _resolve_sampling_root(
+    *,
+    generator: torch.Generator | None,
+    keyed_rng: KeyedRng | None,
+    device: str | None,
+    namespace: str,
+) -> tuple[KeyedRng, str]:
+    resolved_device = _resolve_sampling_device(generator=generator, device=device)
+    if keyed_rng is not None:
+        return keyed_rng, resolved_device
+    if generator is None:
+        raise TypeError("Either generator or keyed_rng must be provided.")
+    return keyed_rng_from_generator(generator, namespace), resolved_device
+
+
+def sample_function_family(
+    generator: torch.Generator | None = None,
+    *,
+    keyed_rng: KeyedRng | None = None,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None = None,
+    device: str | None = None,
 ) -> MechanismFamily:
     """Sample one mechanism family with optional logit tilt."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_function_family",
+    )
+    generator = keyed_rng.torch_rng(device=resolved_device)
     if mechanism_logit_tilt <= 0.0 and function_family_mix is None:
         idx = _randint_scalar(0, len(MECHANISM_FAMILY_ORDER), generator)
         return MECHANISM_FAMILY_ORDER[int(idx)]
@@ -166,25 +217,46 @@ def _product_component_mix(
 
 
 def _sample_product_component_family(
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
     *,
+    keyed_rng: KeyedRng | None = None,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
+    device: str | None = None,
 ) -> MechanismFamily:
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_product_component_family",
+    )
     component_mix = _product_component_mix(function_family_mix)
     family = sample_function_family(
-        generator,
+        keyed_rng=keyed_rng,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=component_mix,
+        device=resolved_device,
     )
     if family == "product":
         raise ValueError("Product subplans must resolve to non-product mechanism families.")
     return family
 
 
-def sample_activation_plan(generator: torch.Generator) -> FixedLayoutActivationPlan:
+def sample_activation_plan(
+    generator: torch.Generator | None = None,
+    *,
+    keyed_rng: KeyedRng | None = None,
+    device: str | None = None,
+) -> FixedLayoutActivationPlan:
     """Sample one activation plan using the shared fixed-layout schema."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_activation_plan",
+    )
+    generator = keyed_rng.torch_rng(device=resolved_device)
     if _rand_scalar(generator) < (1.0 / 3.0):
         choice = _PARAM_ACTIVATION_CHOICES[
             int(_randint_scalar(0, len(_PARAM_ACTIVATION_CHOICES), generator))
@@ -200,9 +272,21 @@ def sample_activation_plan(generator: torch.Generator) -> FixedLayoutActivationP
     return FixedActivationPlan(name=name)
 
 
-def sample_matrix_plan(generator: torch.Generator) -> FixedLayoutMatrixPlan:
+def sample_matrix_plan(
+    generator: torch.Generator | None = None,
+    *,
+    keyed_rng: KeyedRng | None = None,
+    device: str | None = None,
+) -> FixedLayoutMatrixPlan:
     """Sample one matrix-family plan."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_matrix_plan",
+    )
+    generator = keyed_rng.keyed("kind").torch_rng(device=resolved_device)
     kind = _MATRIX_KIND_CHOICES[int(_randint_scalar(0, len(_MATRIX_KIND_CHOICES), generator))]
     if kind == "gaussian":
         return GaussianMatrixPlan()
@@ -212,142 +296,266 @@ def sample_matrix_plan(generator: torch.Generator) -> FixedLayoutMatrixPlan:
         return SingularValuesMatrixPlan()
     if kind == "kernel":
         return KernelMatrixPlan()
+    base_generator = keyed_rng.keyed("base_kind").torch_rng(device=resolved_device)
     base_kind = _MATRIX_BASE_KIND_CHOICES[
-        int(_randint_scalar(0, len(_MATRIX_BASE_KIND_CHOICES), generator))
+        int(_randint_scalar(0, len(_MATRIX_BASE_KIND_CHOICES), base_generator))
     ]
     return ActivationMatrixPlan(
         base_kind=base_kind,
-        activation=sample_activation_plan(generator),
+        activation=sample_activation_plan(
+            keyed_rng=keyed_rng.keyed("activation"),
+            device=resolved_device,
+        ),
     )
 
 
 def sample_function_plan_for_family(
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
     *,
+    keyed_rng: KeyedRng | None = None,
     family: MechanismFamily,
     out_dim: int,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
+    device: str | None = None,
 ) -> FixedLayoutFunctionPlan:
     """Sample one typed function plan for an explicit family."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_function_plan_for_family",
+    )
     if family == "linear":
-        return LinearFunctionPlan(matrix=sample_matrix_plan(generator))
+        return LinearFunctionPlan(
+            matrix=sample_matrix_plan(
+                keyed_rng=keyed_rng.keyed("matrix"),
+                device=resolved_device,
+            )
+        )
     if family == "quadratic":
-        return QuadraticFunctionPlan(matrix=sample_matrix_plan(generator))
+        return QuadraticFunctionPlan(
+            matrix=sample_matrix_plan(
+                keyed_rng=keyed_rng.keyed("matrix"),
+                device=resolved_device,
+            )
+        )
     if family == "nn":
-        n_layers = int(_randint_scalar(1, 4, generator))
-        hidden_width = int(_log_uniform(generator, 1.0, 127.0, _generator_device(generator)))
-        input_activation = sample_activation_plan(generator) if _sample_bool(generator) else None
-        output_activation = sample_activation_plan(generator) if _sample_bool(generator) else None
+        n_layers = int(
+            _randint_scalar(
+                1,
+                4,
+                keyed_rng.keyed("n_layers").torch_rng(device=resolved_device),
+            )
+        )
+        hidden_width = int(
+            _log_uniform(
+                keyed_rng.keyed("hidden_width").torch_rng(device=resolved_device),
+                1.0,
+                127.0,
+                resolved_device,
+            )
+        )
+        input_activation = (
+            sample_activation_plan(
+                keyed_rng=keyed_rng.keyed("input_activation"),
+                device=resolved_device,
+            )
+            if _sample_bool(
+                keyed_rng.keyed("input_activation_enabled").torch_rng(device=resolved_device)
+            )
+            else None
+        )
+        output_activation = (
+            sample_activation_plan(
+                keyed_rng=keyed_rng.keyed("output_activation"),
+                device=resolved_device,
+            )
+            if _sample_bool(
+                keyed_rng.keyed("output_activation_enabled").torch_rng(device=resolved_device)
+            )
+            else None
+        )
         layer_count = max(1, n_layers)
         return NeuralNetFunctionPlan(
             n_layers=n_layers,
             hidden_width=max(1, hidden_width),
             input_activation=input_activation,
             output_activation=output_activation,
-            layer_matrices=tuple(sample_matrix_plan(generator) for _ in range(layer_count)),
+            layer_matrices=tuple(
+                sample_matrix_plan(
+                    keyed_rng=keyed_rng.keyed("layer_matrix", layer_index),
+                    device=resolved_device,
+                )
+                for layer_index in range(layer_count)
+            ),
             hidden_activations=tuple(
-                sample_activation_plan(generator) for _ in range(max(0, layer_count - 1))
+                sample_activation_plan(
+                    keyed_rng=keyed_rng.keyed("hidden_activation", layer_index),
+                    device=resolved_device,
+                )
+                for layer_index in range(max(0, layer_count - 1))
             ),
         )
     if family == "tree":
-        n_trees = int(_log_uniform(generator, 1.0, 32.0, _generator_device(generator)))
+        n_trees = int(
+            _log_uniform(
+                keyed_rng.keyed("n_trees").torch_rng(device=resolved_device),
+                1.0,
+                32.0,
+                resolved_device,
+            )
+        )
         n_trees = max(1, n_trees)
         return TreeFunctionPlan(
             n_trees=n_trees,
-            depths=tuple(int(_randint_scalar(1, 8, generator)) for _ in range(n_trees)),
+            depths=tuple(
+                int(
+                    _randint_scalar(
+                        1,
+                        8,
+                        keyed_rng.keyed("depth", tree_index).torch_rng(device=resolved_device),
+                    )
+                )
+                for tree_index in range(n_trees)
+            ),
         )
     if family == "discretization":
-        n_centers = int(_log_uniform(generator, 2.0, 128.0, _generator_device(generator)))
+        n_centers = int(
+            _log_uniform(
+                keyed_rng.keyed("n_centers").torch_rng(device=resolved_device),
+                2.0,
+                128.0,
+                resolved_device,
+            )
+        )
         return DiscretizationFunctionPlan(
             n_centers=max(2, n_centers),
-            linear_matrix=sample_matrix_plan(generator),
+            linear_matrix=sample_matrix_plan(
+                keyed_rng=keyed_rng.keyed("linear_matrix"),
+                device=resolved_device,
+            ),
         )
     if family == "gp":
-        return GpFunctionPlan(branch_kind="ha" if _sample_bool(generator) else "projected")
+        return GpFunctionPlan(
+            branch_kind=(
+                "ha"
+                if _sample_bool(keyed_rng.keyed("branch_kind").torch_rng(device=resolved_device))
+                else "projected"
+            )
+        )
     if family == "em":
         m_val = int(
             _log_uniform(
-                generator,
+                keyed_rng.keyed("m_val").torch_rng(device=resolved_device),
                 2.0,
                 float(max(16, 2 * out_dim)),
-                _generator_device(generator),
+                resolved_device,
             )
         )
         return EmFunctionPlan(
             m_val=max(2, m_val),
-            linear_matrix=sample_matrix_plan(generator),
+            linear_matrix=sample_matrix_plan(
+                keyed_rng=keyed_rng.keyed("linear_matrix"),
+                device=resolved_device,
+            ),
         )
     if family == "product":
+        lhs_root = keyed_rng.keyed("lhs")
+        rhs_root = keyed_rng.keyed("rhs")
         lhs_family = _sample_product_component_family(
-            generator,
+            keyed_rng=lhs_root.keyed("family"),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=resolved_device,
         )
         rhs_family = _sample_product_component_family(
-            generator,
+            keyed_rng=rhs_root.keyed("family"),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=resolved_device,
         )
         return ProductFunctionPlan(
             lhs=sample_function_plan_for_family(
-                generator,
+                keyed_rng=lhs_root.keyed("plan"),
                 family=lhs_family,
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=resolved_device,
             ),
             rhs=sample_function_plan_for_family(
-                generator,
+                keyed_rng=rhs_root.keyed("plan"),
                 family=rhs_family,
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=resolved_device,
             ),
         )
     raise ValueError(f"Unsupported mechanism family in fixed-layout plan sampling: {family!r}")
 
 
 def sample_function_plan(
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
     *,
+    keyed_rng: KeyedRng | None = None,
     out_dim: int,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
+    device: str | None = None,
 ) -> FixedLayoutFunctionPlan:
     """Sample one typed function plan using the shared family sampler."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_function_plan",
+    )
     family = sample_function_family(
-        generator,
+        keyed_rng=keyed_rng.keyed("family"),
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
+        device=resolved_device,
     )
     return sample_function_plan_for_family(
-        generator,
+        keyed_rng=keyed_rng.keyed("plan"),
         family=family,
         out_dim=out_dim,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
+        device=resolved_device,
     )
 
 
 def sample_converter_plan(
-    generator: torch.Generator,
     spec: ConverterSpecLike,
+    generator: torch.Generator | None = None,
     *,
+    keyed_rng: KeyedRng | None = None,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
     method_override: str | None = None,
+    device: str | None = None,
 ) -> FixedLayoutConverterPlan:
     """Sample one typed converter plan for a converter spec."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_converter_plan",
+    )
     if spec.kind in {"num", "target_reg"}:
+        warp_generator = keyed_rng.keyed("warp_enabled").torch_rng(device=resolved_device)
         return NumericConverterPlan(
             kind=cast(Literal["num", "target_reg"], spec.kind),
-            warp_enabled=not _sample_bool(generator),
+            warp_enabled=not _sample_bool(warp_generator),
         )
 
+    generator = keyed_rng.keyed("joint_variant").torch_rng(device=resolved_device)
     idx_joint = _randint_scalar(0, len(_JOINT_VARIANTS), generator)
     selected_method_raw, variant_raw = _JOINT_VARIANTS[int(idx_joint)]
     if method_override is None:
@@ -364,10 +572,11 @@ def sample_converter_plan(
             method=selected_method,
             variant=variant,
             function=sample_function_plan(
-                generator,
+                keyed_rng=keyed_rng.keyed("function"),
                 out_dim=max(1, int(spec.dim)),
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=resolved_device,
             ),
         )
     return CategoricalConverterPlan(
@@ -403,13 +612,30 @@ def typed_converter_specs(
 def sample_latent_plan(
     converter_specs: Sequence[ConverterSpecLike],
     *,
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
+    keyed_rng: KeyedRng | None = None,
     device: str,
 ) -> FixedLayoutLatentPlan:
     """Sample the shared latent-width plan for one node."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_latent_plan",
+    )
     required_dim = int(sum(max(1, int(spec.dim)) for spec in converter_specs))
-    extra_dim = max(1, int(_log_uniform(generator, 1.0, 32.0, device)))
+    extra_dim = max(
+        1,
+        int(
+            _log_uniform(
+                keyed_rng.keyed("extra_dim").torch_rng(device=resolved_device),
+                1.0,
+                32.0,
+                resolved_device,
+            )
+        ),
+    )
     return FixedLayoutLatentPlan(
         required_dim=required_dim,
         extra_dim=extra_dim,
@@ -418,66 +644,88 @@ def sample_latent_plan(
 
 
 def sample_root_source_plan(
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
     *,
+    keyed_rng: KeyedRng | None = None,
     out_dim: int,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
+    device: str | None = None,
 ) -> RandomPointsNodeSource:
     """Sample one root-source plan."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_root_source_plan",
+    )
+    base_generator = keyed_rng.keyed("base_kind").torch_rng(device=resolved_device)
     base_kind = _ROOT_BASE_KIND_CHOICES[
-        int(_randint_scalar(0, len(_ROOT_BASE_KIND_CHOICES), generator))
+        int(_randint_scalar(0, len(_ROOT_BASE_KIND_CHOICES), base_generator))
     ]
     return RandomPointsNodeSource(
         base_kind=base_kind,
         function=sample_function_plan(
-            generator,
+            keyed_rng=keyed_rng.keyed("function"),
             out_dim=out_dim,
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=resolved_device,
         ),
     )
 
 
 def sample_multi_source_plan(
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
     *,
+    keyed_rng: KeyedRng | None = None,
     parent_count: int,
     out_dim: int,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
     aggregation_kind: AggregationKind | None = None,
+    device: str | None = None,
 ) -> ConcatNodeSource | StackedNodeSource:
     """Sample one shared multi-parent source plan."""
 
     if parent_count <= 0:
         raise ValueError(f"parent_count must be > 0, got {parent_count}")
-    combine_kind = "concat" if _sample_bool(generator) else "stack"
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_multi_source_plan",
+    )
+    combine_generator = keyed_rng.keyed("combine_kind").torch_rng(device=resolved_device)
+    combine_kind = "concat" if _sample_bool(combine_generator) else "stack"
     if combine_kind == "concat":
         return ConcatNodeSource(
             function=sample_function_plan(
-                generator,
+                keyed_rng=keyed_rng.keyed("function"),
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=resolved_device,
             )
         )
     resolved_aggregation_kind = aggregation_kind
     if resolved_aggregation_kind is None:
+        aggregation_generator = keyed_rng.keyed("aggregation").torch_rng(device=resolved_device)
         resolved_aggregation_kind = _AGGREGATION_KIND_ORDER[
-            int(_randint_scalar(0, len(_AGGREGATION_KIND_ORDER), generator))
+            int(_randint_scalar(0, len(_AGGREGATION_KIND_ORDER), aggregation_generator))
         ]
     return StackedNodeSource(
         aggregation_kind=resolved_aggregation_kind,
         parent_functions=tuple(
             sample_function_plan(
-                generator,
+                keyed_rng=keyed_rng.keyed("parent", parent_index),
                 out_dim=out_dim,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=resolved_device,
             )
-            for _ in range(parent_count)
+            for parent_index in range(parent_count)
         ),
     )
 
@@ -487,43 +735,53 @@ def sample_node_plan(
     node_index: int,
     parent_indices: Sequence[int],
     converter_specs: Sequence[ConverterSpecLike],
-    generator: torch.Generator,
+    generator: torch.Generator | None = None,
+    keyed_rng: KeyedRng | None = None,
     device: str,
     mechanism_logit_tilt: float,
     function_family_mix: dict[MechanismFamily, float] | None,
 ) -> FixedLayoutNodePlan:
     """Sample one typed node execution plan."""
 
+    keyed_rng, resolved_device = _resolve_sampling_root(
+        generator=generator,
+        keyed_rng=keyed_rng,
+        device=device,
+        namespace="sample_node_plan",
+    )
     latent = sample_latent_plan(
         converter_specs,
-        generator=generator,
-        device=device,
+        keyed_rng=keyed_rng.keyed("latent"),
+        device=resolved_device,
     )
     typed_specs = typed_converter_specs(converter_specs)
     converter_plans = tuple(
         sample_converter_plan(
-            generator,
             spec,
+            keyed_rng=keyed_rng.keyed("converter", spec_index),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=resolved_device,
         )
-        for spec in converter_specs
+        for spec_index, spec in enumerate(converter_specs)
     )
     source: ConcatNodeSource | StackedNodeSource | RandomPointsNodeSource
     if parent_indices:
         source = sample_multi_source_plan(
-            generator,
+            keyed_rng=keyed_rng.keyed("source"),
             parent_count=len(parent_indices),
             out_dim=int(latent.total_dim),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=resolved_device,
         )
     else:
         source = sample_root_source_plan(
-            generator,
+            keyed_rng=keyed_rng.keyed("source"),
             out_dim=int(latent.total_dim),
             mechanism_logit_tilt=mechanism_logit_tilt,
             function_family_mix=function_family_mix,
+            device=resolved_device,
         )
     return FixedLayoutNodePlan(
         node_index=int(node_index),

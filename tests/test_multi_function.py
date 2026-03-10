@@ -12,8 +12,9 @@ from dagzoo.core.fixed_layout_plan_types import (
 )
 from dagzoo.core.layout_types import AggregationKind
 from dagzoo.functions.multi import apply_multi_function
+from dagzoo.functions.random_functions import apply_random_function
 from dagzoo.math_utils import sanitize_and_standardize
-from conftest import make_generator as _make_generator
+from conftest import make_generator as _make_generator, make_keyed_rng as _make_keyed_rng
 
 
 def test_single_input() -> None:
@@ -21,6 +22,18 @@ def test_single_input() -> None:
     x = torch.randn(64, 4, generator=g)
     y = apply_multi_function([x], g, out_dim=5)
     assert y.shape == (64, 5)
+
+
+def test_single_input_matches_apply_random_function() -> None:
+    x = torch.randn(64, 4, generator=_make_generator(3))
+    actual_generator = _make_generator(4)
+    reference_generator = _make_generator(4)
+
+    actual = apply_multi_function([x.clone()], actual_generator, out_dim=5)
+    expected = apply_random_function(x.clone(), reference_generator, out_dim=5)
+
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(actual_generator.get_state(), reference_generator.get_state())
 
 
 def test_multiple_inputs() -> None:
@@ -140,15 +153,17 @@ def test_multi_function_matches_explicit_stacked_plan(
         actual_generator,
         out_dim=5,
     )
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "apply_multi_function")
+    rng = FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu")
     transformed = [
         apply_function_plan_batch(
-            inp.unsqueeze(0),
-            rng,
+            sanitize_and_standardize(inp).unsqueeze(0),
+            rng.keyed("parent", plan_index),
             source.parent_functions[plan_index],
             out_dim=5,
             noise_sigma_multiplier=1.0,
             noise_spec=None,
+            standardize_input=False,
         ).squeeze(0)
         for plan_index, inp in enumerate(inputs)
     ]
@@ -188,11 +203,12 @@ def test_multi_function_matches_explicit_stacked_plan_for_associative_reducers(
         out_dim=5,
     )
 
-    rng = FixedLayoutBatchRng.from_generator(reference_generator, batch_size=1, device="cpu")
+    root = _make_keyed_rng(reference_generator, "apply_multi_function")
+    rng = FixedLayoutBatchRng.from_keyed_rng(root.keyed("execution"), batch_size=1, device="cpu")
     transformed = [
         apply_function_plan_batch(
             sanitize_and_standardize(inp).unsqueeze(0),
-            rng,
+            rng.keyed("parent", plan_index),
             source.parent_functions[plan_index],
             out_dim=5,
             noise_sigma_multiplier=1.0,

@@ -5,6 +5,7 @@ import torch
 
 from dagzoo.converters.numeric import apply_numeric_converter
 from dagzoo.core.fixed_layout_plan_types import NumericConverterPlan
+from dagzoo.rng import KeyedRng
 from conftest import make_generator as _make_generator
 import dagzoo.converters.numeric as numeric_mod
 
@@ -53,3 +54,29 @@ def test_multi_column_inputs_share_one_warp(
     torch.testing.assert_close(x_prime[:, 0], x_prime[:, 1])
     torch.testing.assert_close(x_prime[:, 1], x_prime[:, 2])
     torch.testing.assert_close(v, x[:, 0])
+
+
+def test_apply_numeric_converter_passes_generator_device_to_plan_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_devices: list[str] = []
+
+    class FakeGenerator:
+        device = "cuda"
+
+    monkeypatch.setattr(numeric_mod, "keyed_rng_from_generator", lambda *_args: KeyedRng(7))
+
+    def _stub_sample_converter_plan(*_args, **kwargs) -> NumericConverterPlan:
+        seen_devices.append(str(kwargs["device"]))
+        return NumericConverterPlan(kind="num", warp_enabled=False)
+
+    monkeypatch.setattr(numeric_mod, "sample_converter_plan", _stub_sample_converter_plan)
+
+    out, values = apply_numeric_converter(
+        torch.randn(8, 3),
+        FakeGenerator(),  # type: ignore[arg-type]
+    )
+
+    assert seen_devices == ["cuda"]
+    assert out.shape == (8, 3)
+    assert values.shape == (8,)

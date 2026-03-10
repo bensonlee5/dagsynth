@@ -9,6 +9,7 @@ from dagzoo.core.fixed_layout_batched import (
     apply_function_plan_batch,
 )
 from dagzoo.core.layout_types import MechanismFamily
+from dagzoo.rng import keyed_rng_from_generator
 from dagzoo.sampling.noise import NoiseSamplingSpec
 
 
@@ -27,19 +28,21 @@ def sample_random_points(
     if n_rows <= 0 or dim <= 0:
         raise ValueError(f"n_rows and dim must be > 0. Got n_rows={n_rows}, dim={dim}")
 
+    root = keyed_rng_from_generator(generator, "sample_random_points")
     source = sample_root_source_plan(
-        generator,
+        keyed_rng=root.keyed("plan"),
         out_dim=dim,
         mechanism_logit_tilt=mechanism_logit_tilt,
         function_family_mix=function_family_mix,
+        device=str(generator.device),
     )
-    rng = FixedLayoutBatchRng.from_generator(
-        generator,
+    rng = FixedLayoutBatchRng.from_keyed_rng(
+        root.keyed("execution", "source"),
         batch_size=1,
         device=device,
     )
     base = _sample_random_points_batch(
-        rng,
+        rng.keyed("base"),
         n_rows=n_rows,
         dim=dim,
         base_kind=source.base_kind,
@@ -48,7 +51,7 @@ def sample_random_points(
     )
     out = apply_function_plan_batch(
         base,
-        rng,
+        rng.keyed("function"),
         source.function,
         out_dim=dim,
         noise_sigma_multiplier=noise_sigma_multiplier,

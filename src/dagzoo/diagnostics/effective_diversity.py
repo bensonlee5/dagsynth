@@ -1314,15 +1314,19 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
         original_sample_function_family = random_functions_module._sample_function_family
 
         def _mapped_sample_function_family(
-            generator: torch.Generator,
+            generator: torch.Generator | None = None,
             *,
+            keyed_rng: Any = None,
             mechanism_logit_tilt: float,
             function_family_mix: dict[MechanismFamily, float] | None = None,
+            device: str | None = None,
         ) -> MechanismFamily:
             sampled = original_sample_function_family(
                 generator,
+                keyed_rng=keyed_rng,
                 mechanism_logit_tilt=mechanism_logit_tilt,
                 function_family_mix=function_family_mix,
+                device=device,
             )
             return arm.family_map.get(sampled, sampled)
 
@@ -1336,6 +1340,7 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
             function_family_mix: dict[MechanismFamily, float] | None = None,
             noise_sigma_multiplier: float = 1.0,
             noise_spec: Any = None,
+            _keyed_root: Any = None,
         ) -> torch.Tensor:
             mapped_type = function_type
             adjusted_mix = function_family_mix
@@ -1355,6 +1360,7 @@ def _runtime_override_context(arm: AblationArm) -> Iterator[None]:
                 function_family_mix=adjusted_mix,
                 noise_sigma_multiplier=noise_sigma_multiplier,
                 noise_spec=noise_spec,
+                _keyed_root=_keyed_root,
             )
 
         _patch_attr(
