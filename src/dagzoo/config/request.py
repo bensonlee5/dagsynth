@@ -61,6 +61,14 @@ _REQUEST_ROWS_PUBLIC_SHAPE_ERROR = (
 )
 
 
+def _validate_request_field_names(data: dict[object, Any]) -> None:
+    """Reject non-string top-level request fields before unknown-key handling."""
+
+    for key in data:
+        if not isinstance(key, str):
+            raise ValueError(f"Request-file field names must be strings (got {key!r}).")
+
+
 def _validate_non_empty_string(*, field_name: str, value: object) -> str:
     """Validate one required non-empty string field."""
 
@@ -110,24 +118,30 @@ def _require_request_field(data: dict[str, Any], field_name: str) -> Any:
     return data[field_name]
 
 
+def _normalize_public_request_rows(value: int | str) -> DatasetRowsSpec:
+    """Normalize one public rows value and rewrite internal field names."""
+
+    try:
+        rows = normalize_dataset_rows(value)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("dataset.rows", "rows")) from None
+    if rows is None:
+        raise ValueError(_REQUEST_ROWS_PUBLIC_SHAPE_ERROR)
+    return rows
+
+
 def _validate_public_request_rows(value: object) -> DatasetRowsSpec:
     """Validate rows using only the documented public request-file encodings."""
 
     if isinstance(value, bool):
         raise ValueError(_REQUEST_ROWS_PUBLIC_SHAPE_ERROR)
     if isinstance(value, int):
-        rows = normalize_dataset_rows(value)
-        if rows is None:
-            raise ValueError(_REQUEST_ROWS_PUBLIC_SHAPE_ERROR)
-        return rows
+        return _normalize_public_request_rows(value)
     if isinstance(value, str):
         normalized = value.strip()
         if ".." not in normalized and "," not in normalized:
             raise ValueError(_REQUEST_ROWS_PUBLIC_SHAPE_ERROR)
-        rows = normalize_dataset_rows(normalized)
-        if rows is None:
-            raise ValueError(_REQUEST_ROWS_PUBLIC_SHAPE_ERROR)
-        return rows
+        return _normalize_public_request_rows(normalized)
     raise ValueError(_REQUEST_ROWS_PUBLIC_SHAPE_ERROR)
 
 
@@ -200,6 +214,7 @@ class RequestFileConfig:
         """Construct a request-file config from a mapping payload."""
 
         data = data or {}
+        _validate_request_field_names(cast(dict[object, Any], data))
         unknown_keys = sorted(set(data) - _REQUEST_ALLOWED_KEYS)
         if unknown_keys:
             first_key = unknown_keys[0]

@@ -114,6 +114,26 @@ def test_request_file_from_yaml_loads_top_level_mapping(tmp_path) -> None:
     assert cfg.missingness_profile == MISSINGNESS_MECHANISM_MAR
 
 
+def test_request_file_from_yaml_rejects_non_string_top_level_keys(tmp_path) -> None:
+    path = tmp_path / "request.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                1: "unexpected",
+                "runtime": {"device": "cpu"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Request-file field names must be strings",
+    ):
+        RequestFileConfig.from_yaml(path)
+
+
 @pytest.mark.parametrize(
     "rows_value",
     [
@@ -239,6 +259,25 @@ def test_request_file_to_dict_omits_unset_seed() -> None:
     assert "seed" not in cfg.to_dict()
 
 
+@pytest.mark.parametrize("rows_value", [300, "300..600"])
+def test_request_file_rows_errors_use_public_field_names(rows_value: object) -> None:
+    with pytest.raises(ValueError) as exc_info:
+        RequestFileConfig.from_dict(
+            {
+                "version": REQUEST_FILE_VERSION_V1,
+                "task": REQUEST_TASK_CLASSIFICATION,
+                "dataset_count": 1,
+                "rows": rows_value,
+                "profile": REQUEST_PROFILE_DEFAULT,
+                "output_root": "requests/out",
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "rows" in message
+    assert "dataset.rows" not in message
+
+
 @pytest.mark.parametrize(
     ("payload", "pattern"),
     [
@@ -295,7 +334,7 @@ def test_request_file_to_dict_omits_unset_seed() -> None:
                 "profile": REQUEST_PROFILE_DEFAULT,
                 "output_root": "requests/out",
             },
-            r"dataset\.rows",
+            r"rows\.start",
         ),
         (
             {
