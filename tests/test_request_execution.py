@@ -19,6 +19,7 @@ from dagzoo.config import (
 )
 from dagzoo.config.io import load_packaged_generator_config
 from dagzoo.core.config_resolution import resolve_request_config, serialize_resolution_events
+from dagzoo.core.request_handoff import REQUEST_HANDOFF_SCHEMA_NAME
 from dagzoo.hardware import HardwareInfo
 
 
@@ -311,3 +312,11 @@ def test_request_cli_end_to_end_writes_generated_filter_and_curated_outputs(
     assert summary["accepted_datasets"] == 1
     assert summary["rejected_datasets"] == 0
     assert (output_root / "curated" / "shard_00000" / "metadata.ndjson").exists()
+    handoff = json.loads((output_root / "handoff_manifest.json").read_text(encoding="utf-8"))
+    assert handoff["schema_name"] == REQUEST_HANDOFF_SCHEMA_NAME
+    assert handoff["artifacts"]["filtered_corpus_dir"] == str((output_root / "curated").resolve())
+    assert handoff["artifacts"]["filter_summary_path"] == str(
+        (output_root / "filter" / "filter_summary.json").resolve()
+    )
+    assert handoff["summary"]["accepted_datasets"] == 1
+    assert handoff["diversity_artifacts"]["summary_json_path"] is None
