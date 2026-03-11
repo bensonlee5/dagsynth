@@ -206,9 +206,9 @@ def test_filter_calibration_cli_writes_summary_and_status(
         lambda **_kwargs: {
             "summary": {
                 "overall_status": "warn",
-                "best_overall_threshold_requested": 0.9,
+                "best_overall_threshold_requested": 0.804,
                 "best_overall_diversity_status": "warn",
-                "best_passing_threshold_requested": 0.85,
+                "best_passing_threshold_requested": 0.801,
                 "num_candidates": 5,
             }
         },
@@ -231,7 +231,7 @@ def test_filter_calibration_cli_writes_summary_and_status(
     assert code == 0
     captured = capsys.readouterr()
     assert "Wrote filter calibration artifact [summary_json]:" in captured.out
-    assert "Filter calibration status=warn best_overall=0.90 best_passing=0.85 candidates=5" in (
+    assert "Filter calibration status=warn best_overall=0.804 best_passing=0.801 candidates=5" in (
         captured.out
     )
 

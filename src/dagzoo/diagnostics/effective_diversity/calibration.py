@@ -14,6 +14,21 @@ _CALIBRATION_THRESHOLD_MIN = 0.0
 _CALIBRATION_THRESHOLD_MAX = 1.5
 
 
+def validate_filter_calibration_threshold(
+    value: object,
+    *,
+    field_name: str,
+) -> float:
+    """Validate one calibration threshold value."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{field_name} must be a finite value in [0.0, 1.5].")
+    as_float = float(value)
+    if not (_CALIBRATION_THRESHOLD_MIN <= as_float <= _CALIBRATION_THRESHOLD_MAX):
+        raise ValueError(f"{field_name} must be a finite value in [0.0, 1.5].")
+    return as_float
+
+
 def _normalize_threshold_candidate(value: float) -> float:
     """Normalize one requested threshold to a stable persisted float."""
 
@@ -29,11 +44,19 @@ def _clamp_threshold_candidate(value: float) -> float:
 def _threshold_label(value: float) -> str:
     """Return a stable variant label for one requested threshold."""
 
+    return f"thr_{format_filter_calibration_threshold(value)}"
+
+
+def format_filter_calibration_threshold(value: object) -> str:
+    """Render a threshold value with stable precision for user-facing surfaces."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return "-"
     normalized = _normalize_threshold_candidate(float(value))
     rendered = f"{normalized:.6f}".rstrip("0").rstrip(".")
     if "." not in rendered:
         rendered = f"{rendered}.0"
-    return f"thr_{rendered}"
+    return rendered
 
 
 def resolve_filter_calibration_thresholds(
@@ -43,14 +66,27 @@ def resolve_filter_calibration_thresholds(
 ) -> list[float]:
     """Resolve the requested threshold sweep including the baseline threshold."""
 
-    baseline_value = _normalize_threshold_candidate(float(baseline_threshold))
+    baseline_value = _normalize_threshold_candidate(
+        validate_filter_calibration_threshold(
+            baseline_threshold,
+            field_name="baseline_threshold",
+        )
+    )
     if thresholds is None:
         raw_candidates = [
             _clamp_threshold_candidate(float(baseline_value) + float(delta))
             for delta in DEFAULT_FILTER_CALIBRATION_DELTAS
         ]
     else:
-        raw_candidates = [_normalize_threshold_candidate(float(value)) for value in thresholds]
+        raw_candidates = [
+            _normalize_threshold_candidate(
+                validate_filter_calibration_threshold(
+                    value,
+                    field_name="thresholds",
+                )
+            )
+            for value in thresholds
+        ]
 
     normalized = {_normalize_threshold_candidate(float(value)) for value in raw_candidates}
     normalized.add(baseline_value)
@@ -137,7 +173,12 @@ def run_filter_calibration(
     if not bool(config.filter.enabled):
         raise ValueError("filter-calibration requires filter.enabled: true in the resolved config.")
 
-    baseline_threshold = _normalize_threshold_candidate(float(config.filter.threshold))
+    baseline_threshold = _normalize_threshold_candidate(
+        validate_filter_calibration_threshold(
+            config.filter.threshold,
+            field_name="filter.threshold",
+        )
+    )
     threshold_candidates = resolve_filter_calibration_thresholds(
         baseline_threshold=baseline_threshold,
         thresholds=thresholds,

@@ -8,6 +8,8 @@ from typing import Any
 
 from dagzoo.math_utils import sanitize_json
 
+from .calibration import format_filter_calibration_threshold
+
 
 def _fmt(value: object, *, digits: int = 2) -> str:
     if value is None:
@@ -121,17 +123,17 @@ def format_filter_calibration_markdown(report: dict[str, Any]) -> str:
         "# Filter Calibration",
         "",
         f"- Overall status: `{summary.get('overall_status', 'insufficient_metrics')}`",
-        f"- Baseline threshold: `{_fmt(summary.get('baseline_threshold_requested'))}`",
-        f"- Best overall threshold: `{_fmt(summary.get('best_overall_threshold_requested'))}`",
+        f"- Baseline threshold: `{format_filter_calibration_threshold(summary.get('baseline_threshold_requested'))}`",
+        f"- Best overall threshold: `{format_filter_calibration_threshold(summary.get('best_overall_threshold_requested'))}`",
         f"- Best overall status: `{summary.get('best_overall_diversity_status', '-')}`",
-        f"- Best passing threshold: `{_fmt(summary.get('best_passing_threshold_requested'))}`",
+        f"- Best passing threshold: `{format_filter_calibration_threshold(summary.get('best_passing_threshold_requested'))}`",
         f"- Num candidates: `{_fmt(summary.get('num_candidates'), digits=0)}`",
         f"- Probe num datasets: `{_fmt(summary.get('probe_num_datasets'), digits=0)}`",
         f"- Probe warmup datasets: `{_fmt(summary.get('probe_warmup_datasets'), digits=0)}`",
         "",
         "## Baseline",
         "",
-        f"- Threshold requested: `{_fmt(baseline.get('threshold_requested'))}`",
+        f"- Threshold requested: `{format_filter_calibration_threshold(baseline.get('threshold_requested'))}`",
         f"- Filter accepted/min: `{_fmt(baseline.get('filter_accepted_datasets_per_minute'))}`",
         f"- Filter accept dataset pct: `{_fmt(_pct(baseline.get('filter_acceptance_rate_dataset_level')))}`",
         "",
@@ -147,7 +149,7 @@ def format_filter_calibration_markdown(report: dict[str, Any]) -> str:
         lines.append(
             "| "
             f"{candidate.get('label', '-')} | "
-            f"{_fmt(candidate.get('threshold_requested'))} | "
+            f"{format_filter_calibration_threshold(candidate.get('threshold_requested'))} | "
             f"{candidate.get('diversity_status', 'insufficient_metrics')} | "
             f"{_fmt(candidate.get('filter_accepted_datasets_per_minute'))} | "
             f"{_fmt(_pct(candidate.get('filter_acceptance_rate_dataset_level')))} | "

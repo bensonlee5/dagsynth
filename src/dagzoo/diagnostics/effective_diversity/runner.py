@@ -7,6 +7,7 @@ from typing import Any
 
 from dagzoo.bench.corpus_probe import (
     CorpusProbeResult,
+    build_corpus_probe_coverage_config,
     resolve_corpus_probe_counts,
     run_corpus_probe,
 )
@@ -77,6 +78,8 @@ def run_effective_diversity_audit(
     if variant_labels is not None and len(variant_labels) != len(variant_configs):
         raise ValueError("variant_labels and variant_configs must have matching lengths.")
 
+    probe_seed = int(baseline_config.seed)
+    probe_coverage_config = build_corpus_probe_coverage_config(baseline_config)
     probe_num_datasets, probe_warmup_datasets = resolve_corpus_probe_counts(
         baseline_config,
         suite=suite,
@@ -91,6 +94,8 @@ def run_effective_diversity_audit(
         num_datasets=probe_num_datasets,
         warmup=probe_warmup_datasets,
         device=device,
+        probe_seed=probe_seed,
+        coverage_config=probe_coverage_config,
     )
     baseline_entry = _probe_entry(baseline_probe)
 
@@ -112,6 +117,8 @@ def run_effective_diversity_audit(
             num_datasets=probe_num_datasets,
             warmup=probe_warmup_datasets,
             device=device,
+            probe_seed=probe_seed,
+            coverage_config=probe_coverage_config,
         )
         variant_entry = _probe_entry(variant_probe)
         variants.append(variant_entry)

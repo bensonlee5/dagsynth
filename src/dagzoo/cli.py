@@ -41,8 +41,11 @@ from dagzoo.diagnostics import (
     write_coverage_summary_markdown,
 )
 from dagzoo.diagnostics.effective_diversity import (
+    format_filter_calibration_threshold,
     run_filter_calibration,
     run_effective_diversity_audit,
+    validate_filter_calibration_threshold,
+    validate_diversity_thresholds,
     write_filter_calibration_artifacts,
     write_effective_diversity_artifacts,
 )
@@ -1130,6 +1133,13 @@ def _run_benchmark(args: argparse.Namespace) -> int:
 def _run_diversity_audit(args: argparse.Namespace) -> int:
     """Execute the ``diversity-audit`` command."""
 
+    try:
+        warn_threshold_pct, fail_threshold_pct = validate_diversity_thresholds(
+            warn_threshold_pct=float(args.warn_threshold_pct),
+            fail_threshold_pct=float(args.fail_threshold_pct),
+        )
+    except ValueError as exc:
+        _raise_usage_error(str(exc))
     baseline_config = _load_config_or_usage_error(str(args.baseline_config))
     variant_config_paths = [str(path) for path in (args.variant_config or [])]
     variant_configs = [_load_config_or_usage_error(path) for path in variant_config_paths]
@@ -1147,8 +1157,8 @@ def _run_diversity_audit(args: argparse.Namespace) -> int:
         num_datasets=args.num_datasets,
         warmup=args.warmup,
         device=args.device,
-        warn_threshold_pct=float(args.warn_threshold_pct),
-        fail_threshold_pct=float(args.fail_threshold_pct),
+        warn_threshold_pct=warn_threshold_pct,
+        fail_threshold_pct=fail_threshold_pct,
     )
 
     out_dir = Path(args.out_dir)
@@ -1172,6 +1182,13 @@ def _run_diversity_audit(args: argparse.Namespace) -> int:
 def _run_filter_calibration(args: argparse.Namespace) -> int:
     """Execute the ``filter-calibration`` command."""
 
+    try:
+        warn_threshold_pct, fail_threshold_pct = validate_diversity_thresholds(
+            warn_threshold_pct=float(args.warn_threshold_pct),
+            fail_threshold_pct=float(args.fail_threshold_pct),
+        )
+    except ValueError as exc:
+        _raise_usage_error(str(exc))
     config = _load_config_or_usage_error(str(args.config))
     if args.device is not None:
         config.runtime.device = str(args.device)
@@ -1179,6 +1196,13 @@ def _run_filter_calibration(args: argparse.Namespace) -> int:
         _raise_usage_error(
             "filter-calibration requires filter.enabled: true in the resolved config."
         )
+    try:
+        validate_filter_calibration_threshold(
+            config.filter.threshold,
+            field_name="filter.threshold",
+        )
+    except ValueError as exc:
+        _raise_usage_error(str(exc))
 
     report = run_filter_calibration(
         config=config,
@@ -1188,8 +1212,8 @@ def _run_filter_calibration(args: argparse.Namespace) -> int:
         num_datasets=args.num_datasets,
         warmup=args.warmup,
         device=args.device,
-        warn_threshold_pct=float(args.warn_threshold_pct),
-        fail_threshold_pct=float(args.fail_threshold_pct),
+        warn_threshold_pct=warn_threshold_pct,
+        fail_threshold_pct=fail_threshold_pct,
     )
 
     out_dir = Path(args.out_dir)
@@ -1207,11 +1231,9 @@ def _run_filter_calibration(args: argparse.Namespace) -> int:
         overall_status = str(summary.get("overall_status", overall_status))
         best_overall_status = str(summary.get("best_overall_diversity_status", best_overall_status))
         best_overall_raw = summary.get("best_overall_threshold_requested")
-        if isinstance(best_overall_raw, (int, float)) and not isinstance(best_overall_raw, bool):
-            best_overall_threshold = f"{float(best_overall_raw):.2f}"
+        best_overall_threshold = format_filter_calibration_threshold(best_overall_raw)
         best_passing_raw = summary.get("best_passing_threshold_requested")
-        if isinstance(best_passing_raw, (int, float)) and not isinstance(best_passing_raw, bool):
-            best_passing_threshold = f"{float(best_passing_raw):.2f}"
+        best_passing_threshold = format_filter_calibration_threshold(best_passing_raw)
         num_candidates = int(summary.get("num_candidates", 0))
         print(
             "Filter calibration status="

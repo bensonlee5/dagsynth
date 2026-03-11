@@ -6,6 +6,7 @@ from dagzoo.config import GeneratorConfig
 from dagzoo.diagnostics.effective_diversity import (
     resolve_filter_calibration_thresholds,
     run_filter_calibration,
+    validate_filter_calibration_threshold,
     write_filter_calibration_artifacts,
 )
 
@@ -59,6 +60,33 @@ def test_resolve_filter_calibration_thresholds_dedupes_explicit_override() -> No
         baseline_threshold=0.95,
         thresholds=[1.0, 0.8, 0.95, 1.0],
     ) == [0.8, 0.95, 1.0]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), -0.1, 2.0])
+def test_validate_filter_calibration_threshold_rejects_invalid_values(value: float) -> None:
+    with pytest.raises(ValueError, match=r"must be a finite value in \[0.0, 1.5\]"):
+        validate_filter_calibration_threshold(value, field_name="filter.threshold")
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), -0.1, 2.0])
+def test_run_filter_calibration_rejects_invalid_baseline_config_threshold(value: float) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/preset_filter_benchmark_smoke.yaml")
+    cfg.filter.threshold = value
+
+    with pytest.raises(
+        ValueError, match=r"filter.threshold must be a finite value in \[0.0, 1.5\]"
+    ):
+        run_filter_calibration(
+            config=cfg,
+            config_path="configs/preset_filter_benchmark_smoke.yaml",
+            thresholds=None,
+            suite="smoke",
+            num_datasets=10,
+            warmup=0,
+            device="cpu",
+            warn_threshold_pct=2.5,
+            fail_threshold_pct=5.0,
+        )
 
 
 def test_run_filter_calibration_ranks_best_overall_and_best_passing(
