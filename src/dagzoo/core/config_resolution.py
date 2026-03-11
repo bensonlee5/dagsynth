@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -428,6 +429,7 @@ def resolve_generate_config(
     missing_mar_logit_scale: float | None,
     missing_mnar_logit_scale: float | None,
     diagnostics_enabled: bool,
+    post_policy_hook: Callable[[GeneratorConfig, list[ResolutionEvent]], None] | None = None,
 ) -> ResolvedGenerateConfig:
     """Resolve effective config for one generate command invocation."""
 
@@ -463,6 +465,8 @@ def resolve_generate_config(
         hw=hw,
         events=trace_events,
     )
+    if post_policy_hook is not None:
+        post_policy_hook(resolved, trace_events)
 
     _apply_rows_override(
         resolved,
@@ -509,17 +513,19 @@ def resolve_request_config(
     base_config = load_packaged_generator_config(_REQUEST_BASE_CONFIG_RESOURCE)
     trace_events: list[ResolutionEvent] = []
 
+    smoke_profile: RequestSmokeProfile | None = None
     if request.profile == REQUEST_PROFILE_SMOKE:
+        smoke_profile = RequestSmokeProfile(
+            n_train=128,
+            n_test=32,
+            n_features_min=8,
+            n_features_max=12,
+            n_nodes_min=2,
+            n_nodes_max=12,
+        )
         _apply_request_smoke_profile(
             base_config,
-            smoke_profile=RequestSmokeProfile(
-                n_train=128,
-                n_test=32,
-                n_features_min=8,
-                n_features_max=12,
-                n_nodes_min=2,
-                n_nodes_max=12,
-            ),
+            smoke_profile=smoke_profile,
             events=trace_events,
         )
 
@@ -558,6 +564,21 @@ def resolve_request_config(
         events=trace_events,
     )
 
+    post_policy_hook: Callable[[GeneratorConfig, list[ResolutionEvent]], None] | None = None
+    if smoke_profile is not None:
+
+        def _reapply_request_smoke_profile(
+            config: GeneratorConfig,
+            events: list[ResolutionEvent],
+        ) -> None:
+            _apply_request_smoke_profile(
+                config,
+                smoke_profile=smoke_profile,
+                events=events,
+            )
+
+        post_policy_hook = _reapply_request_smoke_profile
+
     resolved = resolve_generate_config(
         base_config,
         device_override=device_override,
@@ -569,6 +590,7 @@ def resolve_request_config(
         missing_mar_logit_scale=None,
         missing_mnar_logit_scale=None,
         diagnostics_enabled=False,
+        post_policy_hook=post_policy_hook,
     )
     return ResolvedRequestConfig(
         request=request,

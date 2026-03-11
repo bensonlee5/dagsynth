@@ -19,6 +19,18 @@ from dagzoo.config import (
 )
 from dagzoo.config.io import load_packaged_generator_config
 from dagzoo.core.config_resolution import resolve_request_config, serialize_resolution_events
+from dagzoo.hardware import HardwareInfo
+
+
+def _mock_cuda_h100(_requested_device: str) -> HardwareInfo:
+    return HardwareInfo(
+        backend="cuda",
+        requested_device="cuda",
+        device_name="NVIDIA H100 SXM",
+        total_memory_gb=80.0,
+        peak_flops=989e12,
+        tier="cuda_h100",
+    )
 
 
 def _request_payload(**overrides: object) -> dict[str, object]:
@@ -144,6 +156,35 @@ def test_resolve_request_config_applies_smoke_profile_without_overriding_rows() 
     assert any(
         event["path"] == "dataset.rows" and event["source"] == "request.rows" for event in trace
     )
+
+
+def test_resolve_request_config_preserves_smoke_caps_under_cuda_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
+    request = RequestFileConfig.from_dict(
+        _request_payload(
+            task=REQUEST_TASK_REGRESSION,
+            profile=REQUEST_PROFILE_SMOKE,
+            rows=1024,
+        )
+    )
+
+    resolved = resolve_request_config(
+        request=request,
+        device_override="cuda",
+        hardware_policy="cuda_tiered_v1",
+    )
+
+    assert resolved.requested_device == "cuda"
+    assert resolved.config.dataset.n_train == 128
+    assert resolved.config.dataset.n_test == 32
+    assert resolved.config.dataset.n_features_max == 12
+    assert resolved.config.graph.n_nodes_max == 12
+    assert resolved.config.dataset.rows is not None
+    assert resolved.config.dataset.rows.mode == "fixed"
+    assert resolved.config.dataset.rows.value == 1024
+    assert resolved.config.runtime.fixed_layout_target_cells == 160_000_000
 
 
 def test_resolve_request_config_applies_missingness_profile_without_task_leakage() -> None:
