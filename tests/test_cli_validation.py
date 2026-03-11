@@ -213,6 +213,28 @@ def test_diversity_audit_cli_rejects_removed_parallel_generation_runtime_keys(tm
     assert int(exc.value.code) == 2
 
 
+@pytest.mark.parametrize(
+    "flag,value", [("--warn-threshold-pct", "nan"), ("--fail-threshold-pct", "inf")]
+)
+def test_diversity_audit_cli_rejects_non_finite_regression_thresholds(
+    flag: str, value: str
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "diversity-audit",
+                "--baseline-config",
+                "configs/default.yaml",
+                "--variant-config",
+                "configs/preset_shift_benchmark_smoke.yaml",
+                flag,
+                value,
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+
+
 def test_filter_calibration_cli_rejects_filter_disabled_config(tmp_path) -> None:
     cfg = GeneratorConfig.from_yaml("configs/default.yaml")
     cfg.filter.enabled = False
@@ -225,6 +247,27 @@ def test_filter_calibration_cli_rejects_filter_disabled_config(tmp_path) -> None
                 "filter-calibration",
                 "--config",
                 str(config_path),
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+
+
+@pytest.mark.parametrize(
+    "flag,value", [("--warn-threshold-pct", "nan"), ("--fail-threshold-pct", "inf")]
+)
+def test_filter_calibration_cli_rejects_non_finite_regression_thresholds(
+    flag: str,
+    value: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "filter-calibration",
+                "--config",
+                "configs/preset_filter_benchmark_smoke.yaml",
+                flag,
+                value,
             ]
         )
 

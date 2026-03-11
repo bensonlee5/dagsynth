@@ -79,13 +79,13 @@ def test_run_filter_calibration_ranks_best_overall_and_best_passing(
             ),
             "variants": [
                 _audit_entry(
-                    label="thr_0.80",
+                    label="thr_0.8",
                     threshold_effective_mean=0.8,
                     filter_accepted_datasets_per_minute=60.0,
                     diversity_acceptance_rate=0.6,
                 ),
                 _audit_entry(
-                    label="thr_1.00",
+                    label="thr_1.0",
                     threshold_effective_mean=1.0,
                     filter_accepted_datasets_per_minute=80.0,
                     diversity_acceptance_rate=0.3,
@@ -93,7 +93,7 @@ def test_run_filter_calibration_ranks_best_overall_and_best_passing(
             ],
             "comparisons": [
                 {
-                    "variant_label": "thr_0.80",
+                    "variant_label": "thr_0.8",
                     "diversity_status": "pass",
                     "diversity_composite_shift_pct": 1.5,
                     "diversity_metric_shift_pct": {"linearity_proxy": 1.5},
@@ -101,7 +101,7 @@ def test_run_filter_calibration_ranks_best_overall_and_best_passing(
                     "filter_accepted_datasets_per_minute_delta_pct": 50.0,
                 },
                 {
-                    "variant_label": "thr_1.00",
+                    "variant_label": "thr_1.0",
                     "diversity_status": "fail",
                     "diversity_composite_shift_pct": 8.0,
                     "diversity_metric_shift_pct": {"linearity_proxy": 8.0},
@@ -133,7 +133,7 @@ def test_run_filter_calibration_ranks_best_overall_and_best_passing(
         fail_threshold_pct=5.0,
     )
 
-    assert captured["variant_labels"] == ["thr_0.80", "thr_1.00"]
+    assert captured["variant_labels"] == ["thr_0.8", "thr_1.0"]
     assert report["schema_name"] == "dagzoo_filter_calibration_report"
     assert report["summary"]["baseline_threshold_requested"] == pytest.approx(0.95)
     assert report["summary"]["best_overall_threshold_requested"] == pytest.approx(1.0)
@@ -142,6 +142,91 @@ def test_run_filter_calibration_ranks_best_overall_and_best_passing(
     assert report["candidates"][0]["diversity_status"] == "pass"
     assert report["baseline"]["diversity_status"] == "reference"
     assert report["candidates"][1]["threshold_effective_mean"] == pytest.approx(0.95)
+
+
+def test_run_filter_calibration_keeps_fine_grained_threshold_candidates_distinct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = GeneratorConfig.from_yaml("configs/preset_filter_benchmark_smoke.yaml")
+    captured: dict[str, object] = {}
+
+    def _stub_run_effective_diversity_audit(**kwargs):
+        captured["variant_labels"] = kwargs["variant_labels"]
+        return {
+            "generated_at": "2026-03-10T08:00:00+00:00",
+            "baseline": _audit_entry(
+                label="baseline",
+                threshold_effective_mean=0.95,
+                filter_accepted_datasets_per_minute=40.0,
+                diversity_acceptance_rate=0.4,
+            ),
+            "variants": [
+                _audit_entry(
+                    label="thr_0.801",
+                    threshold_effective_mean=0.801,
+                    filter_accepted_datasets_per_minute=61.0,
+                    diversity_acceptance_rate=0.61,
+                ),
+                _audit_entry(
+                    label="thr_0.804",
+                    threshold_effective_mean=0.804,
+                    filter_accepted_datasets_per_minute=54.0,
+                    diversity_acceptance_rate=0.54,
+                ),
+            ],
+            "comparisons": [
+                {
+                    "variant_label": "thr_0.801",
+                    "diversity_status": "pass",
+                    "diversity_composite_shift_pct": 1.0,
+                    "diversity_metric_shift_pct": {"linearity_proxy": 1.0},
+                    "datasets_per_minute_delta_pct": 2.0,
+                    "filter_accepted_datasets_per_minute_delta_pct": 52.5,
+                },
+                {
+                    "variant_label": "thr_0.804",
+                    "diversity_status": "warn",
+                    "diversity_composite_shift_pct": 3.5,
+                    "diversity_metric_shift_pct": {"linearity_proxy": 3.5},
+                    "datasets_per_minute_delta_pct": 1.0,
+                    "filter_accepted_datasets_per_minute_delta_pct": 35.0,
+                },
+            ],
+            "summary": {
+                "overall_status": "warn",
+                "probe_num_datasets": 10,
+                "probe_warmup_datasets": 0,
+            },
+        }
+
+    monkeypatch.setattr(
+        "dagzoo.diagnostics.effective_diversity.calibration.run_effective_diversity_audit",
+        _stub_run_effective_diversity_audit,
+    )
+
+    report = run_filter_calibration(
+        config=cfg,
+        config_path="configs/preset_filter_benchmark_smoke.yaml",
+        thresholds=[0.801, 0.804],
+        suite="smoke",
+        num_datasets=10,
+        warmup=0,
+        device="cpu",
+        warn_threshold_pct=2.5,
+        fail_threshold_pct=5.0,
+    )
+
+    assert captured["variant_labels"] == ["thr_0.801", "thr_0.804"]
+    assert [candidate["label"] for candidate in report["candidates"][:2]] == [
+        "thr_0.801",
+        "thr_0.804",
+    ]
+    assert report["candidates"][0]["filter_accepted_datasets_per_minute"] == pytest.approx(61.0)
+    assert report["candidates"][0]["diversity_status"] == "pass"
+    assert report["candidates"][1]["filter_accepted_datasets_per_minute"] == pytest.approx(54.0)
+    assert report["candidates"][1]["diversity_status"] == "warn"
+    assert report["summary"]["best_overall_threshold_requested"] == pytest.approx(0.801)
+    assert report["summary"]["best_passing_threshold_requested"] == pytest.approx(0.801)
 
 
 def test_write_filter_calibration_artifacts(tmp_path) -> None:

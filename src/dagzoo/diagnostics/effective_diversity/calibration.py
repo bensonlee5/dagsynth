@@ -29,7 +29,11 @@ def _clamp_threshold_candidate(value: float) -> float:
 def _threshold_label(value: float) -> str:
     """Return a stable variant label for one requested threshold."""
 
-    return f"thr_{value:.2f}"
+    normalized = _normalize_threshold_candidate(float(value))
+    rendered = f"{normalized:.6f}".rstrip("0").rstrip(".")
+    if "." not in rendered:
+        rendered = f"{rendered}.0"
+    return f"thr_{rendered}"
 
 
 def resolve_filter_calibration_thresholds(
@@ -157,16 +161,12 @@ def run_filter_calibration(
     )
 
     baseline_entry = audit_report["baseline"]
-    comparison_map = {
-        str(item.get("variant_label")): item
-        for item in audit_report.get("comparisons", [])
-        if isinstance(item, dict) and item.get("variant_label") is not None
-    }
-    variant_entries = {
-        str(item.get("label")): item
-        for item in audit_report.get("variants", [])
-        if isinstance(item, dict) and item.get("label") is not None
-    }
+    variant_entries = audit_report.get("variants", [])
+    comparisons = audit_report.get("comparisons", [])
+    if len(variant_entries) != len(variant_thresholds):
+        raise ValueError("audit_report variants length did not match calibration thresholds.")
+    if len(comparisons) != len(variant_thresholds):
+        raise ValueError("audit_report comparisons length did not match calibration thresholds.")
 
     baseline_candidate = _candidate_entry(
         baseline_entry,
@@ -175,10 +175,12 @@ def run_filter_calibration(
         comparison=None,
     )
     candidates = [baseline_candidate]
-    for threshold in variant_thresholds:
-        label = _threshold_label(threshold)
-        comparison = comparison_map.get(label)
-        variant_entry = variant_entries[label]
+    for threshold, variant_entry, comparison in zip(
+        variant_thresholds,
+        variant_entries,
+        comparisons,
+        strict=True,
+    ):
         candidates.append(
             _candidate_entry(
                 variant_entry,
@@ -203,7 +205,6 @@ def run_filter_calibration(
         candidate for candidate in candidates if str(candidate.get("diversity_status")) == "pass"
     ]
     best_passing = max(passing_candidates, key=_ranking_value) if passing_candidates else None
-    comparisons = audit_report.get("comparisons", [])
     overall_status = (
         str(audit_report.get("summary", {}).get("overall_status", "insufficient_metrics"))
         if comparisons

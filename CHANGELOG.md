@@ -10,6 +10,18 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.9.2] - 2026-03-10
+
+### Fixed
+
+- `dagzoo filter-calibration` now preserves distinct candidate labels for
+  fine-grained threshold sweeps and no longer reconstructs candidate rows via
+  label-keyed maps, so closely spaced threshold values do not overwrite each
+  other in calibration summaries.
+- `dagzoo diversity-audit` and `dagzoo filter-calibration` now reject
+  non-finite `--warn-threshold-pct` / `--fail-threshold-pct` values so CLI
+  guardrails cannot be silently disabled by `nan` or `inf`.
+
 ## [0.9.1] - 2026-03-10
 
 ### Added

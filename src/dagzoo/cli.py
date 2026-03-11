@@ -217,6 +217,34 @@ def _parse_thresholds_csv_arg(raw: str) -> list[float]:
     ]
 
 
+def _parse_warn_threshold_pct_arg(raw: str) -> float:
+    """argparse type: parse non-negative finite warn threshold percentages."""
+
+    return _parse_bounded_float(
+        raw,
+        flag="--warn-threshold-pct",
+        lo=0.0,
+        hi=None,
+        lo_inclusive=True,
+        hi_inclusive=False,
+        expectation="a finite value >= 0",
+    )
+
+
+def _parse_fail_threshold_pct_arg(raw: str) -> float:
+    """argparse type: parse non-negative finite fail threshold percentages."""
+
+    return _parse_bounded_float(
+        raw,
+        flag="--fail-threshold-pct",
+        lo=0.0,
+        hi=None,
+        lo_inclusive=True,
+        hi_inclusive=False,
+        expectation="a finite value >= 0",
+    )
+
+
 def _parse_missing_mechanism_arg(raw: str) -> str:
     """argparse type: normalize missingness mechanism values."""
 
@@ -473,13 +501,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     d.add_argument(
         "--warn-threshold-pct",
-        type=float,
+        type=_parse_warn_threshold_pct_arg,
         default=2.5,
         help="Warn threshold for composite diversity shift vs baseline.",
     )
     d.add_argument(
         "--fail-threshold-pct",
-        type=float,
+        type=_parse_fail_threshold_pct_arg,
         default=5.0,
         help="Fail threshold for composite diversity shift vs baseline.",
     )
@@ -531,13 +559,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     c.add_argument(
         "--warn-threshold-pct",
-        type=float,
+        type=_parse_warn_threshold_pct_arg,
         default=2.5,
         help="Warn threshold for composite diversity shift vs baseline.",
     )
     c.add_argument(
         "--fail-threshold-pct",
-        type=float,
+        type=_parse_fail_threshold_pct_arg,
         default=5.0,
         help="Fail threshold for composite diversity shift vs baseline.",
     )
