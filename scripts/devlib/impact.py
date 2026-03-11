@@ -1,25 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import json
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 from .common import REPO_ROOT, repo_relative
 from .deps import ImportGraph, build_import_graph, module_to_package, path_to_module
-
-
-RELEASE_RISK_PATHS = (
-    "src/dagzoo/cli.py",
-    "src/dagzoo/config.py",
-    "src/dagzoo/core/config_resolution.py",
-    "src/dagzoo/core/metadata.py",
-    "src/dagzoo/core/dataset.py",
-    "src/dagzoo/core/fixed_layout_runtime.py",
-    "src/dagzoo/io/",
-    "configs/",
-)
-
+from .review_policy import is_release_risk_path, suggested_pytest_targets
 
 ARCHITECTURE_PATH_PREFIXES = (
     "src/dagzoo/core/",
@@ -46,6 +34,7 @@ class ImpactReport:
     changed_modules: tuple[str, ...]
     module_summaries: tuple[ImpactModuleSummary, ...]
     recommended_modes: tuple[str, ...]
+    suggested_pytest_targets: tuple[str, ...]
 
 
 def detect_changed_files(
@@ -128,6 +117,7 @@ def build_impact_report(
         changed_modules=changed_modules,
         module_summaries=module_summaries,
         recommended_modes=recommend_modes(tags, module_summaries),
+        suggested_pytest_targets=suggested_pytest_targets(changed_files),
     )
 
 
@@ -160,7 +150,7 @@ def classify_tags(changed_files: tuple[str, ...]) -> tuple[str, ...]:
             tags.add("bench")
         if path.startswith(ARCHITECTURE_PATH_PREFIXES):
             tags.add("architecture")
-        if path.startswith(RELEASE_RISK_PATHS):
+        if is_release_risk_path(path):
             tags.add("release-risk")
         if (
             path.startswith("scripts/")
@@ -201,6 +191,14 @@ def render_text(report: ImpactReport) -> str:
         "Recommended verify modes:",
         f"- {', '.join(f'`{mode}`' for mode in report.recommended_modes) if report.recommended_modes else 'none'}",
     ]
+    if report.suggested_pytest_targets:
+        lines.extend(
+            [
+                "",
+                "Suggested pytest targets:",
+                "- " + ", ".join(f"`{target}`" for target in report.suggested_pytest_targets),
+            ]
+        )
     if report.module_summaries:
         lines.extend(["", "Module impact:"])
         for summary in report.module_summaries:
@@ -227,6 +225,7 @@ def render_json(report: ImpactReport) -> str:
         "changed_files": list(report.changed_files),
         "tags": list(report.tags),
         "recommended_modes": list(report.recommended_modes),
+        "suggested_pytest_targets": list(report.suggested_pytest_targets),
         "modules": [
             {
                 "module": summary.module,

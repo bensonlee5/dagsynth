@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
+import json
+import time
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-import json
 from pathlib import Path
-import time
 from typing import Any
 
+import numpy as np
+
 from dagzoo.config import FilterConfig
-from dagzoo.filtering.extra_trees_filter import _apply_extra_trees_filter_numpy
 from dagzoo.filtering.deferred_filter_artifacts import (
-    _CuratedShardWriter,
     _cleanup_path,
     _close_curated_shard_writer,
     _consume_expected_split,
     _copy_lineage_tree_safe,
     _create_curated_shard_writer,
+    _CuratedShardWriter,
     _ensure_curated_output_dir_safe,
     _ensure_split_iter_exhausted,
     _promote_staged_path,
@@ -31,14 +32,12 @@ from dagzoo.filtering.deferred_filter_replay import (
     _resolve_filter_seed,
     _resolve_task_and_filter_config,
 )
+from dagzoo.filtering.extra_trees_filter import _apply_extra_trees_filter_numpy
 from dagzoo.io.parquet_writer import (
     _require_pyarrow,
     pq,
 )
-from dagzoo.math_utils import sanitize_json as _sanitize_json
-
-import numpy as np
-
+from dagzoo.math import sanitize_json as _sanitize_json
 
 MANIFEST_FILENAME = "filter_manifest.ndjson"
 SUMMARY_FILENAME = "filter_summary.json"

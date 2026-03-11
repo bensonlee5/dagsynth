@@ -8,8 +8,7 @@ import torch
 
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.execution_semantics import typed_converter_specs
-from dagzoo.core.fixed_layout_runtime import _sample_fixed_layout
-from dagzoo.core.fixed_layout_batched import (
+from dagzoo.core.fixed_layout.batched import (
     FixedLayoutBatchRng,
     _apply_activation_plan,
     _apply_node_plan_batch,
@@ -21,7 +20,7 @@ from dagzoo.core.fixed_layout_batched import (
     generate_fixed_layout_graph_batch,
     generate_fixed_layout_label_batch,
 )
-from dagzoo.core.fixed_layout_plan_types import (
+from dagzoo.core.fixed_layout.plan_types import (
     ActivationMatrixPlan,
     CategoricalConverterGroup,
     CategoricalConverterPlan,
@@ -40,8 +39,9 @@ from dagzoo.core.fixed_layout_plan_types import (
     WeightsMatrixPlan,
     fixed_layout_converter_groups,
 )
-from dagzoo.functions.activations import _fixed_activation
+from dagzoo.core.fixed_layout.runtime import _sample_fixed_layout
 from dagzoo.core.layout_types import LayoutPlan
+from dagzoo.functions.activations import _fixed_activation
 from dagzoo.rng import KeyedRng
 
 
@@ -275,9 +275,9 @@ def test_build_fixed_layout_execution_plan_uses_keyed_node_roots(
             ),
         )
 
-    monkeypatch.setattr("dagzoo.core.fixed_layout_batched._build_node_specs", fake_build_node_specs)
+    monkeypatch.setattr("dagzoo.core.fixed_layout.batched._build_node_specs", fake_build_node_specs)
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout_batched.sample_node_plan",
+        "dagzoo.core.fixed_layout.batched.sample_node_plan",
         fake_sample_node_plan,
     )
 
@@ -406,11 +406,11 @@ def test_apply_node_plan_batch_keeps_scalar_numeric_groups_batched(
         return x, x[:, :, : x.shape[2]]
 
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout_batched._apply_numeric_converter_group_batch",
+        "dagzoo.core.fixed_layout.batched._apply_numeric_converter_group_batch",
         _stub_group_batch,
     )
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout_batched.apply_numeric_converter_plan_batch",
+        "dagzoo.core.fixed_layout.batched.apply_numeric_converter_plan_batch",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("per-spec path should not run")
         ),
@@ -544,7 +544,7 @@ def test_apply_node_plan_batch_keeps_categorical_groups_batched(
         return x, labels
 
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout_batched._apply_categorical_group_batch",
+        "dagzoo.core.fixed_layout.batched._apply_categorical_group_batch",
         _stub_group_batch,
     )
 
@@ -617,7 +617,7 @@ def test_apply_node_plan_batch_keeps_center_random_fn_groups_split(
         return x, labels
 
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout_batched._apply_categorical_group_batch",
+        "dagzoo.core.fixed_layout.batched._apply_categorical_group_batch",
         _stub_group_batch,
     )
 
@@ -693,7 +693,7 @@ def test_generate_fixed_layout_raw_batch_keys_seeded_batch_rng_per_node(
         return torch.zeros((rng.batch_size, n_rows, 1), device=rng.device), {}
 
     monkeypatch.setattr(
-        "dagzoo.core.fixed_layout_batched._apply_node_plan_batch",
+        "dagzoo.core.fixed_layout.batched._apply_node_plan_batch",
         _stub_apply_node_plan_batch,
     )
 

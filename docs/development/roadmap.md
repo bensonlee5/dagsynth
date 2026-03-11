@@ -87,105 +87,17 @@ Lower rank means higher priority. Rank `0` is reserved for completed items retai
 
 ## Current Implementation Baseline
 
-This section captures the current implementation baseline. For control/data-flow
-walkthroughs, see `docs/how-it-works.md`.
+This roadmap does not duplicate the current codebase map or public contract.
+Use the canonical docs instead:
 
-### Source of Truth
-
-- Normative behavior: `reference/TabICLv2.pdf` Appendix E (`E.2`-`E.14`).
-- Clarification-only sources:
-  - `reference/A Closer Look at TabPFN v2.pdf`
-  - `reference/Accurate predictions on small data with a tabular foundation model.pdf`
-
-### Public Interfaces
-
-#### Python API
-
-- `generate_one(config: GeneratorConfig, *, seed: int | None = None, device: str | None = None) -> DatasetBundle`
-- `generate_batch(config: GeneratorConfig, *, num_datasets: int, seed: int | None = None, device: str | None = None) -> list[DatasetBundle]`
-- `generate_batch_iter(config: GeneratorConfig, *, num_datasets: int, seed: int | None = None, device: str | None = None) -> Iterator[DatasetBundle]`
-- `write_packed_parquet_shards_stream(bundles, out_dir, shard_size, compression="zstd")`
-- `DatasetConfig` missingness controls:
-  - `missing_rate`
-  - `missing_mechanism` (`none|mcar|mar|mnar`)
-  - `missing_mar_observed_fraction`
-  - `missing_mar_logit_scale`
-  - `missing_mnar_logit_scale`
-
-#### CLI
-
-- `dagzoo generate --config ... --rows ... --num-datasets ... --device cuda --seed ...`
-- `dagzoo generate --missing-rate ... --missing-mechanism ... --missing-mar-observed-fraction ... --missing-mar-logit-scale ... --missing-mnar-logit-scale ...`
-- `dagzoo filter --in <shard_dir> --out <filter_dir> [--curated-out <accepted_shards_dir>] [--n-jobs ...]`
-- `dagzoo benchmark --suite standard --preset all --baseline ... --fail-on-regression`
-- `dagzoo diversity-audit --baseline-config ... --variant-config ... --suite ... --fail-on-regression`
-- `dagzoo filter-calibration --config ... [--thresholds ...] --suite ... --fail-on-regression`
-
-#### Output Contract
-
-See `docs/output-format.md` for the DatasetBundle field spec, Parquet layout,
-metadata JSON contract, and DAG lineage schema.
-
-### Runtime Profiles
-
-- `configs/default.yaml`: balanced local development profile.
-- `configs/benchmark_cpu.yaml`: CPU benchmark profile.
-- `configs/benchmark_cuda_desktop.yaml`: desktop CUDA benchmark profile.
-- `configs/benchmark_cuda_h100.yaml`: H100 CUDA benchmark profile.
-- `configs/preset_cuda_h100.yaml`: high-throughput datacenter preset.
-- `configs/preset_missingness_mcar.yaml`: MCAR missingness preset.
-- `configs/preset_missingness_mar.yaml`: MAR missingness preset.
-- `configs/preset_missingness_mnar.yaml`: MNAR missingness preset.
-- `configs/preset_lineage_benchmark_smoke.yaml`: CPU smoke benchmark preset for
-  lineage export guardrail checks.
-- Runtime currently applies coarse profile-tier overrides from GPU FLOPS lookup
-  plus explicit hardware-policy transforms; adaptive autotuning is tracked in
-  RD-010.
-
-### Module Mapping (Appendix E)
-
-- `sampling/correlated.py`: correlated scalar sampler (`E.2`)
-- `core/dataset.py`: dataset orchestration entrypoint (`E.3`)
-- `core/layout.py`: dataset layout, graph sampling, and node assignments
-  (`E.3`, `E.4`)
-- `graph/dag_sampler.py`: latent variable DAG sampling (`E.4`)
-- `core/fixed_layout_batched.py`: typed plan sampling and batched node execution
-- `core/node_pipeline.py`: isolated node-plan helper used by tests and microbenchmarks
-- `converters/numeric.py`, `converters/categorical.py`: converters (`E.6`)
-- `functions/multi.py`: concatenation vs per-parent aggregation (`E.7`)
-- `functions/random_functions.py`: NN/tree/discretization/GP/linear/quadratic/EM/product (`E.8`)
-- `functions/activations.py`: fixed + parametric activations (`E.9`)
-- `linalg/random_matrices.py`: five matrix families and postprocessing (`E.10`)
-- `sampling/random_weights.py`: positive normalized weights (`E.11`)
-- `sampling/random_points.py`: base distributions + random function transform
-  (`E.12`)
-- `postprocess/postprocess.py`: cleanup, scaling, class/index permutation
-  (`E.13`)
-- `filtering/extra_trees_filter.py`: CPU ExtraTrees OOB filter (`E.14`)
-
-### Performance Strategy
-
-1. Current generator path runs Torch on all devices (CPU/CUDA/MPS); diagnostics
-   extraction converts bundles to CPU before computing metrics (see
-   `docs/how-it-works.md` for diagnostics data flow).
-1. Keep kernels batch-oriented with vectorized torch operations and avoid Python
-   loops in inner math paths.
-1. Use optional filtering (`E.14`) behind config flags to avoid CPU bottlenecks
-   in throughput benchmarks.
-1. Profile with `bench/throughput.py` and track JSON baseline regressions by
-   preset.
-1. Missingness-enabled benchmark runs include acceptance/runtime guardrails
-   against missingness-off controls.
-1. Benchmark profile summaries include lineage-export persistence overhead
-   guardrails (`lineage_guardrails`) against lineage-stripped control
-   persistence runs.
-1. Next hardware-aware step is bounded adaptive autotuning with explicit
-   telemetry/guardrails (RD-010).
-1. The current throughput baseline is the canonical filtered-corpus pipeline:
-   deferred-filter replay, benchmark acceptance-yield reporting, and
-   diversity-aware filter calibration are implemented; later follow-ons revisit
-   writer overlap or accelerator micro-batching only if filter is no longer the
-   dominant bottleneck (`BL-84`, `BL-85`).
+- system/data-flow walkthrough: `docs/how-it-works.md`
+- output and artifact contract: `docs/output-format.md`
+- package/module structure: `docs/development/codebase-navigation.md`
+- generated import/dependency map: `docs/development/module-dependency-map.md`
+- packaged/runtime profiles: `configs/`
+- source references: `reference/TabICLv2.pdf` Appendix E (`E.2`-`E.14`), plus
+  `reference/A Closer Look at TabPFN v2.pdf` and
+  `reference/Accurate predictions on small data with a tabular foundation model.pdf`
 
 ### Reproducibility Strategy
 
@@ -247,7 +159,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity
 - Goal: support observational + interventional sampling tracks with explicit intervention specs.
 - Linear tracking: epic `BL-50`; dependency chain `BL-67 -> BL-68 -> BL-69 -> BL-70`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/core/node_pipeline.py`, `src/dagzoo/cli.py`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/core/dataset.py`, `src/dagzoo/core/node_pipeline.py`, `src/dagzoo/cli/`
 - Exit criteria:
   - Config supports opt-in intervention mode with safe default (`off`).
   - Generated artifacts contain intervention set and pre/post intervention metadata.
@@ -265,7 +177,7 @@ metadata JSON contract, and DAG lineage schema.
   - `dagzoo generate` supports missingness CLI overrides.
   - Generation path injects deterministic missingness masks and emits per-bundle metadata.
   - Benchmark profiles emit `missingness_guardrails` including metadata coverage, realized-rate accuracy, and runtime degradation checks.
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/sampling/missingness.py`, `src/dagzoo/postprocess/postprocess.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/cli.py`, `src/dagzoo/bench/suite.py`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/sampling/missingness.py`, `src/dagzoo/postprocess/postprocess.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/cli/`, `src/dagzoo/bench/suite.py`
 - Completion evidence:
   - Config and CLI support opt-in mechanism selection and missing rate controls.
   - Tests validate expected missing-rate and dependency behavior.
@@ -279,7 +191,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity, tabular realism
 - Goal: introduce controlled distribution-shift/drift modes in graph and mechanism sampling.
 - GitHub tracking: epic `#64`; dependency chain `#72 -> #73 -> #74 -> #75`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/core/shift.py`, `src/dagzoo/diagnostics/`, `src/dagzoo/bench/`, `configs/preset_shift_*.yaml`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/core/dataset.py`, `src/dagzoo/core/shift.py`, `src/dagzoo/diagnostics/`, `src/dagzoo/bench/`, `configs/preset_shift_*.yaml`
 - Delivered scope:
   - Shift controls are integrated into graph/mechanism/noise sampling with deterministic seeded behavior.
   - Per-bundle metadata and diagnostics expose resolved shift settings and observability signals.
@@ -298,7 +210,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: define reproducible stress presets (low-SNR, class imbalance, harder interactions).
 - Linear tracking: epic `BL-48`; dependency chain `BL-59 -> BL-62 -> BL-61 -> BL-60`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/functions/random_functions.py`, `src/dagzoo/postprocess/postprocess.py`, `src/dagzoo/bench/`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/functions/random_functions.py`, `src/dagzoo/postprocess/postprocess.py`, `src/dagzoo/bench/`
 - Exit criteria:
   - Presets are selectable via config/CLI and remain opt-in.
   - Benchmarks and diagnostics confirm regimes differ from baseline in intended directions.
@@ -313,7 +225,7 @@ metadata JSON contract, and DAG lineage schema.
 - Goal: historical; staged complexity controls have been removed in favor of
   explicit split sizing and fixed-layout generation.
 - GitHub tracking: epic `#49`; dependency chain `#50 -> #51 -> #90 -> #52 -> #53`
-- Repo touchpoints (historical): `src/dagzoo/config.py`,
+- Repo touchpoints (historical): `src/dagzoo/config/`,
   `src/dagzoo/core/dataset.py`
 
 ### RD-007: Many-Class Rollout Envelope (`<=32` Classes)
@@ -324,7 +236,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism, causal structural integrity
 - Goal: land a stable many-class rollout envelope while keeping filter behavior and label handling interpretable.
 - Linear tracking: historical epic `BL-17`; completion chain `BL-18 -> BL-19 -> BL-20 -> BL-21`; closure note `BL-31`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/converters/categorical.py`, `src/dagzoo/filtering/extra_trees_filter.py`, `docs/features/many-class.md`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/converters/categorical.py`, `src/dagzoo/filtering/extra_trees_filter.py`, `docs/features/many-class.md`
 - Delivered scope:
   - `dataset.n_classes_max <= 32` is enforced as the supported rollout envelope.
   - Converter and postprocess paths are hardened for the current many-class range.
@@ -342,7 +254,7 @@ metadata JSON contract, and DAG lineage schema.
 - Mission alignment: foundation model pretraining
 - Pillar alignment: tabular realism
 - Goal: feature retired; diagnostics target bands remain as reporting-only metadata.
-- Repo touchpoints: `src/dagzoo/diagnostics/coverage.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/cli.py`
+- Repo touchpoints: `src/dagzoo/diagnostics/coverage.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/cli/`
 - Notes:
   - Steering selection logic was removed to simplify generation semantics.
   - `diagnostics.meta_feature_targets` remains supported for coverage summaries.
@@ -355,7 +267,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: improve accepted-corpus throughput on the canonical `generate -> filter` pipeline while preserving or improving effective diversity.
 - Linear tracking: epic `BL-49`; completed chain `BL-148 -> BL-149 -> BL-150`; deferred follow-ons `BL-84 -> BL-85`; historical completed work `BL-82`, `BL-83`, `BL-86`
-- Repo touchpoints: `src/dagzoo/filtering/deferred_filter.py`, `src/dagzoo/bench/stage_metrics.py`, `src/dagzoo/bench/suite.py`, `src/dagzoo/cli.py`, `src/dagzoo/io/parquet_writer.py`
+- Repo touchpoints: `src/dagzoo/filtering/deferred_filter.py`, `src/dagzoo/bench/stage_metrics.py`, `src/dagzoo/bench/suite.py`, `src/dagzoo/cli/`, `src/dagzoo/io/parquet_writer.py`
 - Delivered scope:
   - `BL-148`: optimized deferred-filter replay throughput on canonical shard metadata without reviving worker orchestration.
   - `BL-149`: promoted filtered-corpus throughput and acceptance yield into first-class benchmark outputs and artifacts.
@@ -374,7 +286,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: evolve hardware-aware scaling from static coarse profile tiers to bounded adaptive tuning based on observed throughput/memory behavior when throughput/cost becomes a practical bottleneck.
 - Linear tracking: epic `BL-42`; dependency chain `BL-43 -> BL-44 -> BL-53 -> BL-45 -> BL-54 -> BL-46`
-- Repo touchpoints: `src/dagzoo/hardware.py`, `src/dagzoo/config.py`, `src/dagzoo/cli.py`, `src/dagzoo/bench/suite.py`, `src/dagzoo/bench/report.py`
+- Repo touchpoints: `src/dagzoo/hardware.py`, `src/dagzoo/config/`, `src/dagzoo/cli/`, `src/dagzoo/bench/suite.py`, `src/dagzoo/bench/report.py`
 - Exit criteria:
   - Adaptive mode improves throughput versus profile baseline on at least one CUDA hardware class without violating memory guardrails.
   - Unknown CUDA devices can run adaptive tuning without relying only on static fallback tiers.
@@ -389,7 +301,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: causal structural integrity, tabular realism
 - Goal: build on the already-landed mechanism-family mix surface by adding genuinely new families/variants and proving they increase emitted diversity without unacceptable throughput or filter-yield regressions.
 - Linear tracking: epic `BL-26`; remaining chain `BL-28 -> BL-51 -> BL-52 -> BL-29 -> BL-30`; completed plumbing `BL-27`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/functions/random_functions.py`, `src/dagzoo/core/node_pipeline.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/bench/suite.py`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/functions/random_functions.py`, `src/dagzoo/core/node_pipeline.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/bench/suite.py`
 - Exit criteria:
   - New mechanism families or variants are selectable through the existing family-mix surface.
   - Expanded mechanism families are selectable and covered by unit/integration tests.
@@ -405,7 +317,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: complete lean, low-complexity integration of explicit noise-family controls and mixtures to diversify residual/noise behavior without broad generator refactors.
 - GitHub tracking: epic `#24`; dependency chain `#25 -> #26 -> #27` (completed)
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/sampling/`, `src/dagzoo/core/dataset.py`, `src/dagzoo/bench/suite.py`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/sampling/`, `src/dagzoo/core/dataset.py`, `src/dagzoo/bench/suite.py`
 - Delivered scope:
   - Config supports `gaussian`, `laplace`, `student_t`, and `mixture` families with safety validation.
   - Runtime sampling and generation metadata report requested/effective family settings.
@@ -423,7 +335,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: tabular realism
 - Goal: add an opt-in temporal generation track for sequence datasets so PFN pretraining workflows cover classification/regression/time-series under one reproducible generator framework.
 - Linear tracking: epic `BL-73`; dependency chain `BL-74 -> BL-75 -> BL-76 -> BL-77`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/core/dataset.py`, `src/dagzoo/core/node_pipeline.py`, `src/dagzoo/diagnostics/`, `src/dagzoo/bench/`, `docs/`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/core/dataset.py`, `src/dagzoo/core/node_pipeline.py`, `src/dagzoo/diagnostics/`, `src/dagzoo/bench/`, `docs/`
 - Exit criteria:
   - Temporal mode is opt-in and backward-compatible (`off` by default).
   - Fixed seed + config reproducibility is preserved for temporal generation.
@@ -438,7 +350,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance
 - Goal: expose stage-level throughput telemetry for canonical benchmark runs so bottlenecks can be attributed before further runtime work is prioritized.
 - Linear tracking: historical delivery `BL-82` under `BL-49`
-- Repo touchpoints: `src/dagzoo/bench/stage_metrics.py`, `src/dagzoo/bench/suite.py`, `src/dagzoo/cli.py`, `docs/features/benchmark-guardrails.md`
+- Repo touchpoints: `src/dagzoo/bench/stage_metrics.py`, `src/dagzoo/bench/suite.py`, `src/dagzoo/cli/`, `docs/features/benchmark-guardrails.md`
 - Delivered scope:
   - Benchmark/report artifacts expose generation, write, and optional filter stage throughput instead of only total runtime.
   - Filter rejection and retry signals are surfaced for filter-enabled benchmark runs.
@@ -476,7 +388,7 @@ metadata JSON contract, and DAG lineage schema.
 - Pillar alignment: hardware-native performance, tabular realism
 - Goal: let downstream repos specify what to generate and how many datasets to generate through a concise request file, then consume a filtered corpus plus machine-readable handoff metadata without depending on the full internal config surface.
 - Linear tracking: epic `BL-143`; dependency chain `BL-144 -> BL-145 -> BL-146 -> BL-147`
-- Repo touchpoints: `src/dagzoo/config.py`, `src/dagzoo/cli.py`, `src/dagzoo/filtering/deferred_filter.py`, `docs/`, downstream `tab-foundry`
+- Repo touchpoints: `src/dagzoo/config/`, `src/dagzoo/cli/`, `src/dagzoo/filtering/deferred_filter.py`, `docs/`, downstream `tab-foundry`
 - Exit criteria:
   - A versioned request-file schema captures a useful generation intent with a small field set.
   - Request execution resolves into canonical `generate -> filter` runs with effective-config traceability.

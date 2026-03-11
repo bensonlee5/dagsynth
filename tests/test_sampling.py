@@ -1,10 +1,10 @@
 import pytest
 import torch
+from conftest import make_generator as _make_generator
 
+import dagzoo.sampling.random_weights as random_weights_mod
 from dagzoo.sampling.noise import NoiseSamplingSpec
 from dagzoo.sampling.random_weights import sample_random_weights
-from conftest import make_generator as _make_generator
-import dagzoo.sampling.random_weights as random_weights_mod
 
 
 def _entropy(weights: torch.Tensor) -> float:

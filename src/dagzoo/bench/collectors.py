@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import math
 from typing import Any
 
-from dagzoo.math_utils import (
+from dagzoo.math import (
     coerce_optional_finite_float as _coerce_optional_finite_float,
 )
 from dagzoo.types import DatasetBundle

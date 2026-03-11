@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from dagzoo.math_utils import sanitize_json as _sanitize_json
+from dagzoo.math import sanitize_json as _sanitize_json
 from dagzoo.types import DatasetBundle
 
 from .metrics import extract_dataset_metrics

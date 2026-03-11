@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import shutil
 import subprocess
+from dataclasses import dataclass
 
 from .common import REPO_ROOT, venv_python
 

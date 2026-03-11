@@ -38,4 +38,4 @@ repos:
     entry: ./.venv/bin/python scripts/dev.py contract --source staged
     language: system
     pass_filenames: false
-    files: ^(src/dagzoo/(cli\.py|config\.py|core/(config_resolution|metadata|dataset|fixed_layout_runtime)\.py|io/.*)|configs/.*|pyproject\.toml|CHANGELOG\.md)$
+    files: ^(src/dagzoo/|configs/|scripts/devlib/|pyproject\.toml$|CHANGELOG\.md$|\.pre-commit-config\.yaml$)

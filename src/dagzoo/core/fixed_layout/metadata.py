@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
 
-from dagzoo.core.fixed_layout_plan_types import FixedLayoutExecutionPlan
 from dagzoo.core.layout_types import LayoutPlan
 from dagzoo.types import DatasetBundle
+
+from .plan_types import FixedLayoutExecutionPlan
 
 _FIXED_LAYOUT_METADATA_SCHEMA_VERSION = 4
 

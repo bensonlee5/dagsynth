@@ -22,7 +22,7 @@ from dagzoo.bench.metrics import degradation_percent
 from dagzoo.config import GeneratorConfig
 from dagzoo.core.dataset import generate_batch_iter
 from dagzoo.io.parquet_writer import write_packed_parquet_shards_stream
-from dagzoo.math_utils import to_numpy as _to_numpy
+from dagzoo.math import to_numpy as _to_numpy
 from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 

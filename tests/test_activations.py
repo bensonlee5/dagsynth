@@ -1,9 +1,9 @@
 """Tests for functions/activations.py."""
 
 import torch
+from conftest import make_generator as _make_generator
 
 from dagzoo.functions.activations import _fixed_activation, apply_random_activation
-from conftest import make_generator as _make_generator
 
 
 def test_output_shape() -> None:

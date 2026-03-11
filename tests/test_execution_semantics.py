@@ -3,20 +3,31 @@ from dataclasses import dataclass
 
 import pytest
 import torch
+from conftest import make_generator as _make_generator
+from conftest import make_keyed_rng as _make_keyed_rng
 
+import dagzoo.converters.categorical as categorical_mod
+import dagzoo.converters.numeric as numeric_mod
+import dagzoo.core.execution_semantics as execution_semantics_mod
+import dagzoo.core.fixed_layout.batched as fixed_layout_batched_mod
+import dagzoo.core.node_pipeline as node_pipeline_mod
+import dagzoo.functions.random_functions as random_functions_mod
+import dagzoo.sampling.random_points as random_points_mod
 from dagzoo.converters.categorical import apply_categorical_converter
 from dagzoo.converters.numeric import apply_numeric_converter
 from dagzoo.core.execution_semantics import typed_converter_specs
-from dagzoo.core.fixed_layout_batched import (
+from dagzoo.core.fixed_layout.batched import (
     FixedLayoutBatchRng,
     _apply_categorical_group_batch,
     _apply_node_plan_batch,
     _sample_random_points_batch,
-    apply_numeric_converter_plan_batch,
     apply_function_plan_batch,
+    apply_numeric_converter_plan_batch,
 )
-from dagzoo.core.fixed_layout_plan_types import (
+from dagzoo.core.fixed_layout.plan_types import (
     CategoricalConverterPlan,
+    DiscretizationFunctionPlan,
+    EmFunctionPlan,
     FixedActivationPlan,
     FixedLayoutConverterPlan,
     FixedLayoutLatentPlan,
@@ -31,23 +42,13 @@ from dagzoo.core.fixed_layout_plan_types import (
     RandomPointsNodeSource,
     StackedNodeSource,
     TreeFunctionPlan,
-    DiscretizationFunctionPlan,
-    EmFunctionPlan,
     fixed_layout_converter_groups,
 )
 from dagzoo.core.layout_types import MechanismFamily
 from dagzoo.core.node_pipeline import apply_node_pipeline
 from dagzoo.functions.random_functions import apply_random_function
-from dagzoo.sampling.random_points import sample_random_points
-from conftest import make_generator as _make_generator, make_keyed_rng as _make_keyed_rng
-import dagzoo.converters.categorical as categorical_mod
-import dagzoo.converters.numeric as numeric_mod
-import dagzoo.core.fixed_layout_batched as fixed_layout_batched_mod
-import dagzoo.core.execution_semantics as execution_semantics_mod
-import dagzoo.core.node_pipeline as node_pipeline_mod
-import dagzoo.functions.random_functions as random_functions_mod
-import dagzoo.sampling.random_points as random_points_mod
 from dagzoo.rng import KeyedRng
+from dagzoo.sampling.random_points import sample_random_points
 
 
 @dataclass(slots=True)

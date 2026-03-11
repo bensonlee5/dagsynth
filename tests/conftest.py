@@ -1,8 +1,19 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+from functools import lru_cache
+from pathlib import Path
+
 import pytest
 import torch
+import yaml
 
+from dagzoo.config import GeneratorConfig, clone_generator_config
 from dagzoo.hardware import HardwareInfo
 from dagzoo.rng import KeyedRng, keyed_rng_from_generator
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def make_generator(seed: int = 42) -> torch.Generator:
@@ -16,6 +27,44 @@ def make_keyed_rng(generator: torch.Generator, *components: str | int) -> KeyedR
     """Consume one ambient draw and derive the same keyed root used by helpers."""
 
     return keyed_rng_from_generator(generator, *components)
+
+
+@lru_cache(maxsize=None)
+def _cached_repo_config(resource_name: str) -> GeneratorConfig:
+    return GeneratorConfig.from_yaml(REPO_ROOT / "configs" / resource_name)
+
+
+def load_repo_config(resource_name: str = "default.yaml") -> GeneratorConfig:
+    """Load one repo config and return a fresh mutable copy for the caller."""
+
+    return clone_generator_config(_cached_repo_config(resource_name), revalidate=False)
+
+
+def write_yaml(tmp_path: Path, name: str, payload: object) -> Path:
+    """Write one YAML payload under ``tmp_path`` and return the created path."""
+
+    path = tmp_path / name
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def write_config(tmp_path: Path, config: GeneratorConfig, name: str = "config.yaml") -> Path:
+    """Serialize one ``GeneratorConfig`` under ``tmp_path`` and return the path."""
+
+    return write_yaml(tmp_path, name, config.to_dict())
+
+
+def load_script_module(module_name: str, rel_path: str):
+    """Load one repo script module from a repo-relative path."""
+
+    script_path = REPO_ROOT / rel_path
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _build_mock_hardware(tier: str) -> HardwareInfo:

@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from dagzoo.math_utils import sanitize_json as _sanitize_json
+from dagzoo.math import sanitize_json as _sanitize_json
 
 
 def write_suite_json(summary: dict[str, Any], out_path: str | Path) -> Path:

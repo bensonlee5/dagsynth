@@ -17,7 +17,6 @@ from github_to_linear import (
     load_linear_api_key,
 )
 
-
 HARNESS_ARTICLE_URL = "https://openai.com/index/harness-engineering/"
 RECURRING_AUDIT_TITLE = "ops(harness): weekly full-repo harness audit"
 HARNESS_EPIC_TITLE = "epic: harness engineering adoption for autonomous dagzoo development"

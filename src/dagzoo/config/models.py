@@ -11,6 +11,7 @@ import yaml
 from dagzoo.rng import SEED32_MAX, SEED32_MIN
 
 from .constants import (
+    _PRODUCT_COMPONENT_FAMILIES,
     MAX_SUPPORTED_CLASS_COUNT,
     MISSINGNESS_MECHANISM_NONE,
     NOISE_FAMILY_GAUSSIAN,
@@ -25,7 +26,6 @@ from .constants import (
     NoiseFamily,
     NoiseMixtureComponent,
     ShiftMode,
-    _PRODUCT_COMPONENT_FAMILIES,
     _SectionT,
 )
 from .normalization import (

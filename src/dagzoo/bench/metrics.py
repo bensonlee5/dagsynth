@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from dagzoo.bench.constants import MILLISECONDS_PER_SECOND
-from dagzoo.math_utils import to_numpy as _to_numpy
+from dagzoo.math import to_numpy as _to_numpy
 from dagzoo.types import DatasetBundle
 
 HIGHER_IS_BETTER_METRICS = frozenset(
@@ -139,17 +139,3 @@ def reproducibility_signatures(bundles: Iterable[DatasetBundle]) -> tuple[str, s
             _update_digest(workload, None)
 
     return content.hexdigest(), workload.hexdigest()
-
-
-def reproducibility_signature(bundles: Iterable[DatasetBundle]) -> str:
-    """Build a deterministic content digest for a sequence or stream of bundles."""
-
-    content, _ = reproducibility_signatures(bundles)
-    return content
-
-
-def reproducibility_workload_signature(bundles: Iterable[DatasetBundle]) -> str:
-    """Build a workload-shape digest for a sequence or stream of bundles."""
-
-    _, workload = reproducibility_signatures(bundles)
-    return workload

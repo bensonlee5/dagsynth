@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
 import tempfile
 import time
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -14,8 +14,8 @@ from dagzoo.bench.constants import SECONDS_PER_MINUTE
 from dagzoo.config import GeneratorConfig
 from dagzoo.filtering.extra_trees_filter import _apply_extra_trees_filter_numpy
 from dagzoo.io.parquet_writer import write_packed_parquet_shards_stream
-from dagzoo.math_utils import coerce_optional_finite_float as _coerce_optional_finite_float
-from dagzoo.math_utils import to_numpy as _to_numpy
+from dagzoo.math import coerce_optional_finite_float as _coerce_optional_finite_float
+from dagzoo.math import to_numpy as _to_numpy
 from dagzoo.rng import SEED32_MAX
 from dagzoo.types import DatasetBundle
 
@@ -222,14 +222,3 @@ def measure_filter_stage_metrics(
     if collect_accepted_bundles:
         measurement.accepted_bundles = accepted_bundles
     return measurement
-
-
-def measure_filter_datasets_per_minute(
-    bundles: Sequence[DatasetBundle],
-    *,
-    config: GeneratorConfig,
-) -> float:
-    """Measure deferred filter-stage throughput on sampled bundles."""
-
-    measurement = measure_filter_stage_metrics(bundles, config=config)
-    return float(measurement.datasets_per_minute)

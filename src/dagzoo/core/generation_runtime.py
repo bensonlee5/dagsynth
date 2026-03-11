@@ -17,8 +17,8 @@ from dagzoo.core.noise_runtime import (
 )
 from dagzoo.core.shift import ShiftRuntimeParams
 from dagzoo.core.validation import (
-    InvalidClassSplitError,
     InfeasibleStratifiedSplitError,
+    InvalidClassSplitError,
     _classification_split_valid,
     _stratified_split_indices,
 )
@@ -144,13 +144,6 @@ def _normalized_filter_metadata(aux_meta: dict[str, Any]) -> dict[str, Any]:
     if isinstance(filter_metadata, dict):
         return dict(filter_metadata)
     return {"mode": "deferred", "status": "not_run"}
-
-
-def _parent_node_indices(adjacency: torch.Tensor, node_index: int) -> list[int]:
-    """Return parent indices for node `node_index` from `adjacency[src, dst]`."""
-
-    parent_indices = torch.where(adjacency[:, node_index])[0].tolist()
-    return sorted(int(parent_index) for parent_index in parent_indices)
 
 
 def _build_fixed_schema_finalization_context(

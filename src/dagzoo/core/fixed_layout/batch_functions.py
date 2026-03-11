@@ -6,15 +6,19 @@ import math
 
 import torch
 
-from dagzoo.core.fixed_layout_batch_common import (
+from dagzoo.core.trees import compute_odt_leaf_indices_batch, sample_odt_splits_batch
+from dagzoo.functions import activations as activations_module
+from dagzoo.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
+
+from .batch_common import (
     FixedLayoutBatchRng,
     _batch_standardize,
-    _nearest_lp_center_indices,
     _lp_distances_to_centers,
+    _nearest_lp_center_indices,
     _row_normalize_batch,
     _sample_random_weights_batch,
 )
-from dagzoo.core.fixed_layout_plan_types import (
+from .plan_types import (
     ActivationMatrixPlan,
     DiscretizationFunctionPlan,
     EmFunctionPlan,
@@ -33,9 +37,6 @@ from dagzoo.core.fixed_layout_plan_types import (
     TreeFunctionPlan,
     WeightsMatrixPlan,
 )
-from dagzoo.core.trees import compute_odt_leaf_indices_batch, sample_odt_splits_batch
-from dagzoo.functions import activations as activations_module
-from dagzoo.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
 
 
 def _apply_activation_plan(

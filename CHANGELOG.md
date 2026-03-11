@@ -10,6 +10,23 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.9.4] - 2026-03-11
+
+### Changed
+
+- Cleaned up internal technical debt by removing trivial dead wrappers,
+  centralizing release-risk review policy, and adding stale docs-path checks to
+  the repo verification workflow.
+- Regrouped the fixed-layout execution stack under `src/dagzoo/core/fixed_layout/`
+  and consolidated shared numeric helpers plus random matrix sampling under
+  `src/dagzoo/math/`, removing the old flat module layout.
+- Added shared test helpers for repo config loading, YAML/config file writing,
+  and script-module loading, then migrated repeated test setup to those shared
+  helpers.
+- Normalized import ordering and sorted exported symbol lists across the repo,
+  and refreshed docs references to the current `src/dagzoo/cli/` and
+  `src/dagzoo/config/` package layout.
+
 ## [0.9.3] - 2026-03-11
 
 ### Added

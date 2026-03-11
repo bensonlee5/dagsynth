@@ -7,8 +7,8 @@ from typing import Any, Literal, overload
 import torch
 
 from dagzoo.config import (
-    DatasetConfig,
     MISSINGNESS_MECHANISM_NONE,
+    DatasetConfig,
     normalize_missing_mechanism,
 )
 from dagzoo.rng import KeyedRng

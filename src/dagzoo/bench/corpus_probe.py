@@ -9,7 +9,7 @@ from dagzoo.bench.constants import SMOKE_NUM_DATASETS_CAP, SMOKE_WARMUP_DATASETS
 from dagzoo.bench.stage_metrics import FilterStageMeasurement, replay_filter_stage_metrics
 from dagzoo.bench.throughput import iter_throughput_measure_bundles, run_throughput_benchmark
 from dagzoo.config import GeneratorConfig, clone_generator_config
-from dagzoo.core.fixed_layout_runtime import realize_generation_config_for_run
+from dagzoo.core.fixed_layout.runtime import realize_generation_config_for_run
 from dagzoo.diagnostics.coverage import CoverageAggregationConfig, CoverageAggregator
 from dagzoo.diagnostics_targets import build_diagnostics_aggregation_config
 

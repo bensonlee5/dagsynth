@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import yaml
+from conftest import load_repo_config, write_config
 
 from dagzoo.bench.constants import SMOKE_N_TEST_CAP, SMOKE_N_TRAIN_CAP
 from dagzoo.cli import (
@@ -11,7 +12,6 @@ from dagzoo.cli import (
     _print_preset_result_line,
     main,
 )
-from dagzoo.config import GeneratorConfig
 
 
 def test_cli_package_reexports_parser_choice_constants() -> None:
@@ -68,10 +68,9 @@ def test_benchmark_cli_writes_json(tmp_path) -> None:
 
 
 def test_benchmark_cli_realizes_dataset_rows_once_per_preset(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.dataset.rows = "400..60000"  # type: ignore[assignment]
-    config_path = tmp_path / "rows_config.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "rows_config.yaml")
     out_dir = tmp_path / "rows_benchmark"
 
     code = main(

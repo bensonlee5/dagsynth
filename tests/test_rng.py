@@ -5,8 +5,8 @@ import torch
 
 import dagzoo.rng as rng_mod
 from dagzoo.rng import (
-    KeyedRng,
     SEED32_MAX,
+    KeyedRng,
     derive_seed,
     keyed_rng_from_generator,
     validate_seed32,

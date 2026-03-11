@@ -4,46 +4,48 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
-from collections.abc import Callable, Mapping
 from collections import Counter
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import torch
+
 from dagzoo.bench.baseline import compare_summary_to_baseline
+from dagzoo.bench.collectors import (
+    _compose_bundle_callback,
+    _MissingnessAcceptanceCollector,
+    _NoiseGuardrailCollector,
+    _ShiftGuardrailCollector,
+    _ThroughputPressureCollector,
+)
 from dagzoo.bench.constants import (
     DIAGNOSTICS_DUPLICATE_PRESET_SUFFIX_BASE,
     MIB,
     MICROBENCH_REPEATS,
     MISSINGNESS_RATE_FAIL_ABS_ERROR,
     MISSINGNESS_RATE_WARN_ABS_ERROR,
+    NOISE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE,
     SHIFT_GUARDRAIL_DIRECTIONAL_GATING_MIN_SAMPLE,
     SHIFT_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE,
-    NOISE_GUARDRAIL_RUNTIME_GATING_MIN_SAMPLE,
-)
-from dagzoo.bench.micro import run_microbenchmarks
-from dagzoo.bench.metrics import degradation_percent, reproducibility_signatures
-from dagzoo.bench.collectors import (
-    _MissingnessAcceptanceCollector,
-    _NoiseGuardrailCollector,
-    _ShiftGuardrailCollector,
-    _ThroughputPressureCollector,
-    _compose_bundle_callback,
 )
 from dagzoo.bench.guardrails import (
     _build_guardrail_issue,
-    _collect_lineage_guardrails,
     _collect_guardrail_regression_issues,
+    _collect_lineage_guardrails,
     _issue_sort_key,
     _severity_from_thresholds,
     _status_from_issues,
 )
-from dagzoo.bench.throughput import run_throughput_benchmark
+from dagzoo.bench.metrics import degradation_percent, reproducibility_signatures
+from dagzoo.bench.micro import run_microbenchmarks
 from dagzoo.bench.preset_specs import (
     PresetRunSpec,
     _cap_smoke_rows_spec,
     _copy_runtime_config,
     _smoke_caps_for_spec,
+)
+from dagzoo.bench.preset_specs import (
     resolve_preset_run_specs as _resolve_preset_run_specs,
 )
 from dagzoo.bench.runtime_support import (
@@ -64,11 +66,12 @@ from dagzoo.bench.stage_metrics import (
     measure_filter_stage_metrics,
     measure_write_datasets_per_minute,
 )
+from dagzoo.bench.throughput import run_throughput_benchmark
 from dagzoo.config import (
-    GeneratorConfig,
     MISSINGNESS_MECHANISM_NONE,
     NOISE_FAMILY_GAUSSIAN,
     SHIFT_MODE_OFF,
+    GeneratorConfig,
 )
 from dagzoo.core.config_resolution import (
     append_config_diff_events,
@@ -76,7 +79,7 @@ from dagzoo.core.config_resolution import (
     serialize_resolution_events,
 )
 from dagzoo.core.dataset import generate_batch_iter
-from dagzoo.core.fixed_layout_runtime import realize_generation_config_for_run
+from dagzoo.core.fixed_layout.runtime import realize_generation_config_for_run
 from dagzoo.core.shift import resolve_shift_runtime_params
 from dagzoo.diagnostics import (
     CoverageAggregator,

@@ -12,7 +12,7 @@ from dagzoo.core.config_resolution import (
     resolve_request_config,
     serialize_resolution_events,
 )
-from dagzoo.core.fixed_layout_runtime import realize_generation_config_for_run
+from dagzoo.core.fixed_layout.runtime import realize_generation_config_for_run
 from dagzoo.filtering import DeferredFilterRunResult
 from dagzoo.filtering.deferred_filter import MANIFEST_FILENAME, SUMMARY_FILENAME
 from dagzoo.io.parquet_writer import write_packed_parquet_shards_stream

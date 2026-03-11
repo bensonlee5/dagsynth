@@ -2,7 +2,9 @@
 
 Run these wrappers and helper scripts from the repo root. CLI-oriented entries
 typically use `uv run dagzoo ...`; docs and maintenance helpers are invoked
-directly.
+directly. The `generate-*.sh` files are convenience recipes for local repo
+workflows, not the primary interface; prefer `dagzoo generate` and
+`dagzoo benchmark` when you need flexible arguments.
 
 ## Developer CLI
 

@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -23,9 +22,9 @@ from devlib.doctor import doctor_passed, render_doctor_results, run_doctor  # no
 from devlib.impact import (  # noqa: E402
     build_impact_report,
     detect_changed_files,
-    render_json as render_impact_json,
-    render_text as render_impact_text,
 )
+from devlib.impact import render_json as render_impact_json  # noqa: E402
+from devlib.impact import render_text as render_impact_text  # noqa: E402
 from devlib.verify import build_verify_plan, execute_verify_plan  # noqa: E402
 
 

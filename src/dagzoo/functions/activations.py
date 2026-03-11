@@ -5,8 +5,10 @@ from __future__ import annotations
 import torch
 
 from dagzoo.functions._rng_helpers import rand_scalar, randint_scalar
-from dagzoo.math_utils import (
+from dagzoo.math import (
     log_uniform as _log_uniform,
+)
+from dagzoo.math import (
     standardize as _standardize,
 )
 

@@ -2,16 +2,16 @@
 
 import pytest
 import torch
+from conftest import make_generator as _make_generator
 
-from dagzoo.core.fixed_layout_plan_types import (
+import dagzoo.sampling.random_points as random_points_mod
+from dagzoo.core.fixed_layout.plan_types import (
     GaussianMatrixPlan,
     LinearFunctionPlan,
     RandomPointsNodeSource,
 )
 from dagzoo.sampling.noise import NoiseSamplingSpec
 from dagzoo.sampling.random_points import sample_random_points
-from conftest import make_generator as _make_generator
-import dagzoo.sampling.random_points as random_points_mod
 
 
 def test_output_shape() -> None:

@@ -2,13 +2,13 @@
 
 import pytest
 import torch
+from conftest import make_generator as _make_generator
 
 from dagzoo.graph.dag_sampler import (
     dag_edge_density,
     dag_longest_path_nodes,
     sample_dag,
 )
-from conftest import make_generator as _make_generator
 
 
 def test_dag_shape() -> None:

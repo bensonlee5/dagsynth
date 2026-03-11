@@ -5,7 +5,7 @@ from __future__ import annotations
 from statistics import median
 from typing import Any
 
-from dagzoo.math_utils import coerce_optional_finite_float as _coerce_optional_finite_float
+from dagzoo.math import coerce_optional_finite_float as _coerce_optional_finite_float
 
 CORE_DIVERSITY_METRICS: tuple[str, ...] = (
     "linearity_proxy",

@@ -145,15 +145,6 @@ Local repo workflow before review:
 ./scripts/dev verify quick
 ```
 
-## Features
-
-- Diagnostics: exposes per-dataset artifacts so you can verify coverage, inspect drift, and debug generation outcomes.
-- Missingness (MCAR/MAR/MNAR): injects deterministic null patterns to evaluate models under realistic incomplete-data regimes.
-- Canonical fixed-layout generation: one run reuses one sampled layout across emitted datasets for stable schema alignment and replayability.
-- Many-class workflows: stress-tests classification behavior near the current rollout envelope with stable preset and benchmark paths.
-- Shift/drift controls: introduces interpretable graph/mechanism/noise drift for robustness and distribution-shift evaluation.
-- Benchmark guardrails: provides repeatable runtime and metadata checks for local validation and CI-style regression gating.
-
 ## Documentation
 
 Primary docs site:
@@ -168,29 +159,11 @@ Start here for end-user workflows and contracts:
 - [Output Format](https://bensonlee5.github.io/dagzoo/docs/output-format/): Output schema and artifacts.
 - [Feature Guides](https://bensonlee5.github.io/dagzoo/docs/features/): Diagnostics, missingness, many-class, shift, noise, and benchmark guardrails.
 
-## Codebase Navigation
+Contributor-facing structure docs:
 
-The project is organized into functional modules that manage the lifecycle
-of a synthetic dataset, from configuration and causal graph sampling to
-node execution and quality filtering.
-
-See [docs/development/codebase-navigation.md](docs/development/codebase-navigation.md)
-for the full module map with file paths and descriptions.
-See [docs/development/module-dependency-map.md](docs/development/module-dependency-map.md)
-for the generated dependency graph and change-impact hotspots.
-
-## Python API
-
-```python
-from dagzoo import GeneratorConfig, generate_one
-
-config = GeneratorConfig.from_yaml("configs/default.yaml")
-bundle = generate_one(config, seed=42)
-print(bundle.X_train.shape, bundle.y_train.shape)
-```
-
-For command-line and workflow details, use
-[Usage Guide](https://bensonlee5.github.io/dagzoo/docs/usage-guide/).
+- [docs/development/codebase-navigation.md](docs/development/codebase-navigation.md): canonical package/module map.
+- [docs/development/module-dependency-map.md](docs/development/module-dependency-map.md): generated dependency graph and change-impact hotspots.
+- [scripts/README.md](scripts/README.md): dev helpers and convenience recipe wrappers.
 
 ## Roadmap and Development
 

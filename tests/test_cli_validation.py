@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 import yaml
+from conftest import load_repo_config, write_config
 
 from dagzoo.cli import main
-from dagzoo.config import GeneratorConfig
 
 
 def test_generate_cli_rejects_invalid_device() -> None:
@@ -74,10 +74,9 @@ def test_generate_cli_rejects_oversized_seed() -> None:
 
 
 def test_generate_cli_rejects_inline_filter_enabled(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.filter.enabled = True
-    config_path = tmp_path / "inline_filter.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "inline_filter.yaml")
 
     with pytest.raises(SystemExit) as exc:
         main(
@@ -255,10 +254,9 @@ def test_diversity_audit_cli_rejects_swapped_warn_and_fail_thresholds() -> None:
 
 
 def test_filter_calibration_cli_rejects_filter_disabled_config(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.filter.enabled = False
-    config_path = tmp_path / "filter_disabled.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "filter_disabled.yaml")
 
     with pytest.raises(SystemExit) as exc:
         main(
@@ -277,10 +275,9 @@ def test_filter_calibration_cli_rejects_invalid_baseline_filter_threshold(
     tmp_path,
     value: float,
 ) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/preset_filter_benchmark_smoke.yaml")
+    cfg = load_repo_config("preset_filter_benchmark_smoke.yaml")
     cfg.filter.threshold = value
-    config_path = tmp_path / "invalid_filter_threshold.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "invalid_filter_threshold.yaml")
 
     with pytest.raises(SystemExit) as exc:
         main(
@@ -910,15 +907,14 @@ def test_generate_cli_coverage_tolerates_null_quantiles_and_targets(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.runtime.device = "cpu"
     cfg.output.out_dir = str(tmp_path / "run")
     cfg.diagnostics.enabled = True
     cfg.diagnostics.quantiles = None  # type: ignore[assignment]
     cfg.diagnostics.meta_feature_targets = None  # type: ignore[assignment]
     cfg.diagnostics.max_values_per_metric = None
-    config_path = tmp_path / "null_diagnostics.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "null_diagnostics.yaml")
 
     def _stub_generate_batch_iter(
         _config,
@@ -961,12 +957,11 @@ def test_generate_cli_no_write_allows_null_output_dir_when_coverage_disabled(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.runtime.device = "cpu"
     cfg.output.out_dir = None  # type: ignore[assignment]
     cfg.diagnostics.enabled = False
-    config_path = tmp_path / "null_output.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "null_output.yaml")
 
     def _stub_generate_batch_iter(
         _config,
@@ -1190,7 +1185,7 @@ def test_generate_cli_rejects_removed_steering_flags(flag_args: list[str]) -> No
 
 
 def test_generate_cli_missingness_no_write_end_to_end(tmp_path) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.runtime.device = "cpu"
     cfg.dataset.task = "classification"
     cfg.dataset.n_train = 32
@@ -1203,8 +1198,7 @@ def test_generate_cli_missingness_no_write_end_to_end(tmp_path) -> None:
     cfg.graph.n_nodes_max = 4
     cfg.output.out_dir = str(tmp_path / "run")
     cfg.diagnostics.enabled = False
-    config_path = tmp_path / "missingness_e2e.yaml"
-    config_path.write_text(yaml.safe_dump(cfg.to_dict()), encoding="utf-8")
+    config_path = write_config(tmp_path, cfg, "missingness_e2e.yaml")
 
     code = main(
         [

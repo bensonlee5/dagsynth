@@ -4,7 +4,6 @@ import pytest
 from dagzoo.bench.collectors import _ThroughputPressureCollector
 from dagzoo.bench.stage_metrics import (
     StageSampleCollector,
-    measure_filter_datasets_per_minute,
     measure_filter_stage_metrics,
     measure_write_datasets_per_minute,
     replay_filter_stage_metrics,
@@ -109,7 +108,7 @@ def test_stage_sample_collector_caps_samples() -> None:
 
 def test_stage_metric_helpers_return_zero_for_empty_samples() -> None:
     cfg = GeneratorConfig()
-    assert measure_filter_datasets_per_minute([], config=cfg) == 0.0
+    assert measure_filter_stage_metrics([], config=cfg).datasets_per_minute == 0.0
     assert measure_write_datasets_per_minute([], config=cfg) == 0.0
 
 
@@ -136,7 +135,7 @@ def test_filter_stage_metric_replays_filter_and_reports_counts(
     assert measurement.filter_rejected_datasets == 1
     assert measurement.datasets_per_minute > 0.0
     assert replay_seeds == [21, 22]
-    assert measure_filter_datasets_per_minute(bundles, config=cfg) > 0.0
+    assert measure_filter_stage_metrics(bundles, config=cfg).datasets_per_minute > 0.0
 
 
 def test_filter_stage_metric_returns_zero_when_disabled(

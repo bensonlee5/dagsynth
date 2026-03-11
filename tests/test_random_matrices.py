@@ -1,10 +1,10 @@
-"""Tests for linalg/random_matrices.py."""
+"""Tests for math/random_matrices.py."""
 
 import pytest
 import torch
-
-from dagzoo.linalg.random_matrices import sample_random_matrix
 from conftest import make_generator as _make_generator
+
+from dagzoo.math.random_matrices import sample_random_matrix
 
 
 def test_output_shape() -> None:

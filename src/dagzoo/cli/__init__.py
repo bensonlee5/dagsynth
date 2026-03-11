@@ -16,7 +16,8 @@ from dagzoo.hardware import detect_hardware
 
 from .commands.benchmark import _print_preset_result_line
 from .entrypoint import main
-from .parser import build_parser, build_parser as _build_parser
+from .parser import build_parser
+from .parser import build_parser as _build_parser
 from .parsing import (
     DEVICE_CHOICES,
     HARDWARE_POLICY_CHOICES,
@@ -26,9 +27,9 @@ from .request_execution import run_request_execution
 
 __all__ = [
     "DEVICE_CHOICES",
-    "CoverageAggregator",
     "HARDWARE_POLICY_CHOICES",
     "MISSINGNESS_MECHANISM_CLI_CHOICES",
+    "CoverageAggregator",
     "_build_parser",
     "_print_preset_result_line",
     "build_baseline_payload",

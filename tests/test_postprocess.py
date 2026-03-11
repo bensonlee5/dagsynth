@@ -2,16 +2,16 @@
 
 import pytest
 import torch
+from conftest import make_generator as _make_generator
 
 from dagzoo.config import DatasetConfig
-from dagzoo.rng import KeyedRng
 from dagzoo.postprocess.postprocess import (
     _clip_and_standardize_rows,
     inject_missingness,
     postprocess_dataset,
     postprocess_fixed_schema_batch,
 )
-from conftest import make_generator as _make_generator
+from dagzoo.rng import KeyedRng
 
 
 def _make_data(

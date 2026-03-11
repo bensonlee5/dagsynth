@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 GH_MIGRATION_MARKER = "<!-- dagzoo-linear-migration -->"
 DEFAULT_LINEAR_ENDPOINT = "https://api.linear.app/graphql"
 DAGZOO_LINEAR_STATES: tuple[tuple[str, str, str, float], ...] = (

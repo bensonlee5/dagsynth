@@ -12,12 +12,12 @@ from typing import Any, TextIO
 import numpy as np
 
 from dagzoo.io.parquet_writer import (
-    _PackedShardState,
     _close_packed_shard_handles,
     _ensure_metadata_file_open,
+    _PackedShardState,
     _write_packed_split,
 )
-from dagzoo.math_utils import sanitize_json as _sanitize_json
+from dagzoo.math import sanitize_json as _sanitize_json
 
 
 @dataclass(slots=True)

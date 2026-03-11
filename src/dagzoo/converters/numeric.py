@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import torch
 
 from dagzoo.core.execution_semantics import sample_converter_plan
-from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_numeric_converter_plan_batch
-from dagzoo.core.fixed_layout_plan_types import NumericConverterPlan
+from dagzoo.core.fixed_layout.batched import FixedLayoutBatchRng, apply_numeric_converter_plan_batch
+from dagzoo.core.fixed_layout.plan_types import NumericConverterPlan
 from dagzoo.rng import keyed_rng_from_generator
 
 

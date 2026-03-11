@@ -1,12 +1,13 @@
-import numpy as np
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+from conftest import load_repo_config
 
 import dagzoo.bench.guardrails as guardrails_mod
 import dagzoo.bench.suite as suite_mod
-from dagzoo.bench.metrics import reproducibility_signature, reproducibility_workload_signature
+from dagzoo.bench.metrics import reproducibility_signatures
 from dagzoo.bench.micro import run_microbenchmarks
 from dagzoo.bench.report import write_suite_markdown
 from dagzoo.bench.suite import PresetRunSpec, resolve_preset_run_specs, run_benchmark_suite
@@ -21,7 +22,7 @@ def _set_attrs(target: object, **attrs: object) -> None:
 
 
 def _tiny_cpu_config() -> GeneratorConfig:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     _set_attrs(
         cfg.dataset,
         task="regression",
@@ -134,16 +135,15 @@ def test_reproducibility_workload_signature_ignores_values_but_tracks_layout_met
         },
     )
 
-    assert reproducibility_signature([bundle_a]) != reproducibility_signature([bundle_b])
-    assert reproducibility_workload_signature([bundle_a]) == reproducibility_workload_signature(
-        [bundle_b]
-    )
-    assert reproducibility_workload_signature([bundle_a]) != reproducibility_workload_signature(
-        [bundle_c]
-    )
-    assert reproducibility_workload_signature([bundle_a]) != reproducibility_workload_signature(
-        [bundle_d]
-    )
+    content_a, workload_a = reproducibility_signatures([bundle_a])
+    content_b, workload_b = reproducibility_signatures([bundle_b])
+    _, workload_c = reproducibility_signatures([bundle_c])
+    _, workload_d = reproducibility_signatures([bundle_d])
+
+    assert content_a != content_b
+    assert workload_a == workload_b
+    assert workload_a != workload_c
+    assert workload_a != workload_d
 
 
 def test_run_benchmark_suite_smoke_single_profile() -> None:

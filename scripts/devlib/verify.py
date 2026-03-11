@@ -51,6 +51,8 @@ def execute_verify_plan(plan: VerifyPlan, *, dry_run: bool) -> str:
         "recommended modes: "
         + (", ".join(plan.report.recommended_modes) if plan.report.recommended_modes else "none"),
     ]
+    if plan.report.suggested_pytest_targets:
+        lines.append("suggested pytest targets: " + ", ".join(plan.report.suggested_pytest_targets))
     code_results = run_doctor("code")
     needs_code_doctor = any(not command.label.startswith("docs") for command in plan.commands)
     if needs_code_doctor and not doctor_passed(code_results):
@@ -108,6 +110,10 @@ def _code_quick_commands(report: ImpactReport, *, graph_changed: bool) -> list[C
 def _docs_commands() -> list[CommandSpec]:
     python = python_tool("python")
     return [
+        CommandSpec(
+            label="docs repo paths",
+            argv=(python, "scripts/docs/check_repo_paths.py"),
+        ),
         CommandSpec(
             label="docs sync",
             argv=(python, "scripts/docs/sync_hugo_content.py"),
