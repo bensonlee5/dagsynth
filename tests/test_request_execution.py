@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 import yaml
 
 from dagzoo.cli import main
 from dagzoo.config import (
+    GeneratorConfig,
     MISSINGNESS_MECHANISM_MCAR,
     REQUEST_FILE_VERSION_V1,
     REQUEST_PROFILE_DEFAULT,
@@ -15,6 +17,7 @@ from dagzoo.config import (
     REQUEST_TASK_REGRESSION,
     RequestFileConfig,
 )
+from dagzoo.config.io import load_packaged_generator_config
 from dagzoo.core.config_resolution import resolve_request_config, serialize_resolution_events
 
 
@@ -29,6 +32,50 @@ def _request_payload(**overrides: object) -> dict[str, object]:
     }
     payload.update(overrides)
     return payload
+
+
+@pytest.mark.parametrize(
+    "resource_name",
+    [
+        "default.yaml",
+        "preset_missingness_mcar.yaml",
+        "preset_missingness_mar.yaml",
+        "preset_missingness_mnar.yaml",
+    ],
+)
+def test_load_packaged_request_config_matches_repo_copy(resource_name: str) -> None:
+    packaged = load_packaged_generator_config(resource_name)
+    repo = GeneratorConfig.from_yaml(Path("configs") / resource_name)
+
+    assert packaged.to_dict() == repo.to_dict()
+
+
+def test_resolve_request_config_loads_packaged_request_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_resources: list[str] = []
+
+    def _stub_load_packaged_generator_config(resource_name: str) -> GeneratorConfig:
+        loaded_resources.append(resource_name)
+        return GeneratorConfig.from_yaml(Path("configs") / resource_name)
+
+    monkeypatch.setattr(
+        "dagzoo.core.config_resolution.load_packaged_generator_config",
+        _stub_load_packaged_generator_config,
+    )
+
+    request = RequestFileConfig.from_dict(
+        _request_payload(missingness_profile=MISSINGNESS_MECHANISM_MCAR)
+    )
+
+    resolved = resolve_request_config(
+        request=request,
+        device_override="cpu",
+        hardware_policy="none",
+    )
+
+    assert loaded_resources == ["default.yaml", "preset_missingness_mcar.yaml"]
+    assert resolved.config.dataset.missing_mechanism == MISSINGNESS_MECHANISM_MCAR
 
 
 def test_resolve_request_config_maps_output_root_seed_and_rows() -> None:

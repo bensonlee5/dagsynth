@@ -15,6 +15,7 @@ from dagzoo.config import (
     GeneratorConfig,
     RequestFileConfig,
     clone_generator_config,
+    load_packaged_generator_config,
 )
 from dagzoo.hardware import HardwareInfo, detect_hardware
 from dagzoo.hardware_policy import (
@@ -24,12 +25,11 @@ from dagzoo.hardware_policy import (
 
 _MISSING_VALUE = "<missing>"
 _DEFAULT_CUDA_FIXED_LAYOUT_TARGET_SOURCE = "hardware.default_cuda_fixed_layout_target_cells"
-_REQUEST_REPO_ROOT = Path(__file__).resolve().parents[3]
-_REQUEST_BASE_CONFIG_PATH = _REQUEST_REPO_ROOT / "configs" / "default.yaml"
-_REQUEST_MISSINGNESS_PRESET_PATHS = {
-    MISSINGNESS_MECHANISM_MCAR: _REQUEST_REPO_ROOT / "configs" / "preset_missingness_mcar.yaml",
-    MISSINGNESS_MECHANISM_MAR: _REQUEST_REPO_ROOT / "configs" / "preset_missingness_mar.yaml",
-    MISSINGNESS_MECHANISM_MNAR: _REQUEST_REPO_ROOT / "configs" / "preset_missingness_mnar.yaml",
+_REQUEST_BASE_CONFIG_RESOURCE = "default.yaml"
+_REQUEST_MISSINGNESS_PRESET_RESOURCES = {
+    MISSINGNESS_MECHANISM_MCAR: "preset_missingness_mcar.yaml",
+    MISSINGNESS_MECHANISM_MAR: "preset_missingness_mar.yaml",
+    MISSINGNESS_MECHANISM_MNAR: "preset_missingness_mnar.yaml",
 }
 _REQUEST_MISSINGNESS_DATASET_PATHS = (
     "dataset.missing_rate",
@@ -102,12 +102,6 @@ class ResolvedBenchmarkPresetConfig:
     hardware: HardwareInfo
     requested_device: str
     trace_events: list[ResolutionEvent]
-
-
-def _load_repo_config(path: Path) -> GeneratorConfig:
-    """Load one repo-owned config file with standard validation."""
-
-    return GeneratorConfig.from_yaml(path)
 
 
 def _clone_config(config: GeneratorConfig) -> GeneratorConfig:
@@ -359,10 +353,10 @@ def _apply_request_missingness_profile(
     """Apply missingness profile defaults without leaking preset-local fields."""
 
     if missingness_profile == MISSINGNESS_MECHANISM_NONE:
-        overlay = _load_repo_config(_REQUEST_BASE_CONFIG_PATH)
+        overlay = load_packaged_generator_config(_REQUEST_BASE_CONFIG_RESOURCE)
     else:
-        overlay_path = _REQUEST_MISSINGNESS_PRESET_PATHS[missingness_profile]
-        overlay = _load_repo_config(overlay_path)
+        overlay_resource = _REQUEST_MISSINGNESS_PRESET_RESOURCES[missingness_profile]
+        overlay = load_packaged_generator_config(overlay_resource)
 
     for path in _REQUEST_MISSINGNESS_DATASET_PATHS:
         target = config.dataset
@@ -472,7 +466,7 @@ def resolve_request_config(
 ) -> ResolvedRequestConfig:
     """Resolve effective config for one request-file execution."""
 
-    base_config = _load_repo_config(_REQUEST_BASE_CONFIG_PATH)
+    base_config = load_packaged_generator_config(_REQUEST_BASE_CONFIG_RESOURCE)
     trace_events: list[ResolutionEvent] = []
 
     if request.profile == REQUEST_PROFILE_SMOKE:
