@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import ast
 import json
+from dataclasses import dataclass
+from pathlib import Path
 
 from .common import DOCS_DEP_MAP_PATH, REPO_ROOT, SRC_ROOT, repo_relative
 
-
 HOTSPOT_MODULES = (
     "dagzoo.core.execution_semantics",
-    "dagzoo.core.fixed_layout_batched",
-    "dagzoo.core.fixed_layout_runtime",
+    "dagzoo.core.fixed_layout.batched",
+    "dagzoo.core.fixed_layout.runtime",
     "dagzoo.core.layout",
     "dagzoo.core.node_pipeline",
     "dagzoo.core.dataset",

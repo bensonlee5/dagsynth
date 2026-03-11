@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 import math
 import operator
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import torch
 
-from dagzoo.math_utils import normalize_positive_weights
 from dagzoo.config import (
     NOISE_FAMILY_GAUSSIAN,
     NOISE_FAMILY_LAPLACE,
@@ -18,6 +17,7 @@ from dagzoo.config import (
     NoiseFamily,
     normalize_noise_family,
 )
+from dagzoo.math import normalize_positive_weights
 
 _MIXTURE_COMPONENTS = (
     NOISE_FAMILY_GAUSSIAN,

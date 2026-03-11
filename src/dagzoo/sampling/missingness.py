@@ -7,11 +7,11 @@ import math
 import torch
 
 from dagzoo.config import (
-    DatasetConfig,
     MISSINGNESS_MECHANISM_MAR,
     MISSINGNESS_MECHANISM_MCAR,
     MISSINGNESS_MECHANISM_MNAR,
     MISSINGNESS_MECHANISM_NONE,
+    DatasetConfig,
     normalize_missing_mechanism,
 )
 from dagzoo.rng import KeyedRng

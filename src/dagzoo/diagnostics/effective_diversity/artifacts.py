@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from dagzoo.math_utils import sanitize_json
+from dagzoo.math import sanitize_json
 
 from .calibration import format_filter_calibration_threshold
 

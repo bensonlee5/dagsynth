@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
 import hashlib
 import json
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
 from dagzoo.core.layout_types import AggregationKind, ConverterKind
@@ -491,11 +491,11 @@ def _activation_plan_payload(plan: FixedLayoutActivationPlan) -> dict[str, Any]:
 
 
 __all__ = [
+    "DEFAULT_FIXED_LAYOUT_EXECUTION_CONTRACT",
     "ActivationMatrixPlan",
     "CategoricalConverterGroup",
     "CategoricalConverterPlan",
     "ConcatNodeSource",
-    "DEFAULT_FIXED_LAYOUT_EXECUTION_CONTRACT",
     "DiscretizationFunctionPlan",
     "EmFunctionPlan",
     "FixedActivationPlan",

@@ -2,12 +2,12 @@
 
 import pytest
 import torch
-
-from dagzoo.converters.numeric import apply_numeric_converter
-from dagzoo.core.fixed_layout_plan_types import NumericConverterPlan
-from dagzoo.rng import KeyedRng
 from conftest import make_generator as _make_generator
+
 import dagzoo.converters.numeric as numeric_mod
+from dagzoo.converters.numeric import apply_numeric_converter
+from dagzoo.core.fixed_layout.plan_types import NumericConverterPlan
+from dagzoo.rng import KeyedRng
 
 
 def test_output_shapes() -> None:

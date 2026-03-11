@@ -1,16 +1,16 @@
 import pytest
 import torch
+from conftest import make_generator as _make_generator
 
-from dagzoo.core.fixed_layout_plan_types import GaussianMatrixPlan, LinearFunctionPlan
+import dagzoo.functions.random_functions as random_functions_mod
 from dagzoo.core.execution_semantics import sample_function_family
+from dagzoo.core.fixed_layout.plan_types import GaussianMatrixPlan, LinearFunctionPlan
 from dagzoo.functions.random_functions import (
     MechanismFamily,
     _sample_function_family,
     apply_random_function,
 )
 from dagzoo.rng import KeyedRng
-from conftest import make_generator as _make_generator
-import dagzoo.functions.random_functions as random_functions_mod
 
 
 def test_tree_family_survives_nan_feature() -> None:

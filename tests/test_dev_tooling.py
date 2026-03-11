@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = REPO_ROOT / "scripts"
@@ -38,14 +37,14 @@ def test_dependency_graph_hotspot_captures_execution_semantics_cascade() -> None
     graph = deps_module.build_import_graph()
     summary = graph.module_summary("dagzoo.core.execution_semantics")
 
-    assert "dagzoo.core.fixed_layout_batched" in summary.direct_importers
+    assert "dagzoo.core.fixed_layout.batched" in summary.direct_importers
     assert "dagzoo.core.node_pipeline" in summary.direct_importers
     assert "dagzoo.functions.random_functions" in summary.direct_importers
     assert "dagzoo.functions.multi" in summary.direct_importers
     assert "dagzoo.converters.numeric" in summary.direct_importers
     assert "dagzoo.converters.categorical" in summary.direct_importers
     assert "dagzoo.sampling.random_points" in summary.direct_importers
-    assert "dagzoo.core.fixed_layout_runtime" in summary.transitive_importers
+    assert "dagzoo.core.fixed_layout.runtime" in summary.transitive_importers
     assert "dagzoo.bench" in summary.impacted_packages
     assert "dagzoo.cli" in summary.impacted_packages
 
@@ -57,8 +56,8 @@ def test_render_dependency_map_includes_hotspot_example() -> None:
 
     assert "## Change-Impact Hotspots" in content
     assert "### `dagzoo.core.execution_semantics`" in content
-    assert "dagzoo.core.fixed_layout_batched" in content
-    assert "dagzoo.core.fixed_layout_runtime" in content
+    assert "dagzoo.core.fixed_layout.batched" in content
+    assert "dagzoo.core.fixed_layout.runtime" in content
 
 
 def test_write_dependency_docs_and_check_current(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,7 +109,7 @@ def test_detect_changed_files_staged_uses_cached_diff(
         return subprocess.CompletedProcess(
             argv,
             0,
-            "src/dagzoo/cli.py\nCHANGELOG.md\n",
+            "src/dagzoo/cli/entrypoint.py\nCHANGELOG.md\n",
             "",
         )
 
@@ -118,7 +117,7 @@ def test_detect_changed_files_staged_uses_cached_diff(
 
     changed_files = impact_module.detect_changed_files(source="staged")
 
-    assert changed_files == ("CHANGELOG.md", "src/dagzoo/cli.py")
+    assert changed_files == ("CHANGELOG.md", "src/dagzoo/cli/entrypoint.py")
     assert calls == [("git", "diff", "--cached", "--name-only")]
 
 
@@ -126,7 +125,7 @@ def test_release_contract_requires_version_and_changelog_for_release_risk() -> N
     impact_module = _import_dev_module("devlib.impact")
     contract_module = _import_dev_module("devlib.contract")
 
-    report = impact_module.build_impact_report(("src/dagzoo/cli.py",))
+    report = impact_module.build_impact_report(("src/dagzoo/cli/entrypoint.py",))
     result = contract_module.evaluate_release_contract(report)
 
     assert result.ok is False
@@ -139,7 +138,7 @@ def test_release_contract_passes_with_release_risk_and_version_updates() -> None
     contract_module = _import_dev_module("devlib.contract")
 
     report = impact_module.build_impact_report(
-        ("src/dagzoo/cli.py", "pyproject.toml", "CHANGELOG.md")
+        ("src/dagzoo/cli/entrypoint.py", "pyproject.toml", "CHANGELOG.md")
     )
     result = contract_module.evaluate_release_contract(report)
 
@@ -186,6 +185,19 @@ def test_verify_plan_docs_only_uses_docs_commands() -> None:
 
     assert plan.headline == "verify quick (docs-only change set)"
     assert all(command.label.startswith("docs") for command in plan.commands)
+
+
+def test_impact_report_suggests_pytest_targets_for_cli_paths() -> None:
+    impact_module = _import_dev_module("devlib.impact")
+
+    report = impact_module.build_impact_report(("src/dagzoo/cli/entrypoint.py",))
+
+    assert report.suggested_pytest_targets == (
+        "tests/test_cli_validation.py",
+        "tests/test_cli_outputs.py",
+        "tests/test_benchmark_cli.py",
+        "tests/test_request_execution.py",
+    )
 
 
 def test_verify_plan_code_includes_incremental_parallel_pytest_and_architecture_checks() -> None:
@@ -238,6 +250,36 @@ def test_verify_execute_dry_run_lists_commands(monkeypatch: pytest.MonkeyPatch) 
     assert "dry-run:" in output
     assert "ruff check" in output
     assert "deptry" in output
+
+
+def test_verify_execute_dry_run_lists_suggested_pytest_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verify_module = _import_dev_module("devlib.verify")
+    contract_module = _import_dev_module("devlib.contract")
+
+    plan = verify_module.build_verify_plan(
+        mode="quick",
+        source="working-tree",
+        base=None,
+        files=["scripts/devlib/impact.py"],
+        incremental=False,
+        parallel=False,
+    )
+
+    monkeypatch.setattr(verify_module, "run_doctor", lambda mode: ())
+    monkeypatch.setattr(verify_module, "doctor_passed", lambda results: True)
+    monkeypatch.setattr(
+        verify_module,
+        "evaluate_release_contract",
+        lambda report: contract_module.ContractResult(ok=True, warnings=(), errors=()),
+    )
+    monkeypatch.setattr(verify_module, "dependency_docs_are_current", lambda graph: True)
+
+    output = verify_module.execute_verify_plan(plan, dry_run=True)
+
+    assert "suggested pytest targets:" in output
+    assert "tests/test_dev_tooling.py" in output
 
 
 def test_dev_cli_help_exposes_new_commands(capsys: pytest.CaptureFixture[str]) -> None:

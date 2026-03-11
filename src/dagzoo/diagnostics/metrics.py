@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import fields
-import math
 from typing import Any
 
 import torch

@@ -8,8 +8,8 @@ import pytest
 from dagzoo.io.lineage_schema import (
     LINEAGE_ADJACENCY_ENCODING,
     LINEAGE_SCHEMA_NAME,
-    LINEAGE_SCHEMA_VERSION_COMPACT,
     LINEAGE_SCHEMA_VERSION,
+    LINEAGE_SCHEMA_VERSION_COMPACT,
     LineageValidationError,
     validate_lineage_payload,
     validate_metadata_lineage,

@@ -13,8 +13,8 @@ from dagzoo.config import (
 )
 from dagzoo.core.shift import (
     MECHANISM_FAMILY_ORDER,
-    mechanism_nonlinear_mass,
     mechanism_family_probabilities,
+    mechanism_nonlinear_mass,
     resolve_shift_runtime_params,
 )
 

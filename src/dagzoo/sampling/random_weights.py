@@ -4,7 +4,7 @@ import math
 
 import torch
 
-from dagzoo.math_utils import log_uniform as _log_uniform
+from dagzoo.math import log_uniform as _log_uniform
 from dagzoo.sampling.noise import NoiseSamplingSpec, sample_noise_from_spec
 
 _LOG_WEIGHT_CLAMP = 60.0

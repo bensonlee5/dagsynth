@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 from dagzoo.config import (
-    GeneratorConfig,
     SHIFT_MODE_CUSTOM,
     SHIFT_MODE_GRAPH_DRIFT,
     SHIFT_MODE_MECHANISM_DRIFT,
     SHIFT_MODE_MIXED,
     SHIFT_MODE_NOISE_DRIFT,
     SHIFT_MODE_OFF,
+    GeneratorConfig,
 )
 from dagzoo.core.layout_types import MechanismFamily
 
@@ -213,7 +213,7 @@ __all__ = [
     "NONLINEAR_MECHANISM_FAMILIES",
     "ShiftRuntimeParams",
     "centered_mechanism_family_logits",
-    "mechanism_nonlinear_mass",
     "mechanism_family_probabilities",
+    "mechanism_nonlinear_mass",
     "resolve_shift_runtime_params",
 ]

@@ -7,11 +7,11 @@ import math
 import torch
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.core.fixed_layout_plan_types import FixedLayoutConverterSpec
-from dagzoo.functions._rng_helpers import randint_scalar
+from dagzoo.core.fixed_layout.plan_types import FixedLayoutConverterSpec
 from dagzoo.core.layout_types import FeatureType, LayoutPlan
-from dagzoo.graph import dag_edge_density, dag_longest_path_nodes, sample_dag
 from dagzoo.core.shift import resolve_shift_runtime_params
+from dagzoo.functions._rng_helpers import randint_scalar
+from dagzoo.graph import dag_edge_density, dag_longest_path_nodes, sample_dag
 from dagzoo.rng import KeyedRng
 from dagzoo.sampling import CorrelatedSampler
 

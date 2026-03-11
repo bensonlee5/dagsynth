@@ -1,4 +1,5 @@
 import pytest
+from conftest import load_repo_config
 
 from dagzoo.bench.constants import (
     SMOKE_N_FEATURES_CAP,
@@ -29,7 +30,7 @@ def _mock_cuda_h100(_requested_device: str) -> HardwareInfo:
 
 
 def test_resolve_generate_config_applies_cli_overrides() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     resolved = resolve_generate_config(
         cfg,
         device_override="cpu",
@@ -67,7 +68,7 @@ def test_resolve_generate_config_applies_cli_overrides() -> None:
 
 
 def test_resolve_generate_config_applies_rows_override() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     resolved = resolve_generate_config(
         cfg,
         device_override="cpu",
@@ -90,7 +91,7 @@ def test_resolve_generate_config_applies_rows_override() -> None:
 
 
 def test_cap_rows_spec_to_total_clears_rows_when_cap_is_below_min_total() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.dataset.rows = 1024  # type: ignore[assignment]
 
     cap_rows_spec_to_total(cfg, total_rows_cap=160)
@@ -111,7 +112,7 @@ def test_cap_rows_spec_to_total_caps_fixed_range_and_choice_rows(
     expected_mode: str,
     expected_payload: dict[str, int | list[int]],
 ) -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.dataset.rows = rows_spec  # type: ignore[assignment]
 
     cap_rows_spec_to_total(cfg, total_rows_cap=500)
@@ -123,7 +124,7 @@ def test_cap_rows_spec_to_total_caps_fixed_range_and_choice_rows(
 
 
 def test_resolve_generate_config_rejects_invalid_missingness_combination() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     with pytest.raises(
         ValueError,
         match="dataset.missing_mechanism must be mcar, mar, or mnar when dataset.missing_rate > 0",
@@ -143,7 +144,7 @@ def test_resolve_generate_config_rejects_invalid_missingness_combination() -> No
 
 
 def test_resolve_generate_config_treats_null_runtime_device_as_auto() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.runtime.device = None  # type: ignore[assignment]
 
     resolved = resolve_generate_config(
@@ -167,7 +168,7 @@ def test_resolve_generate_config_applies_rows_override_after_policy_revalidation
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.dataset.rows = "400..60000"  # type: ignore[assignment]
 
     resolved = resolve_generate_config(
@@ -203,7 +204,7 @@ def test_resolve_generate_config_applies_default_cuda_fixed_layout_floor_without
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     assert cfg.runtime.fixed_layout_target_cells is None
 
     resolved = resolve_generate_config(
@@ -234,7 +235,7 @@ def test_resolve_generate_config_preserves_explicit_cuda_target_without_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
-    cfg = GeneratorConfig.from_yaml("configs/default.yaml")
+    cfg = load_repo_config()
     cfg.runtime.fixed_layout_target_cells = 32_000_000
 
     resolved = resolve_generate_config(
@@ -260,7 +261,7 @@ def test_resolve_generate_config_preserves_explicit_cuda_target_without_policy(
 
 
 def test_resolve_benchmark_preset_config_applies_smoke_caps() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cpu.yaml")
+    cfg = load_repo_config("benchmark_cpu.yaml")
     assert cfg.dataset.n_train > SMOKE_N_TRAIN_CAP
     assert cfg.dataset.n_test == SMOKE_N_TEST_CAP
     assert cfg.dataset.n_features_max > SMOKE_N_FEATURES_CAP
@@ -327,7 +328,7 @@ def test_resolve_benchmark_preset_config_revalidates_after_smoke_caps() -> None:
 
 
 def test_resolve_benchmark_preset_config_treats_null_runtime_device_as_auto() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cpu.yaml")
+    cfg = load_repo_config("benchmark_cpu.yaml")
     cfg.runtime.device = None  # type: ignore[assignment]
 
     resolved = resolve_benchmark_preset_config(
@@ -344,7 +345,7 @@ def test_resolve_benchmark_preset_config_treats_null_runtime_device_as_auto() ->
 
 
 def test_resolve_benchmark_preset_config_requires_smoke_caps_for_smoke_suite() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cpu.yaml")
+    cfg = load_repo_config("benchmark_cpu.yaml")
     with pytest.raises(
         ValueError, match="Benchmark smoke suite config resolution requires smoke cap values"
     ):
@@ -359,7 +360,7 @@ def test_resolve_benchmark_preset_config_requires_smoke_caps_for_smoke_suite() -
 
 
 def test_resolve_benchmark_preset_config_preserves_dataset_rows_for_standard_suite() -> None:
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cpu.yaml")
+    cfg = load_repo_config("benchmark_cpu.yaml")
     cfg.dataset.rows = "2000..60000"  # type: ignore[assignment]
 
     resolved = resolve_benchmark_preset_config(
@@ -381,7 +382,7 @@ def test_resolve_benchmark_preset_config_preserves_dataset_rows_after_policy_tra
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cpu.yaml")
+    cfg = load_repo_config("benchmark_cpu.yaml")
     cfg.dataset.rows = "2000..60000"  # type: ignore[assignment]
 
     resolved = resolve_benchmark_preset_config(
@@ -408,7 +409,7 @@ def test_resolve_benchmark_preset_config_preserves_explicit_cuda_budget_without_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cuda_h100.yaml")
+    cfg = load_repo_config("benchmark_cuda_h100.yaml")
     assert cfg.runtime.fixed_layout_target_cells == 32_000_000
 
     resolved = resolve_benchmark_preset_config(
@@ -434,7 +435,7 @@ def test_resolve_benchmark_preset_config_applies_default_cuda_floor_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("dagzoo.core.config_resolution.detect_hardware", _mock_cuda_h100)
-    cfg = GeneratorConfig.from_yaml("configs/benchmark_cuda_h100.yaml")
+    cfg = load_repo_config("benchmark_cuda_h100.yaml")
     cfg.runtime.fixed_layout_target_cells = None
 
     resolved = resolve_benchmark_preset_config(

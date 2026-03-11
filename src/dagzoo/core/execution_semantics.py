@@ -9,11 +9,17 @@ import torch
 
 from dagzoo.core.execution_sampling_common import (
     _generator_device as _generator_device_impl,
+)
+from dagzoo.core.execution_sampling_common import (
     _rand_scalar as _rand_scalar_impl,
+)
+from dagzoo.core.execution_sampling_common import (
     _randint_scalar as _randint_scalar_impl,
+)
+from dagzoo.core.execution_sampling_common import (
     _sample_bool as _sample_bool_impl,
 )
-from dagzoo.core.fixed_layout_plan_types import (
+from dagzoo.core.fixed_layout.plan_types import (
     ActivationMatrixPlan,
     CategoricalConverterPlan,
     ConcatNodeSource,
@@ -51,7 +57,7 @@ from dagzoo.core.fixed_layout_plan_types import (
 from dagzoo.core.layout_types import AggregationKind, ConverterKind, MechanismFamily
 from dagzoo.core.shift import MECHANISM_FAMILY_ORDER, mechanism_family_probabilities
 from dagzoo.functions.activations import fixed_activation_names
-from dagzoo.math_utils import log_uniform as _log_uniform
+from dagzoo.math import log_uniform as _log_uniform
 from dagzoo.rng import KeyedRng, keyed_rng_from_generator
 
 _MATRIX_KIND_CHOICES: tuple[str, ...] = (

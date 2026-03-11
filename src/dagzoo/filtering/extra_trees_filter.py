@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import math
-from typing import Any
 import warnings
+from typing import Any
 
 import numpy as np
-from sklearn.ensemble import ExtraTreesRegressor
 import torch
+from sklearn.ensemble import ExtraTreesRegressor
 
 from dagzoo.rng import validate_seed32
-
 
 _CLASS_AWARE_THRESHOLD_POLICY = "class_aware_piecewise_v1"
 _CLASS_AWARE_THRESHOLD_FLOOR = 0.80

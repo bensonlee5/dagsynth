@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-import json
 from pathlib import Path
 from typing import Any, BinaryIO, TextIO, cast
 
@@ -23,7 +23,8 @@ from dagzoo.io.lineage_schema import (
     LINEAGE_SCHEMA_VERSION_DENSE,
     validate_lineage_payload,
 )
-from dagzoo.math_utils import sanitize_json as _sanitize_json, to_numpy as _to_numpy
+from dagzoo.math import sanitize_json as _sanitize_json
+from dagzoo.math import to_numpy as _to_numpy
 from dagzoo.types import DatasetBundle
 
 try:

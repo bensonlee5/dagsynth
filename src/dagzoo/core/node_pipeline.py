@@ -8,7 +8,7 @@ from dataclasses import replace
 import torch
 
 from dagzoo.core.execution_semantics import sample_node_plan
-from dagzoo.core.fixed_layout_plan_types import (
+from dagzoo.core.fixed_layout.plan_types import (
     CategoricalConverterGroup,
     CategoricalConverterPlan,
     FixedLayoutConverterSpec,
@@ -58,7 +58,7 @@ def apply_node_pipeline(
     noise_spec: NoiseSamplingSpec | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Apply one sampled typed node plan in torch."""
-    from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, _apply_node_plan_batch
+    from dagzoo.core.fixed_layout.batched import FixedLayoutBatchRng, _apply_node_plan_batch
 
     root = keyed_rng_from_generator(generator, "apply_node_pipeline")
     node_plan = sample_node_plan(

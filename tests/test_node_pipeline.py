@@ -2,10 +2,13 @@ from dataclasses import dataclass
 
 import pytest
 import torch
+from conftest import make_generator as _make_generator
+from conftest import make_keyed_rng as _make_keyed_rng
 
+import dagzoo.core.node_pipeline as node_pipeline_mod
 from dagzoo.core.execution_semantics import typed_converter_specs
-from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, _apply_node_plan_batch
-from dagzoo.core.fixed_layout_plan_types import (
+from dagzoo.core.fixed_layout.batched import FixedLayoutBatchRng, _apply_node_plan_batch
+from dagzoo.core.fixed_layout.plan_types import (
     CategoricalConverterGroup,
     CategoricalConverterPlan,
     FixedLayoutLatentPlan,
@@ -18,8 +21,6 @@ from dagzoo.core.fixed_layout_plan_types import (
     fixed_layout_converter_groups,
 )
 from dagzoo.core.node_pipeline import apply_node_pipeline
-import dagzoo.core.node_pipeline as node_pipeline_mod
-from conftest import make_generator as _make_generator, make_keyed_rng as _make_keyed_rng
 
 
 @dataclass(slots=True)

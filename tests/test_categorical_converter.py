@@ -2,12 +2,12 @@
 
 import pytest
 import torch
-
-from dagzoo.converters.categorical import apply_categorical_converter
-from dagzoo.core.fixed_layout_plan_types import CategoricalConverterPlan
-from dagzoo.rng import KeyedRng
-import dagzoo.converters.categorical as categorical_mod
 from conftest import make_generator as _make_generator
+
+import dagzoo.converters.categorical as categorical_mod
+from dagzoo.converters.categorical import apply_categorical_converter
+from dagzoo.core.fixed_layout.plan_types import CategoricalConverterPlan
+from dagzoo.rng import KeyedRng
 
 
 def test_output_shapes() -> None:

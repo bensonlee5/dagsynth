@@ -9,12 +9,12 @@ from typing import Any
 
 from dagzoo.config import (
     DATASET_ROWS_MIN_TOTAL,
-    DatasetRowsSpec,
     MISSINGNESS_MECHANISM_MAR,
     MISSINGNESS_MECHANISM_MCAR,
     MISSINGNESS_MECHANISM_MNAR,
     MISSINGNESS_MECHANISM_NONE,
     REQUEST_PROFILE_SMOKE,
+    DatasetRowsSpec,
     GeneratorConfig,
     RequestFileConfig,
     clone_generator_config,
@@ -688,14 +688,14 @@ def append_config_diff_events(
 
 
 __all__ = [
-    "append_config_diff_events",
     "BenchmarkSmokeCaps",
-    "cap_rows_spec_to_total",
     "RequestSmokeProfile",
     "ResolutionEvent",
     "ResolvedBenchmarkPresetConfig",
     "ResolvedGenerateConfig",
     "ResolvedRequestConfig",
+    "append_config_diff_events",
+    "cap_rows_spec_to_total",
     "resolve_benchmark_preset_config",
     "resolve_generate_config",
     "resolve_request_config",

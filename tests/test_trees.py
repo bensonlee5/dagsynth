@@ -1,6 +1,7 @@
 """Tests for core/trees.py — ODT split and leaf index utilities."""
 
 import torch
+from conftest import make_generator as _make_generator
 
 from dagzoo.core.trees import (
     compute_odt_leaf_indices,
@@ -8,7 +9,6 @@ from dagzoo.core.trees import (
     sample_odt_splits,
     sample_odt_splits_batch,
 )
-from conftest import make_generator as _make_generator
 
 
 def test_sample_odt_splits_shapes() -> None:

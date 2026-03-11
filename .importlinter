@@ -21,7 +21,7 @@ source_modules =
     dagzoo.io
     dagzoo.filtering
     dagzoo.graph
-    dagzoo.linalg
+    dagzoo.math
     dagzoo.postprocess
 forbidden_modules =
     dagzoo.cli

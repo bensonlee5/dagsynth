@@ -8,31 +8,6 @@ from dataclasses import dataclass
 import torch
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.core.fixed_layout import (
-    _FixedLayoutPlan,
-    _annotate_fixed_layout_metadata,
-    _extract_emitted_schema_signature,
-    _layout_signature,
-)
-from dagzoo.core.fixed_layout_grouped import (
-    _GroupedRawBatch,
-    _NoiseRuntimeGroup,
-    generate_grouped_raw_batches as _generate_grouped_raw_batches_impl,
-    group_noise_runtime_chunk as _group_noise_runtime_chunk_impl,
-)
-from dagzoo.core.fixed_layout_prepare import (
-    _effective_fixed_layout_target_cells,
-    _resolve_fixed_layout_batch_size,
-    _validate_fixed_layout_rows_mode,
-    realize_generation_config_for_run,
-)
-from dagzoo.core.fixed_layout_batched import (
-    build_fixed_layout_execution_plan,
-    fixed_layout_plan_signature,
-    generate_fixed_layout_graph_batch,
-    generate_fixed_layout_label_batch,
-)
-from dagzoo.core.fixed_layout_plan_types import FixedLayoutExecutionPlan
 from dagzoo.core.generation_context import (
     _resolve_device,
     _resolve_run_seed,
@@ -53,13 +28,39 @@ from dagzoo.core.noise_runtime import (
 )
 from dagzoo.core.shift import resolve_shift_runtime_params
 from dagzoo.core.validation import (
-    InvalidClassSplitError,
     InfeasibleStratifiedSplitError,
+    InvalidClassSplitError,
     _classification_split_valid,
     _stratified_split_indices,
 )
 from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
+
+from .batched import (
+    build_fixed_layout_execution_plan,
+    fixed_layout_plan_signature,
+    generate_fixed_layout_graph_batch,
+    generate_fixed_layout_label_batch,
+)
+from .grouped import (
+    _GroupedRawBatch,
+    _NoiseRuntimeGroup,
+)
+from .grouped import generate_grouped_raw_batches as _generate_grouped_raw_batches_impl
+from .grouped import group_noise_runtime_chunk as _group_noise_runtime_chunk_impl
+from .metadata import (
+    _annotate_fixed_layout_metadata,
+    _extract_emitted_schema_signature,
+    _FixedLayoutPlan,
+    _layout_signature,
+)
+from .plan_types import FixedLayoutExecutionPlan
+from .prepare import (
+    _effective_fixed_layout_target_cells,
+    _resolve_fixed_layout_batch_size,
+    _validate_fixed_layout_rows_mode,
+    realize_generation_config_for_run,
+)
 
 
 @dataclass(slots=True)

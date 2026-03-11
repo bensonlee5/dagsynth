@@ -3,7 +3,7 @@
 import torch
 
 from dagzoo.core.execution_semantics import sample_root_source_plan
-from dagzoo.core.fixed_layout_batched import (
+from dagzoo.core.fixed_layout.batched import (
     FixedLayoutBatchRng,
     _sample_random_points_batch,
     apply_function_plan_batch,

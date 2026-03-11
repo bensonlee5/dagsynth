@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 import yaml
+from conftest import load_repo_config, write_yaml
 
 from dagzoo.cli import main
 from dagzoo.config import (
-    GeneratorConfig,
     MISSINGNESS_MECHANISM_MCAR,
     REQUEST_FILE_VERSION_V1,
     REQUEST_PROFILE_DEFAULT,
     REQUEST_PROFILE_SMOKE,
     REQUEST_TASK_CLASSIFICATION,
     REQUEST_TASK_REGRESSION,
+    GeneratorConfig,
     RequestFileConfig,
 )
 from dagzoo.config.io import load_packaged_generator_config
@@ -57,7 +57,7 @@ def _request_payload(**overrides: object) -> dict[str, object]:
 )
 def test_load_packaged_request_config_matches_repo_copy(resource_name: str) -> None:
     packaged = load_packaged_generator_config(resource_name)
-    repo = GeneratorConfig.from_yaml(Path("configs") / resource_name)
+    repo = load_repo_config(resource_name)
 
     assert packaged.to_dict() == repo.to_dict()
 
@@ -69,7 +69,7 @@ def test_resolve_request_config_loads_packaged_request_resources(
 
     def _stub_load_packaged_generator_config(resource_name: str) -> GeneratorConfig:
         loaded_resources.append(resource_name)
-        return GeneratorConfig.from_yaml(Path("configs") / resource_name)
+        return load_repo_config(resource_name)
 
     monkeypatch.setattr(
         "dagzoo.core.config_resolution.load_packaged_generator_config",
@@ -257,20 +257,17 @@ def test_request_cli_end_to_end_writes_generated_filter_and_curated_outputs(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request_path = tmp_path / "request.yaml"
     output_root = tmp_path / "request_run"
-    request_path.write_text(
-        yaml.safe_dump(
-            _request_payload(
-                task=REQUEST_TASK_REGRESSION,
-                dataset_count=1,
-                rows=1024,
-                profile=REQUEST_PROFILE_SMOKE,
-                output_root=str(output_root),
-            ),
-            sort_keys=False,
+    request_path = write_yaml(
+        tmp_path,
+        "request.yaml",
+        _request_payload(
+            task=REQUEST_TASK_REGRESSION,
+            dataset_count=1,
+            rows=1024,
+            profile=REQUEST_PROFILE_SMOKE,
+            output_root=str(output_root),
         ),
-        encoding="utf-8",
     )
 
     def _stub_filter(*_args, **_kwargs):

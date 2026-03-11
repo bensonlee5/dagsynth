@@ -269,9 +269,9 @@ This section maps the runtime to module boundaries and data flow.
   - `generation_context.py`: seed/split/device/dtype helpers
   - `generation_runtime.py`: shared finalization, stratified split, and postprocess helpers
   - `noise_runtime.py`: per-dataset noise runtime selection
-  - `fixed_layout_runtime.py`: internal canonical run preparation,
+  - `fixed_layout/runtime.py`: internal canonical run preparation,
     classification replay validation, and batched execution orchestration
-  - `fixed_layout.py`: shared fixed-layout metadata helpers and layout signatures
+  - `fixed_layout/metadata.py`: shared fixed-layout metadata helpers and layout signatures
 
 ### 2) Layout and structure sampling {#2-layout-and-structure-sampling}
 

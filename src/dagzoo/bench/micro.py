@@ -8,19 +8,19 @@ from collections.abc import Callable
 import torch
 
 from dagzoo.bench.constants import (
-    MICROBENCH_DEFAULT_REPEATS,
-    MICROBENCH_PARENT_DIM,
-    MICROBENCH_SYNTH_FEATURES,
-    MICROBENCH_SYNTH_ROWS,
     MICRO_CONFIG_N_FEATURES_CAP,
     MICRO_CONFIG_N_NODES_CAP,
     MICRO_CONFIG_N_TEST_CAP,
     MICRO_CONFIG_N_TRAIN_CAP,
+    MICROBENCH_DEFAULT_REPEATS,
+    MICROBENCH_PARENT_DIM,
+    MICROBENCH_SYNTH_FEATURES,
+    MICROBENCH_SYNTH_ROWS,
     MILLISECONDS_PER_SECOND,
 )
 from dagzoo.config import GeneratorConfig, clone_generator_config
 from dagzoo.core.dataset import generate_one
-from dagzoo.core.fixed_layout_plan_types import FixedLayoutConverterSpec
+from dagzoo.core.fixed_layout.plan_types import FixedLayoutConverterSpec
 from dagzoo.core.node_pipeline import apply_node_pipeline
 from dagzoo.functions.random_functions import apply_random_function
 from dagzoo.rng import KeyedRng

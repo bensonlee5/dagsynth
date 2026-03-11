@@ -7,8 +7,8 @@ from pathlib import Path
 
 from dagzoo.diagnostics.effective_diversity import (
     format_filter_calibration_threshold,
-    validate_filter_calibration_threshold,
     validate_diversity_thresholds,
+    validate_filter_calibration_threshold,
 )
 
 from ..common import get_cli_public_api, load_config_or_usage_error, raise_usage_error

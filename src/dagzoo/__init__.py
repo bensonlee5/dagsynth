@@ -17,11 +17,11 @@ from .types import DatasetBundle
 __all__ = [
     "DatasetBundle",
     "GeneratorConfig",
+    "apply_hardware_policy",
     "generate_batch",
     "generate_batch_iter",
     "generate_one",
     "get_peak_flops",
-    "apply_hardware_policy",
     "list_hardware_policies",
     "register_hardware_policy",
 ]

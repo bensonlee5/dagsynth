@@ -10,7 +10,7 @@ from dagzoo.config import (
     validate_class_split_feasibility,
 )
 from dagzoo.core.layout_types import LayoutPlan
-from dagzoo.rng import KeyedRng, validate_seed32
+from dagzoo.rng import validate_seed32
 
 
 def _resolve_split_sizes(
@@ -40,18 +40,6 @@ def _resolve_run_seed(config: GeneratorConfig, seed_override: int | None) -> int
     if seed_override is None:
         return validate_seed32(config.seed, field_name="seed")
     return validate_seed32(seed_override, field_name="seed")
-
-
-def _attempt_seed(run_seed: int, attempt_index: int) -> int:
-    """Derive deterministic per-attempt seed from one run seed."""
-
-    return KeyedRng(int(run_seed)).child_seed("attempt", int(attempt_index))
-
-
-def _split_permutation_seed(run_seed: int, attempt_index: int) -> int:
-    """Derive deterministic split/postprocess seed from one run seed."""
-
-    return KeyedRng(int(run_seed)).child_seed("attempt", int(attempt_index), "split")
 
 
 def _resolve_device(config: GeneratorConfig, device_override: str | None) -> str:

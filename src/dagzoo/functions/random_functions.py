@@ -9,9 +9,9 @@ from dagzoo.core.execution_semantics import (
     sample_function_plan,
     sample_function_plan_for_family,
 )
-from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_function_plan_batch
+from dagzoo.core.fixed_layout.batched import FixedLayoutBatchRng, apply_function_plan_batch
 from dagzoo.core.layout_types import MechanismFamily
-from dagzoo.math_utils import sanitize_and_standardize
+from dagzoo.math import sanitize_and_standardize
 from dagzoo.rng import KeyedRng, keyed_rng_from_generator
 from dagzoo.sampling.noise import NoiseSamplingSpec
 

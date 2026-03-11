@@ -5,11 +5,11 @@ from __future__ import annotations
 import torch
 
 from dagzoo.core.execution_semantics import sample_multi_source_plan
-from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_function_plan_batch
-from dagzoo.core.fixed_layout_plan_types import ConcatNodeSource, StackedNodeSource
+from dagzoo.core.fixed_layout.batched import FixedLayoutBatchRng, apply_function_plan_batch
+from dagzoo.core.fixed_layout.plan_types import ConcatNodeSource, StackedNodeSource
 from dagzoo.core.layout_types import AggregationKind, MechanismFamily
 from dagzoo.functions.random_functions import apply_random_function
-from dagzoo.math_utils import sanitize_and_standardize
+from dagzoo.math import sanitize_and_standardize
 from dagzoo.rng import keyed_rng_from_generator
 from dagzoo.sampling.noise import NoiseSamplingSpec
 

@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from dagzoo.math_utils import normalize_positive_weights
+from dagzoo.math import normalize_positive_weights
 
 from .constants import (
-    MechanismFamily,
-    MissingnessMechanism,
-    NoiseFamily,
-    NoiseMixtureComponent,
-    ShiftMode,
     _MECHANISM_FAMILY_VALUE_MAP,
     _MISSINGNESS_MECHANISM_VALUE_MAP,
     _NOISE_FAMILY_VALUE_MAP,
     _NOISE_MIXTURE_COMPONENT_VALUE_MAP,
     _SHIFT_MODE_VALUE_MAP,
+    MechanismFamily,
+    MissingnessMechanism,
+    NoiseFamily,
+    NoiseMixtureComponent,
+    ShiftMode,
 )
 from .scalars import _validate_finite_float_field
 

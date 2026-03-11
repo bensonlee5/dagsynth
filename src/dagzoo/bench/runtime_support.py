@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from dagzoo.config import (
-    GeneratorConfig,
     MISSINGNESS_MECHANISM_NONE,
     NOISE_FAMILY_GAUSSIAN,
+    GeneratorConfig,
 )
 from dagzoo.core.dataset import generate_batch_iter, generate_one
 from dagzoo.diagnostics import CoverageAggregator
@@ -28,8 +28,8 @@ from .constants import (
     SMOKE_NUM_DATASETS_CAP,
     SMOKE_WARMUP_DATASETS_CAP,
 )
-from .metrics import percent_change, reproducibility_signatures, summarize_latencies
 from .guardrails import _build_guardrail_issue
+from .metrics import percent_change, reproducibility_signatures, summarize_latencies
 
 
 def _peak_rss_mb() -> float:

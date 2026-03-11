@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import yaml
 import pytest
+import yaml
 
 from dagzoo.config import (
     MISSINGNESS_MECHANISM_MAR,

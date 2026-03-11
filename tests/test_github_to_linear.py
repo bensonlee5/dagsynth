@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "linear" / "github_to_linear.py"
 SPEC = importlib.util.spec_from_file_location("github_to_linear", MODULE_PATH)
 assert SPEC and SPEC.loader

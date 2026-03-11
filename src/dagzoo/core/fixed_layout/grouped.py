@@ -9,11 +9,12 @@ from typing import Any
 import torch
 
 from dagzoo.config import GeneratorConfig
-from dagzoo.core.fixed_layout_plan_types import FixedLayoutExecutionPlan
 from dagzoo.core.layout_types import LayoutPlan
 from dagzoo.core.noise_runtime import NoiseRuntimeSelection
 from dagzoo.rng import KeyedRng
 from dagzoo.sampling.noise import NoiseSamplingSpec
+
+from .plan_types import FixedLayoutExecutionPlan
 
 
 @dataclass(slots=True)

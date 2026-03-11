@@ -2,9 +2,11 @@
 
 import pytest
 import torch
+from conftest import make_generator as _make_generator
+from conftest import make_keyed_rng as _make_keyed_rng
 
-from dagzoo.core.fixed_layout_batched import FixedLayoutBatchRng, apply_function_plan_batch
-from dagzoo.core.fixed_layout_plan_types import (
+from dagzoo.core.fixed_layout.batched import FixedLayoutBatchRng, apply_function_plan_batch
+from dagzoo.core.fixed_layout.plan_types import (
     ConcatNodeSource,
     GaussianMatrixPlan,
     LinearFunctionPlan,
@@ -13,8 +15,7 @@ from dagzoo.core.fixed_layout_plan_types import (
 from dagzoo.core.layout_types import AggregationKind
 from dagzoo.functions.multi import apply_multi_function
 from dagzoo.functions.random_functions import apply_random_function
-from dagzoo.math_utils import sanitize_and_standardize
-from conftest import make_generator as _make_generator, make_keyed_rng as _make_keyed_rng
+from dagzoo.math import sanitize_and_standardize
 
 
 def test_single_input() -> None:

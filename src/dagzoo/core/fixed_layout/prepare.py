@@ -9,9 +9,10 @@ from dagzoo.config import (
     dataset_rows_is_variable,
     resolve_dataset_total_rows,
 )
-from dagzoo.core.fixed_layout import _FixedLayoutPlan
 from dagzoo.core.generation_context import _resolve_device, _resolve_run_seed
 from dagzoo.rng import KeyedRng
+
+from .metadata import _FixedLayoutPlan
 
 _FIXED_LAYOUT_TARGET_CELLS = 4_000_000
 
