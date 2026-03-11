@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from dagzoo.config import RequestFileConfig
+from dagzoo.config import REQUEST_PROFILE_SMOKE, RequestFileConfig, clone_generator_config
 from dagzoo.core.config_resolution import (
     append_config_diff_events,
+    cap_rows_spec_to_total,
     resolve_request_config,
     serialize_resolution_events,
 )
@@ -101,10 +102,25 @@ def run_request_execution(
         device_override=device_override,
         hardware_policy=hardware_policy,
     )
+    trace_events = list(resolved.trace_events)
+    pre_realization_config = clone_generator_config(resolved.config, revalidate=False)
+    if request_file.profile == REQUEST_PROFILE_SMOKE:
+        cap_rows_spec_to_total(
+            pre_realization_config,
+            total_rows_cap=int(
+                pre_realization_config.dataset.n_train + pre_realization_config.dataset.n_test
+            ),
+        )
+        append_config_diff_events(
+            resolved.config,
+            pre_realization_config,
+            source="request.smoke_rows_cap",
+            events=trace_events,
+        )
 
-    seed = resolved.config.seed
+    seed = pre_realization_config.seed
     config, run_seed, requested_device, _resolved_device = realize_generation_config_for_run(
-        resolved.config,
+        pre_realization_config,
         seed=seed,
         device=resolved.requested_device,
     )
@@ -114,9 +130,8 @@ def run_request_execution(
             "Request runs must resolve to filter.enabled=false and use deferred filtering."
         )
 
-    trace_events = list(resolved.trace_events)
     append_config_diff_events(
-        resolved.config,
+        pre_realization_config,
         config,
         source="request.run_realization",
         events=trace_events,

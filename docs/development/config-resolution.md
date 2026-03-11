@@ -59,6 +59,10 @@ ______________________________________________________________________
 1. Default CUDA fixed-layout auto-batch floor
    (`runtime.fixed_layout_target_cells`) based on detected GPU memory, applied
    only when the config leaves that field unset
+1. Request execution only:
+   - `profile=smoke` caps or clears `dataset.rows` against the smoke total-row
+     envelope before one-time run realization and records trace source
+     `request.smoke_rows_cap`
 
 `dagzoo request` does not add a parallel config surface and does not re-enable
 inline filtering. Request runs always execute as canonical generation into

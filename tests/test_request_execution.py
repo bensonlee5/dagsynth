@@ -215,14 +215,17 @@ def test_request_cli_end_to_end_writes_generated_filter_and_curated_outputs(
     effective_config = yaml.safe_load(
         (output_root / "generated" / "effective_config.yaml").read_text(encoding="utf-8")
     )
-    assert effective_config["output"]["out_dir"] == str(output_root / "generated")
-    assert effective_config["dataset"]["rows"]["mode"] == "fixed"
-    assert int(effective_config["dataset"]["rows"]["value"]) == 1024
-    assert (
-        int(effective_config["dataset"]["n_train"]) + int(effective_config["dataset"]["n_test"])
-        == 1024
+    trace_payload = yaml.safe_load(
+        (output_root / "generated" / "effective_config_trace.yaml").read_text(encoding="utf-8")
     )
-    assert (output_root / "generated" / "effective_config_trace.yaml").exists()
+    assert effective_config["output"]["out_dir"] == str(output_root / "generated")
+    assert effective_config["dataset"]["rows"] is None
+    assert int(effective_config["dataset"]["n_train"]) == 128
+    assert int(effective_config["dataset"]["n_test"]) == 32
+    assert any(
+        isinstance(item, dict) and item.get("source") == "request.smoke_rows_cap"
+        for item in trace_payload
+    )
     assert (output_root / "generated" / "shard_00000" / "metadata.ndjson").exists()
     assert (output_root / "filter" / "filter_manifest.ndjson").exists()
     summary = json.loads((output_root / "filter" / "filter_summary.json").read_text("utf-8"))

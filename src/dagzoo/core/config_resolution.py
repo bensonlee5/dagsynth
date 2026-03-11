@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from dagzoo.config import (
+    DATASET_ROWS_MIN_TOTAL,
+    DatasetRowsSpec,
     MISSINGNESS_MECHANISM_MAR,
     MISSINGNESS_MECHANISM_MCAR,
     MISSINGNESS_MECHANISM_MNAR,
@@ -16,6 +18,7 @@ from dagzoo.config import (
     RequestFileConfig,
     clone_generator_config,
     load_packaged_generator_config,
+    normalize_dataset_rows,
 )
 from dagzoo.hardware import HardwareInfo, detect_hardware
 from dagzoo.hardware_policy import (
@@ -316,6 +319,43 @@ def _apply_smoke_caps(
             old_value=old_value,
             new_value=new_value,
         )
+
+
+def cap_rows_spec_to_total(config: GeneratorConfig, *, total_rows_cap: int) -> None:
+    """Cap ``dataset.rows`` to ``total_rows_cap`` while preserving public row modes."""
+
+    if int(total_rows_cap) < int(DATASET_ROWS_MIN_TOTAL):
+        config.dataset.rows = None
+        return
+
+    normalized_rows = normalize_dataset_rows(config.dataset.rows)
+    if normalized_rows is None:
+        return
+
+    if normalized_rows.mode == "fixed":
+        assert normalized_rows.value is not None
+        config.dataset.rows = DatasetRowsSpec(
+            mode="fixed",
+            value=min(int(normalized_rows.value), int(total_rows_cap)),
+        )
+        return
+    if normalized_rows.mode == "range":
+        assert normalized_rows.start is not None and normalized_rows.stop is not None
+        capped_start = min(int(normalized_rows.start), int(total_rows_cap))
+        capped_stop = min(int(normalized_rows.stop), int(total_rows_cap))
+        if capped_start >= capped_stop:
+            config.dataset.rows = DatasetRowsSpec(mode="fixed", value=capped_stop)
+            return
+        config.dataset.rows = DatasetRowsSpec(mode="range", start=capped_start, stop=capped_stop)
+        return
+
+    capped_choices = sorted(
+        {min(int(choice), int(total_rows_cap)) for choice in normalized_rows.choices}
+    )
+    if len(capped_choices) == 1:
+        config.dataset.rows = DatasetRowsSpec(mode="fixed", value=capped_choices[0])
+        return
+    config.dataset.rows = DatasetRowsSpec(mode="choices", choices=capped_choices)
 
 
 def _apply_request_smoke_profile(
@@ -620,6 +660,7 @@ def append_config_diff_events(
 __all__ = [
     "append_config_diff_events",
     "BenchmarkSmokeCaps",
+    "cap_rows_spec_to_total",
     "RequestSmokeProfile",
     "ResolutionEvent",
     "ResolvedBenchmarkPresetConfig",

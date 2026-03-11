@@ -31,6 +31,9 @@ Required fields:
   - YAML list or mapping forms are not part of the request-file contract, even
     though internal `GeneratorConfig` normalization accepts them
 - `profile`: stable public request profile; v1 supports `default` and `smoke`
+  - `smoke` keeps the request run within the smoke split envelope during execution
+    by capping or clearing the active rows spec before run realization so the
+    smoke `n_train` / `n_test` split is preserved
 - `output_root`: non-empty output root string
 
 Optional fields:

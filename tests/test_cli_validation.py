@@ -449,6 +449,27 @@ def test_request_cli_rejects_invalid_request_payload(tmp_path) -> None:
     assert int(exc.value.code) == 2
 
 
+def test_request_cli_rejects_invalid_request_yaml(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    request_path = tmp_path / "invalid_request.yaml"
+    request_path.write_text("version: [v1\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "request",
+                "--request",
+                str(request_path),
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "Failed to parse request file" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_request_cli_invokes_request_runner(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

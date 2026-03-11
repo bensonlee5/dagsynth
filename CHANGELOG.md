@@ -10,6 +10,16 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.9.5] - 2026-03-11
+
+### Fixed
+
+- `dagzoo request` now caps smoke-profile `rows` realization to the smoke split
+  envelope before generation, so smoke runs no longer re-expand `n_train`
+  during request execution.
+- `dagzoo request` now converts malformed request YAML into the normal
+  argparse-style usage error path instead of printing a traceback.
+
 ## [0.9.4] - 2026-03-11
 
 ### Fixed
