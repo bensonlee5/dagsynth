@@ -1,17 +1,15 @@
 # Request File Contract
 
-`BL-144` defines the public v1 request-file contract for downstream corpus
-requests. This contract is intentionally smaller than `GeneratorConfig` and is
-meant for cross-repo callers such as `tab-foundry`.
+Public v1 request-file contract for downstream corpus requests.
 
-`BL-145` adds request execution through `dagzoo request --request <path>`.
-`BL-146` layers a versioned handoff manifest on top of that run layout, and
-`BL-147` documents the end-to-end `dagzoo -> tab-foundry` smoke workflow.
+Use this document when a downstream consumer needs to tell `dagzoo request`
+what to generate without depending on the full internal config surface. For the
+artifacts that `dagzoo request` produces, reference
+[Output Format](output-format.md).
 
-As of `0.9.5`, the one-way request handoff is implemented end to end:
-`dagzoo request` resolves the public request contract into canonical
-`generate -> filter` execution and publishes `handoff_manifest.json` at the
-request `output_root`.
+`dagzoo request --request <path>` resolves this public request contract into
+canonical `generate -> filter` execution and publishes
+`handoff_manifest.json` at the request `output_root`.
 
 ## v1 goals
 
@@ -61,13 +59,10 @@ and writes these artifacts:
 
 - `handoff_manifest.json`: versioned machine-readable handoff manifest for
   downstream consumers
-
 - `generated/`: raw generated shard outputs plus
   `effective_config.yaml` and `effective_config_trace.yaml`
-
 - `filter/`: deferred-filter artifacts
   (`filter_manifest.ndjson` and `filter_summary.json`)
-
 - `curated/`: accepted-only curated shard outputs
 
 ## Handoff Manifest
@@ -107,13 +102,13 @@ controls. In particular, v1 does not allow:
 
 ## Mapping Intent
 
-RD-016 resolves this request contract onto canonical `generate -> filter` runs
+The public request contract resolves onto canonical `generate -> filter` runs
 plus one machine-readable handoff manifest.
 
-- `profile` will map to a stable internal config choice without exposing config
+- `profile` maps to a stable internal config choice without exposing config
   file names as the public contract.
-- `missingness_profile` will map to canonical missingness behavior without
-  exposing full internal missingness tuning in v1.
+- `missingness_profile` maps to canonical missingness behavior without exposing
+  full internal missingness tuning in v1.
 - `rows` remains the only public row-shape control.
 
 ## Valid Examples
@@ -214,17 +209,6 @@ dataset_count: 2
 rows:
   mode: fixed
   value: 1024
-profile: default
-output_root: requests/out
-```
-
-Quoted numeric rows instead of a fixed integer:
-
-```yaml
-version: v1
-task: classification
-dataset_count: 2
-rows: "1024"
 profile: default
 output_root: requests/out
 ```

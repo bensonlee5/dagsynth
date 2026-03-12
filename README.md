@@ -169,23 +169,11 @@ Start here for end-user workflows and contracts:
 - [Transforms (Math Reference)](https://bensonlee5.github.io/dagzoo/docs/transforms/): Formal transform math, notation, and operator definitions.
 - [Usage Guide](https://bensonlee5.github.io/dagzoo/docs/usage-guide/): Primary workflow hub.
 - [Output Format](https://bensonlee5.github.io/dagzoo/docs/output-format/): Output schema and artifacts.
-- [Request File Contract](https://github.com/bensonlee5/dagzoo/blob/main/docs/development/request-file-contract.md): Public request schema and one-way handoff contract for downstream consumers.
+- [Request File Contract](https://bensonlee5.github.io/dagzoo/docs/request-file-contract/): Public request schema and one-way handoff contract for downstream consumers.
 - [Feature Guides](https://bensonlee5.github.io/dagzoo/docs/features/): Diagnostics, missingness, many-class, shift, noise, and benchmark guardrails.
 
-Contributor-facing structure docs:
+If you are integrating `dagzoo` downstream, treat these as the stable
+references:
 
-- [docs/development/codebase-navigation.md](docs/development/codebase-navigation.md): canonical package/module map.
-- [docs/development/module-dependency-map.md](docs/development/module-dependency-map.md): generated dependency graph and change-impact hotspots.
-- [scripts/README.md](scripts/README.md): dev helpers and convenience recipe wrappers.
-
-## Roadmap and Development
-
-- Active tracker: [Linear project `dagzoo`](https://linear.app/bl-personal/project/dagzoo-4867d49bb182/overview)
-- Linear tracker notes: [docs/development/linear.md](docs/development/linear.md)
-- Harness audit rubric: [docs/development/harness_audit.md](docs/development/harness_audit.md)
-- Issue authoring standard: [docs/development/issue_authoring.md](docs/development/issue_authoring.md)
-- [docs/development/roadmap.md](docs/development/roadmap.md)
-- [docs/development/backlog_decision_rules.md](docs/development/backlog_decision_rules.md)
-- [docs/development/design-decisions.md](docs/development/design-decisions.md)
-- [docs/development/codebase-navigation.md](docs/development/codebase-navigation.md)
-- [reference/literature_evidence_2026.md](reference/literature_evidence_2026.md)
+- Request inputs for `dagzoo request`: [Request File Contract](https://bensonlee5.github.io/dagzoo/docs/request-file-contract/)
+- Generated and request-run artifacts: [Output Format](https://bensonlee5.github.io/dagzoo/docs/output-format/)

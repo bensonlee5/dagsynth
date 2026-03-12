@@ -299,7 +299,7 @@ ______________________________________________________________________
   [shift](features/shift.md),
   [noise](features/noise.md),
   [benchmark guardrails](features/benchmark-guardrails.md)
-- Request-file contract: [development/request-file-contract.md](development/request-file-contract.md)
+- Request-file contract: [request-file-contract.md](request-file-contract.md)
 - Output contract: [output-format.md](output-format.md)
 - Config precedence and trace artifacts: [development/config-resolution.md](development/config-resolution.md)
 - System guide and terminology: [how-it-works.md](how-it-works.md)
