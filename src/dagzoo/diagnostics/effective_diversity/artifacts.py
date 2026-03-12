@@ -32,6 +32,8 @@ def _mechanism_family_markdown_lines(
 
     sampled_family_counts = summary.get("sampled_family_counts", {})
     dataset_presence = summary.get("dataset_presence_rate_by_family", {})
+    sampled_variant_counts = summary.get("sampled_variant_counts", {})
+    variant_presence = summary.get("dataset_presence_rate_by_variant", {})
     lines = [
         f"### {title}",
         "",
@@ -56,6 +58,21 @@ def _mechanism_family_markdown_lines(
             )
     else:
         lines.append("- No realized mechanism families were observed.")
+    if isinstance(sampled_variant_counts, dict) and sampled_variant_counts:
+        lines.extend(
+            [
+                "",
+                "| Variant | Sampled Count | Dataset Presence Rate |",
+                "|---|---:|---:|",
+            ]
+        )
+        for label in sorted(sampled_variant_counts):
+            lines.append(
+                "| "
+                f"{label} | "
+                f"{_fmt(sampled_variant_counts.get(label), digits=0)} | "
+                f"{_fmt((variant_presence or {}).get(label))} |"
+            )
     lines.append("")
     return lines
 

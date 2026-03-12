@@ -194,6 +194,7 @@ Each line contains:
 | `layout_plan_schema_version` | int         | Optional internal metadata version for the canonical shared-layout payload                          |
 | `layout_execution_contract`  | str         | Optional internal execution contract identifier for canonical determinism                           |
 | `keyed_replay`               | object      | Optional exact keyed subtree replay paths for canonical layout, execution, and dataset roots        |
+| `mechanism_families`         | object      | Optional realized mechanism-family and mechanism-variant coverage for canonical fixed-layout runs   |
 
 For canonical generation (`generate_one`, `generate_batch`, `generate_batch_iter`,
 and `dagzoo generate`), replay later bundles with the shared `seed`,
@@ -212,6 +213,29 @@ to `KeyedRng(metadata["seed"])`:
 | `layout_root_path`         | list[str \| int] | Exact keyed path for replaying the shared per-run layout    |
 | `execution_plan_root_path` | list[str \| int] | Exact keyed path for replaying the shared execution subtree |
 | `dataset_root_path`        | list[str \| int] | Exact keyed path for replaying one bundle’s dataset subtree |
+
+### `mechanism_families` sub-object
+
+Present for canonical fixed-layout generation outputs.
+
+| Key                      | Type      | Description                                                              |
+| ------------------------ | --------- | ------------------------------------------------------------------------ |
+| `sampled_family_counts`  | object    | Realized per-family function-plan counts for the sampled execution plan  |
+| `families_present`       | list[str] | Sorted family labels with non-zero realized count                        |
+| `sampled_variant_counts` | object    | Realized per-variant counts for internal widened families such as `gp.*` |
+| `variants_present`       | list[str] | Sorted variant labels with non-zero realized count                       |
+| `total_function_plans`   | int       | Total realized function-plan count across the execution plan             |
+
+Current variant labels are additive observability fields, not separate public
+family config names. Today they are emitted for widened `gp` execution as
+`gp.standard`, `gp.periodic`, and `gp.multiscale`.
+
+Coverage, diversity-audit, and filter-calibration summary artifacts reuse these
+counts inside `mechanism_family_summary` and add dataset-level presence-rate
+fields:
+
+- `dataset_presence_rate_by_family`
+- `dataset_presence_rate_by_variant`
 
 ### Shift sub-object
 

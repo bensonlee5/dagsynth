@@ -12,9 +12,13 @@ import torch
 from dagzoo.core.layout_types import LayoutPlan
 from dagzoo.types import DatasetBundle
 
-from .plan_types import FixedLayoutExecutionPlan, execution_plan_family_counts
+from .plan_types import (
+    FixedLayoutExecutionPlan,
+    execution_plan_family_counts,
+    execution_plan_variant_counts,
+)
 
-_FIXED_LAYOUT_METADATA_SCHEMA_VERSION = 5
+_FIXED_LAYOUT_METADATA_SCHEMA_VERSION = 6
 
 
 @dataclass(slots=True)
@@ -87,10 +91,13 @@ def _annotate_fixed_layout_metadata(bundle: DatasetBundle, *, plan: _FixedLayout
     if plan.plan_signature is not None:
         bundle.metadata["layout_plan_signature"] = str(plan.plan_signature)
     family_counts = execution_plan_family_counts(plan.execution_plan)
+    variant_counts = execution_plan_variant_counts(plan.execution_plan)
     total_function_plans = int(sum(family_counts.values()))
     bundle.metadata["mechanism_families"] = {
         "sampled_family_counts": dict(family_counts),
         "families_present": [family for family in sorted(family_counts)],
+        "sampled_variant_counts": dict(variant_counts),
+        "variants_present": [label for label in sorted(variant_counts)],
         "total_function_plans": int(total_function_plans),
     }
 

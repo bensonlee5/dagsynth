@@ -39,6 +39,8 @@ def _audit_entry(
             "bundles_with_metadata": 10,
             "sampled_family_counts": {"linear": 10},
             "dataset_presence_rate_by_family": {"linear": 1.0},
+            "sampled_variant_counts": {},
+            "dataset_presence_rate_by_variant": {},
             "mean_total_function_plans": 4.0,
         },
         "filter_summary": {
@@ -276,8 +278,10 @@ def test_write_filter_calibration_artifacts(tmp_path) -> None:
             "mechanism_family_summary": {
                 "metadata_coverage_rate": 1.0,
                 "bundles_with_metadata": 10,
-                "sampled_family_counts": {"piecewise": 10, "linear": 10},
-                "dataset_presence_rate_by_family": {"piecewise": 1.0, "linear": 1.0},
+                "sampled_family_counts": {"gp": 10, "linear": 10},
+                "dataset_presence_rate_by_family": {"gp": 1.0, "linear": 1.0},
+                "sampled_variant_counts": {"gp.multiscale": 10},
+                "dataset_presence_rate_by_variant": {"gp.multiscale": 1.0},
                 "mean_total_function_plans": 6.0,
             },
         },
@@ -292,8 +296,10 @@ def test_write_filter_calibration_artifacts(tmp_path) -> None:
                 "mechanism_family_summary": {
                     "metadata_coverage_rate": 1.0,
                     "bundles_with_metadata": 10,
-                    "sampled_family_counts": {"piecewise": 10, "linear": 10},
-                    "dataset_presence_rate_by_family": {"piecewise": 1.0, "linear": 1.0},
+                    "sampled_family_counts": {"gp": 10, "linear": 10},
+                    "dataset_presence_rate_by_family": {"gp": 1.0, "linear": 1.0},
+                    "sampled_variant_counts": {"gp.multiscale": 10},
+                    "dataset_presence_rate_by_variant": {"gp.multiscale": 1.0},
                     "mean_total_function_plans": 6.0,
                 },
             }
@@ -319,4 +325,4 @@ def test_write_filter_calibration_artifacts(tmp_path) -> None:
     assert "Best overall threshold" in markdown
     assert "canonical persisted artifacts for filter calibration" in markdown
     assert "## Mechanism Families" in markdown
-    assert "piecewise" in markdown
+    assert "gp.multiscale" in markdown

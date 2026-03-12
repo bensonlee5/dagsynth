@@ -30,6 +30,7 @@ from dagzoo.core.fixed_layout.plan_types import (
     FixedLayoutLatentPlan,
     FixedLayoutNodePlan,
     GaussianMatrixPlan,
+    GpFunctionPlan,
     KernelMatrixPlan,
     LinearFunctionPlan,
     NumericConverterGroup,
@@ -43,7 +44,7 @@ from dagzoo.core.fixed_layout.plan_types import (
 )
 from dagzoo.core.fixed_layout.runtime import _sample_fixed_layout
 from dagzoo.core.layout_types import LayoutPlan
-from dagzoo.functions.activations import _fixed_activation
+from dagzoo.functions.activations import _fixed_activation, _gumbel_softmax_activation
 from dagzoo.rng import KeyedRng
 
 
@@ -127,6 +128,89 @@ def test_apply_activation_plan_parametric_variants_broadcast_across_matrix_count
     else:
         expected = torch.pow(torch.abs(x) + 1e-3, -q_view)
     torch.testing.assert_close(out, expected)
+
+
+def test_apply_activation_plan_gumbel_softmax_uses_temperature_and_noise() -> None:
+    x = torch.tensor(
+        [
+            [
+                [[-1.5, -0.5, 0.25], [1.0, 2.0, 3.0]],
+                [[-2.0, -1.0, 0.5], [0.75, 1.5, 2.5]],
+            ],
+            [
+                [[-1.25, -0.25, 0.4], [1.5, 2.5, 3.5]],
+                [[-2.5, -0.75, 0.6], [1.0, 1.75, 2.75]],
+            ],
+        ],
+        dtype=torch.float32,
+    )
+    uniform = torch.tensor(
+        [
+            [
+                [[0.11, 0.21, 0.31], [0.41, 0.51, 0.61]],
+                [[0.71, 0.81, 0.19], [0.29, 0.39, 0.49]],
+            ],
+            [
+                [[0.59, 0.69, 0.79], [0.89, 0.17, 0.27]],
+                [[0.37, 0.47, 0.57], [0.67, 0.77, 0.87]],
+            ],
+        ],
+        dtype=torch.float32,
+    )
+    rng = FixedLayoutBatchRng(seed=19, batch_size=2, device="cpu")
+    with patch.object(
+        FixedLayoutBatchRng,
+        "uniform",
+        autospec=True,
+        return_value=uniform,
+    ) as mocked_uniform:
+        out = _apply_activation_plan(
+            x,
+            rng,
+            ParametricActivationPlan(kind="gumbel_softmax", temperature=0.75),
+            with_standardize=False,
+        )
+
+    mocked_uniform.assert_called_once()
+    expected = _gumbel_softmax_activation(
+        x,
+        temperature=0.75,
+        uniform_noise=uniform,
+        dim=-1,
+    )
+    torch.testing.assert_close(out, expected)
+    torch.testing.assert_close(out.sum(dim=-1), torch.ones_like(out.sum(dim=-1)))
+
+
+@pytest.mark.parametrize("branch_kind", ["ha", "projected"])
+@pytest.mark.parametrize("variant", ["standard", "periodic", "multiscale"])
+def test_apply_function_plan_batch_supports_gp_variants_deterministically(
+    branch_kind: str,
+    variant: str,
+) -> None:
+    x = torch.randn(2, 12, 4, generator=torch.Generator(device="cpu").manual_seed(29))
+    plan = GpFunctionPlan(branch_kind=branch_kind, variant=variant)
+
+    out_a = apply_function_plan_batch(
+        x,
+        FixedLayoutBatchRng(seed=43, batch_size=2, device="cpu"),
+        plan,
+        out_dim=3,
+        noise_sigma_multiplier=1.0,
+        noise_spec=None,
+    )
+    out_b = apply_function_plan_batch(
+        x,
+        FixedLayoutBatchRng(seed=43, batch_size=2, device="cpu"),
+        plan,
+        out_dim=3,
+        noise_sigma_multiplier=1.0,
+        noise_spec=None,
+    )
+
+    assert out_a.shape == (2, 12, 3)
+    assert torch.all(torch.isfinite(out_a))
+    torch.testing.assert_close(out_a, out_b)
 
 
 @pytest.mark.parametrize(

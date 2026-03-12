@@ -360,8 +360,26 @@ def test_generate_one_emits_realized_mechanism_family_metadata() -> None:
     assert mechanism_families["total_function_plans"] >= 1
     assert set(mechanism_families["sampled_family_counts"]).issubset({"piecewise", "linear"})
     assert set(mechanism_families["families_present"]).issubset({"piecewise", "linear"})
+    assert mechanism_families["sampled_variant_counts"] == {}
+    assert mechanism_families["variants_present"] == []
     assert "piecewise" in mechanism_families["sampled_family_counts"]
     assert "piecewise" in mechanism_families["families_present"]
+
+
+def test_generate_one_emits_realized_gp_variant_metadata() -> None:
+    cfg = _tiny_regression_config()
+    cfg.mechanism.function_family_mix = {"gp": 1.0}
+
+    bundle = generate_one(cfg, seed=18837, device="cpu")
+    mechanism_families = bundle.metadata["mechanism_families"]
+
+    assert mechanism_families["sampled_family_counts"]["gp"] >= 1
+    assert set(mechanism_families["families_present"]) == {"gp"}
+    assert mechanism_families["total_function_plans"] >= 1
+    assert set(mechanism_families["sampled_variant_counts"]).issubset(
+        {"gp.standard", "gp.periodic", "gp.multiscale"}
+    )
+    assert mechanism_families["variants_present"]
 
 
 def test_generate_one_noise_metadata_emits_gaussian_defaults() -> None:
