@@ -4,11 +4,37 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dagzoo"
-version = "0.9.7"
-description = "High-performance synthetic tabular data generator"
-readme = "README.md"
+version = "0.9.8"
+description = "Synthetic tabular data generator for causal modeling"
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [
+  { name = "Benson Lee" },
+]
 license = "MIT"
 requires-python = ">=3.13"
+keywords = [
+  "synthetic data generation",
+  "structural causal models",
+  "causal modeling",
+  "synthetic data",
+  "tabular data",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Topic :: Software Development :: Testing",
+]
 dependencies = [
   "numpy>=2.1",
   "torch>=2.8",
@@ -16,6 +42,13 @@ dependencies = [
   "pyarrow>=23.0",
   "scikit-learn>=1.8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/bensonlee5/dagzoo"
+Documentation = "https://bensonlee5.github.io/dagzoo/docs/"
+Repository = "https://github.com/bensonlee5/dagzoo"
+Issues = "https://github.com/bensonlee5/dagzoo/issues"
+Changelog = "https://github.com/bensonlee5/dagzoo/blob/main/CHANGELOG.md"
 
 [project.scripts]
 dagzoo = "dagzoo.cli:main"

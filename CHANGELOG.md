@@ -10,6 +10,14 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.9.8] - 2026-03-13
+
+### Changed
+
+- Improved PyPI package metadata with a clearer summary, explicit Markdown
+  README rendering metadata, author attribution, search keywords, trove
+  classifiers, and project links for docs, issues, repository, and changelog.
+
 ## [0.9.7] - 2026-03-12
 
 ### Added
