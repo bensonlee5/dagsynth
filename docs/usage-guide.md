@@ -177,17 +177,29 @@ ______________________________________________________________________
 
 ## 10. Mechanism-diversity workflows
 
-Use mechanism-diversity workflows when you want to stage opt-in mechanism
-families through the existing `mechanism.function_family_mix` surface and
-verify realized family usage plus diversity lift before any broader rollout.
+Use mechanism-diversity workflows when you want to compare the current
+baseline sampler against the shipped `piecewise` control and the widened `gp`
+candidate path through the existing `mechanism.function_family_mix` surface.
+Inspect realized family and variant uptake together with diversity shift,
+throughput, and filter yield before deciding whether a candidate is worth
+keeping.
 
 ```bash
 dagzoo generate \
-  --config configs/preset_mechanism_piecewise_generate_smoke.yaml \
+  --config configs/preset_mechanism_gp_generate_smoke.yaml \
   --num-datasets 10 \
   --device cpu \
   --hardware-policy none \
-  --out data/run_piecewise_smoke_local
+  --out data/run_gp_smoke_local
+
+dagzoo diversity-audit \
+  --baseline-config configs/preset_mechanism_baseline_benchmark_smoke.yaml \
+  --variant-config configs/preset_mechanism_gp_benchmark_smoke.yaml \
+  --suite smoke \
+  --num-datasets 10 \
+  --warmup 0 \
+  --device cpu \
+  --out-dir benchmarks/results/diversity_audit_gp
 
 dagzoo diversity-audit \
   --baseline-config configs/preset_mechanism_baseline_benchmark_smoke.yaml \
@@ -196,13 +208,13 @@ dagzoo diversity-audit \
   --num-datasets 10 \
   --warmup 0 \
   --device cpu \
-  --out-dir benchmarks/results/diversity_audit_piecewise
+  --out-dir benchmarks/results/diversity_audit_piecewise_control
 
 dagzoo filter-calibration \
-  --config configs/preset_mechanism_piecewise_filter_smoke.yaml \
+  --config configs/preset_mechanism_gp_filter_smoke.yaml \
   --suite smoke \
   --device cpu \
-  --out-dir benchmarks/results/filter_calibration_piecewise
+  --out-dir benchmarks/results/filter_calibration_gp
 ```
 
 Detailed guide: [Mechanism Diversity](features/mechanism-diversity.md)

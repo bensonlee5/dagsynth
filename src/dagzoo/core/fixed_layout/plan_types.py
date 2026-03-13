@@ -13,8 +13,15 @@ from dagzoo.core.layout_types import AggregationKind, ConverterKind, MechanismFa
 FixedLayoutExecutionContract = Literal["chunk_batched_v1"]
 FixedLayoutRootBaseKind = Literal["normal", "uniform", "unit_ball", "normal_cov"]
 FixedLayoutMatrixBaseKind = Literal["gaussian", "weights", "singular_values", "kernel"]
-FixedLayoutActivationKind = Literal["relu_pow", "signed_pow", "inv_pow", "poly"]
+FixedLayoutActivationKind = Literal[
+    "relu_pow",
+    "signed_pow",
+    "inv_pow",
+    "poly",
+    "gumbel_softmax",
+]
 FixedLayoutGpBranchKind = Literal["ha", "projected"]
+FixedLayoutGpVariant = Literal["standard", "periodic", "multiscale"]
 FixedLayoutConverterMethod = Literal["neighbor", "softmax"]
 FixedLayoutConverterVariant = Literal[
     "input",
@@ -37,6 +44,7 @@ class FixedActivationPlan:
 class ParametricActivationPlan:
     kind: FixedLayoutActivationKind
     poly_power: int | None = None
+    temperature: float | None = None
     mode: Literal["parametric"] = "parametric"
 
 
@@ -119,6 +127,7 @@ class DiscretizationFunctionPlan:
 @dataclass(frozen=True, slots=True)
 class GpFunctionPlan:
     branch_kind: FixedLayoutGpBranchKind
+    variant: FixedLayoutGpVariant = "standard"
     family: Literal["gp"] = "gp"
 
 
@@ -459,7 +468,11 @@ def _function_plan_payload(plan: FixedLayoutFunctionPlan) -> dict[str, Any]:
             "linear_matrix": _matrix_plan_payload(plan.linear_matrix),
         }
     if isinstance(plan, GpFunctionPlan):
-        return {"family": "gp", "branch_kind": str(plan.branch_kind)}
+        return {
+            "family": "gp",
+            "branch_kind": str(plan.branch_kind),
+            "variant": str(plan.variant),
+        }
     if isinstance(plan, EmFunctionPlan):
         return {
             "family": "em",
@@ -534,6 +547,56 @@ def execution_plan_family_counts(
     return {family: int(counts[family]) for family in sorted(counts)}
 
 
+def function_plan_variant_counts(plan: FixedLayoutFunctionPlan) -> dict[str, int]:
+    """Count realized mechanism variants within one function plan tree."""
+
+    counts: dict[str, int] = {}
+
+    def _increment(label: str) -> None:
+        counts[label] = int(counts.get(label, 0)) + 1
+
+    if isinstance(plan, ProductFunctionPlan):
+        for nested_plan in (plan.lhs, plan.rhs):
+            for label, count in function_plan_variant_counts(nested_plan).items():
+                counts[label] = int(counts.get(label, 0)) + int(count)
+        return counts
+    if isinstance(plan, PiecewiseFunctionPlan):
+        for nested_plan in (plan.lhs, plan.rhs):
+            for label, count in function_plan_variant_counts(nested_plan).items():
+                counts[label] = int(counts.get(label, 0)) + int(count)
+        return counts
+    if isinstance(plan, GpFunctionPlan):
+        _increment(f"gp.{plan.variant}")
+    return counts
+
+
+def execution_plan_variant_counts(
+    execution_plan: FixedLayoutExecutionPlan,
+) -> dict[str, int]:
+    """Count realized mechanism variants across one fixed-layout execution plan."""
+
+    counts: dict[str, int] = {}
+
+    def _merge(plan: FixedLayoutFunctionPlan | None) -> None:
+        if plan is None:
+            return
+        for label, count in function_plan_variant_counts(plan).items():
+            counts[label] = int(counts.get(label, 0)) + int(count)
+
+    for node_plan in execution_plan.node_plans:
+        source = node_plan.source
+        if isinstance(source, (RandomPointsNodeSource, ConcatNodeSource)):
+            _merge(source.function)
+        else:
+            for plan in source.parent_functions:
+                _merge(plan)
+        for converter_plan in node_plan.converter_plans:
+            if isinstance(converter_plan, CategoricalConverterPlan):
+                _merge(converter_plan.function)
+
+    return {label: int(counts[label]) for label in sorted(counts)}
+
+
 def _matrix_plan_payload(plan: FixedLayoutMatrixPlan) -> dict[str, Any]:
     if isinstance(plan, GaussianMatrixPlan):
         return {"kind": "gaussian"}
@@ -559,6 +622,8 @@ def _activation_plan_payload(plan: FixedLayoutActivationPlan) -> dict[str, Any]:
     }
     if plan.poly_power is not None:
         payload["poly_power"] = int(plan.poly_power)
+    if plan.temperature is not None:
+        payload["temperature"] = float(plan.temperature)
     return payload
 
 
@@ -577,6 +642,7 @@ __all__ = [
     "FixedLayoutConverterSpec",
     "FixedLayoutExecutionPlan",
     "FixedLayoutFunctionPlan",
+    "FixedLayoutGpVariant",
     "FixedLayoutLatentPlan",
     "FixedLayoutMatrixPlan",
     "FixedLayoutNodePlan",
@@ -598,7 +664,9 @@ __all__ = [
     "TreeFunctionPlan",
     "WeightsMatrixPlan",
     "execution_plan_family_counts",
+    "execution_plan_variant_counts",
     "fixed_layout_converter_groups",
     "fixed_layout_signature_payloads",
     "function_plan_family_counts",
+    "function_plan_variant_counts",
 ]

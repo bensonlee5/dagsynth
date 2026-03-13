@@ -34,6 +34,8 @@ def _coverage_summary(*, mean: float, p25: float, p50: float, p75: float) -> dic
             "bundles_with_metadata": 4,
             "sampled_family_counts": {"linear": 4},
             "dataset_presence_rate_by_family": {"linear": 1.0},
+            "sampled_variant_counts": {},
+            "dataset_presence_rate_by_variant": {},
             "mean_total_function_plans": 4.0,
         },
         "metrics": metrics,
@@ -178,6 +180,8 @@ def test_effective_diversity_artifact_writer(tmp_path) -> None:
                 "bundles_with_metadata": 25,
                 "sampled_family_counts": {"linear": 25},
                 "dataset_presence_rate_by_family": {"linear": 1.0},
+                "sampled_variant_counts": {},
+                "dataset_presence_rate_by_variant": {},
                 "mean_total_function_plans": 3.0,
             },
         },
@@ -187,8 +191,10 @@ def test_effective_diversity_artifact_writer(tmp_path) -> None:
                 "mechanism_family_summary": {
                     "metadata_coverage_rate": 1.0,
                     "bundles_with_metadata": 25,
-                    "sampled_family_counts": {"piecewise": 25, "linear": 25},
-                    "dataset_presence_rate_by_family": {"piecewise": 1.0, "linear": 1.0},
+                    "sampled_family_counts": {"gp": 25, "linear": 25},
+                    "dataset_presence_rate_by_family": {"gp": 1.0, "linear": 1.0},
+                    "sampled_variant_counts": {"gp.periodic": 25},
+                    "dataset_presence_rate_by_variant": {"gp.periodic": 1.0},
                     "mean_total_function_plans": 6.0,
                 },
             }
@@ -220,7 +226,7 @@ def test_effective_diversity_artifact_writer(tmp_path) -> None:
     assert "summary.json` / `summary.md` are the canonical persisted artifacts" in markdown
     assert "Probe num datasets" in markdown
     assert "## Mechanism Families" in markdown
-    assert "piecewise" in markdown
+    assert "gp.periodic" in markdown
 
 
 def test_run_effective_diversity_audit_smoke_filter_disabled(tmp_path) -> None:

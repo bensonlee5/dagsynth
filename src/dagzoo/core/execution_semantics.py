@@ -33,6 +33,7 @@ from dagzoo.core.fixed_layout.plan_types import (
     FixedLayoutConverterSpec,
     FixedLayoutConverterVariant,
     FixedLayoutFunctionPlan,
+    FixedLayoutGpVariant,
     FixedLayoutLatentPlan,
     FixedLayoutMatrixBaseKind,
     FixedLayoutMatrixPlan,
@@ -89,6 +90,12 @@ _PARAM_ACTIVATION_CHOICES: tuple[FixedLayoutActivationKind, ...] = (
     "signed_pow",
     "inv_pow",
     "poly",
+    "gumbel_softmax",
+)
+_GP_VARIANT_CHOICES: tuple[FixedLayoutGpVariant, ...] = (
+    "standard",
+    "periodic",
+    "multiscale",
 )
 _AGGREGATION_KIND_ORDER: tuple[AggregationKind, ...] = ("sum", "product", "max", "logsumexp")
 _PRODUCT_COMPONENT_FAMILIES: tuple[MechanismFamily, ...] = (
@@ -331,6 +338,20 @@ def sample_activation_plan(
                 kind=choice,
                 poly_power=int(_randint_scalar(2, 6, generator)),
             )
+        if choice == "gumbel_softmax":
+            return ParametricActivationPlan(
+                kind=choice,
+                temperature=float(
+                    _log_uniform(
+                        keyed_rng.keyed("gumbel_softmax_temperature").torch_rng(
+                            device=resolved_device
+                        ),
+                        0.25,
+                        4.0,
+                        resolved_device,
+                    )
+                ),
+            )
         return ParametricActivationPlan(kind=choice)
     fixed = fixed_activation_names()
     name = fixed[int(_randint_scalar(0, len(fixed), generator))]
@@ -508,7 +529,16 @@ def sample_function_plan_for_family(
                 "ha"
                 if _sample_bool(keyed_rng.keyed("branch_kind").torch_rng(device=resolved_device))
                 else "projected"
-            )
+            ),
+            variant=_GP_VARIANT_CHOICES[
+                int(
+                    _randint_scalar(
+                        0,
+                        len(_GP_VARIANT_CHOICES),
+                        keyed_rng.keyed("variant").torch_rng(device=resolved_device),
+                    )
+                )
+            ],
         )
     if family == "em":
         m_val = int(

@@ -95,7 +95,7 @@ class="math inline">\(f\)</span>.</td>
 <tr>
 <td><span class="math inline">\(\mathcal{F}\)</span></td>
 <td>Ordered mechanism family set:
-<code>(nn, tree, discretization, gp, linear, quadratic, em, product)</code>.</td>
+<code>(nn, tree, discretization, gp, linear, quadratic, em, product, piecewise)</code>.</td>
 </tr>
 <tr>
 <td><span class="math inline">\(Z_j \in \mathbb{R}^{n \times
@@ -1091,8 +1091,12 @@ M_\ell^\top)\]</span></p>
 <code>onehot_argmax</code>, <code>argsort</code>,
 <code>rank</code>.</li>
 <li>Parametric families: <code>relu_pow</code>, <code>signed_pow</code>,
-<code>inv_pow</code>, <code>poly</code>.</li>
+<code>inv_pow</code>, <code>poly</code>, <code>gumbel_softmax</code>.</li>
 </ul>
+<p><code>gumbel_softmax</code> applies row-wise Gumbel perturbations followed by
+temperature-scaled softmax. When activation standardization is enabled later in
+the pipeline, those simplex-like row sums are no longer guaranteed to remain
+exactly 1 in the emitted latent state.</p>
 <h3 id="54-tree-ensemble-oblivious-decision-trees">5.4 Tree ensemble
 (oblivious decision trees)</h3>
 <p><strong>Primary Variable:</strong> <span
@@ -1158,9 +1162,11 @@ Final Output:</strong> <span class="math inline">\(Y_{\text{gp}}
 extraction -&gt; continuous nonlinear structure in
 <code>X</code>/<code>y</code>.<br></p>
 <p><strong>Rationale.</strong> Random Fourier features approximate
-kernel-style smooth nonlinearities at fixed computational cost. Dual
-frequency-sampling branches increase spectral variety while keeping the
-same output interface.</p>
+kernel-style smooth nonlinearities at fixed computational cost. The widened
+<code>gp</code> family now keeps one output interface while varying both the
+frequency-sampling branch and the internal spectral variant, which broadens
+the kinds of smooth or oscillatory behavior that can appear without adding a
+new public config surface.</p>
 <p>Uses <span class="math inline">\(P=256\)</span> random features and
 two branches for sampling frequency matrix <span
 class="math inline">\(\Omega\)</span>. Core output:</p>
@@ -1168,6 +1174,20 @@ class="math inline">\(\Omega\)</span>. Core output:</p>
 + b), \quad Y = \frac{1}{\sqrt{P}} \Phi V^\top\]</span></p>
 <p>where <span class="math inline">\(b\)</span> is random phase and
 <span class="math inline">\(V\)</span> is sampled from noise.</p>
+<p>Variant-specific widening keeps the same readout contract:</p>
+<ul>
+<li><code>standard</code>: uses the base branch-specific frequency draw with the
+same cosine readout shown above.</li>
+<li><code>multiscale</code>: rescales one half of the random features toward a
+lower spectral band and the other half toward a higher spectral band before the
+cosine readout, increasing multi-resolution behavior.</li>
+<li><code>periodic</code>: applies sampled integer harmonics <span
+class="math inline">\(h_p \in \{1,\dots,5\}\)</span> to the phase logits and
+uses a mixed cosine/sine readout
+<span class="math display">\[\Phi_p = \frac{\cos(h_p \theta_p + b_p) +
+\sin(h_p \theta_p - b_p)}{\sqrt{2}}\]</span>
+to bias the latent toward more explicitly oscillatory structure.</li>
+</ul>
 <h3 id="57-em-style-assignment">5.7 EM-style assignment</h3>
 <p><strong>Primary Variable:</strong> <span
 class="math inline">\(Y_{\text{em}}\)</span>.<br> <strong>Dependency

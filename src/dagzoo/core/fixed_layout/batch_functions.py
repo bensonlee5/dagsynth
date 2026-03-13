@@ -74,6 +74,20 @@ def _apply_activation_plan(
             if plan.poly_power is None:
                 raise ValueError("poly activation plan requires poly_power.")
             y = torch.pow(y, float(int(plan.poly_power)))
+        elif kind == "gumbel_softmax":
+            if plan.temperature is None:
+                raise ValueError("gumbel_softmax activation plan requires temperature.")
+            uniform_noise = rng.keyed("gumbel_softmax").uniform(
+                y.shape,
+                low=1e-6,
+                high=1.0 - 1e-6,
+            )
+            y = activations_module._gumbel_softmax_activation(
+                y,
+                temperature=float(plan.temperature),
+                uniform_noise=uniform_noise,
+                dim=-1,
+            )
         else:
             raise ValueError(f"Unknown activation plan kind: {kind!r}")
     else:
@@ -524,8 +538,39 @@ def _apply_gp_batch(
         matrices = alpha.view(-1, 1, 1) * (weights.unsqueeze(2) * a_mat)
         x_proj = torch.einsum("bni,bij->bnj", x, matrices.transpose(1, 2))
 
+    variant = str(plan.variant)
+    if variant == "multiscale":
+        low_scale = rng.keyed("multiscale_low").log_uniform((batch_size,), low=0.35, high=1.0)
+        high_scale = rng.keyed("multiscale_high").log_uniform((batch_size,), low=1.5, high=6.0)
+        split = p // 2
+        feature_scale = torch.cat(
+            [
+                low_scale.view(-1, 1).expand(-1, split),
+                high_scale.view(-1, 1).expand(-1, p - split),
+            ],
+            dim=1,
+        ).to(device=rng.device, dtype=x.dtype)
+        omega = omega * feature_scale.unsqueeze(2)
+    elif variant not in {"standard", "periodic"}:
+        raise ValueError(f"Unknown GP variant: {plan.variant!r}")
+
     b = rng.keyed("phase").uniform((batch_size, p), low=0.0, high=2.0 * math.pi)
-    phi = torch.cos(torch.einsum("bnd,bpd->bnp", x_proj, omega) + b.unsqueeze(1))
+    phase_logits = torch.einsum("bnd,bpd->bnp", x_proj, omega)
+    if variant == "periodic":
+        harmonics = (
+            rng.keyed("periodic_harmonics")
+            .randint(1, 6, (batch_size, p))
+            .to(
+                device=rng.device,
+                dtype=x.dtype,
+            )
+        )
+        phase_logits = harmonics.unsqueeze(1) * phase_logits
+        phi = (
+            torch.cos(phase_logits + b.unsqueeze(1)) + torch.sin(phase_logits - b.unsqueeze(1))
+        ) / math.sqrt(2.0)
+    else:
+        phi = torch.cos(phase_logits + b.unsqueeze(1))
     z_out = sample_noise_from_spec(
         (batch_size, out_dim, p),
         generator=rng.keyed("output_matrix").torch_generator,

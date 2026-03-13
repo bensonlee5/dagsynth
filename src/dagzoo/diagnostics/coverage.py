@@ -173,6 +173,8 @@ class CoverageAggregator:
         self._mechanism_family_total_function_plans = 0
         self._mechanism_family_sampled_counts: dict[str, int] = {}
         self._mechanism_family_dataset_presence: dict[str, int] = {}
+        self._mechanism_variant_sampled_counts: dict[str, int] = {}
+        self._mechanism_variant_dataset_presence: dict[str, int] = {}
         self._metrics = {
             name: _MetricAccumulator(
                 sample_limit=self._config.max_values_per_metric,
@@ -242,6 +244,15 @@ class CoverageAggregator:
                     count = max(0, int(raw_count))
                     if count > 0:
                         normalized_counts[str(raw_family)] = count
+        sampled_variant_counts = metadata.get("sampled_variant_counts")
+        normalized_variant_counts: dict[str, int] = {}
+        if isinstance(sampled_variant_counts, dict):
+            for raw_label, raw_count in sampled_variant_counts.items():
+                if isinstance(raw_label, str) and not isinstance(raw_count, bool):
+                    if isinstance(raw_count, (int, float)) and math.isfinite(float(raw_count)):
+                        count = max(0, int(raw_count))
+                        if count > 0:
+                            normalized_variant_counts[str(raw_label)] = count
         self._mechanism_family_bundles_with_metadata += 1
         for family, count in normalized_counts.items():
             self._mechanism_family_sampled_counts[family] = (
@@ -249,6 +260,13 @@ class CoverageAggregator:
             )
             self._mechanism_family_dataset_presence[family] = (
                 self._mechanism_family_dataset_presence.get(family, 0) + 1
+            )
+        for label, count in normalized_variant_counts.items():
+            self._mechanism_variant_sampled_counts[label] = (
+                self._mechanism_variant_sampled_counts.get(label, 0) + int(count)
+            )
+            self._mechanism_variant_dataset_presence[label] = (
+                self._mechanism_variant_dataset_presence.get(label, 0) + 1
             )
 
         total_function_plans = metadata.get("total_function_plans")
@@ -279,6 +297,11 @@ class CoverageAggregator:
             "dataset_presence_rate_by_family": {
                 family: (float(count / metadata_denominator) if metadata_denominator > 0 else 0.0)
                 for family, count in sorted(self._mechanism_family_dataset_presence.items())
+            },
+            "sampled_variant_counts": dict(sorted(self._mechanism_variant_sampled_counts.items())),
+            "dataset_presence_rate_by_variant": {
+                label: (float(count / metadata_denominator) if metadata_denominator > 0 else 0.0)
+                for label, count in sorted(self._mechanism_variant_dataset_presence.items())
             },
             "mean_total_function_plans": float(mean_total_function_plans),
         }
@@ -360,6 +383,19 @@ def write_coverage_summary_markdown(summary: dict[str, Any], out_path: str | Pat
                 )
         else:
             lines.append("- No realized mechanism-family metadata was observed.")
+        sampled_variant_counts = mechanism_family_summary.get("sampled_variant_counts", {})
+        variant_presence = mechanism_family_summary.get("dataset_presence_rate_by_variant", {})
+        if isinstance(sampled_variant_counts, dict) and sampled_variant_counts:
+            lines.extend(["", "### Mechanism Variants", ""])
+            lines.append("| Variant | Sampled Count | Dataset Presence Rate |")
+            lines.append("|---|---:|---:|")
+            for label in sorted(sampled_variant_counts):
+                lines.append(
+                    "| "
+                    f"{label} | "
+                    f"{_fmt(sampled_variant_counts.get(label), digits=0)} | "
+                    f"{_fmt((variant_presence or {}).get(label))} |"
+                )
 
     with path.open("w", encoding="utf-8") as f:
         f.write("\n".join(lines).rstrip() + "\n")

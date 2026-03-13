@@ -42,12 +42,30 @@ _FIXED_ACTIVATION_NAMES: tuple[str, ...] = (
     "argsort",
     "rank",
 )
+_GUMBEL_SOFTMAX_EPS = 1e-6
 
 
 def fixed_activation_names() -> tuple[str, ...]:
     """Return the canonical fixed-activation sampling order."""
 
     return _FIXED_ACTIVATION_NAMES
+
+
+def _gumbel_softmax_activation(
+    x: torch.Tensor,
+    *,
+    temperature: float,
+    uniform_noise: torch.Tensor,
+    dim: int = -1,
+) -> torch.Tensor:
+    """Apply one Gumbel-softmax relaxation using provided uniform noise."""
+
+    safe_temperature = max(float(temperature), 1e-3)
+    u = uniform_noise.to(device=x.device, dtype=x.dtype)
+    u = torch.clamp(u, min=_GUMBEL_SOFTMAX_EPS, max=1.0 - _GUMBEL_SOFTMAX_EPS)
+    gumbel = -torch.log(-torch.log(u))
+    logits = (x + gumbel) / safe_temperature
+    return torch.softmax(logits, dim=dim)
 
 
 def _fixed_activation(x: torch.Tensor, name: str) -> torch.Tensor:
@@ -114,7 +132,7 @@ def _fixed_activation(x: torch.Tensor, name: str) -> torch.Tensor:
 
 def _param_activation(x: torch.Tensor, generator: torch.Generator) -> torch.Tensor:
     """Apply one randomly parameterized activation family in torch."""
-    choices = ["relu_pow", "signed_pow", "inv_pow", "poly"]
+    choices = ["relu_pow", "signed_pow", "inv_pow", "poly", "gumbel_softmax"]
     idx = randint_scalar(0, len(choices), generator)
     choice = choices[int(idx)]
 
@@ -127,6 +145,20 @@ def _param_activation(x: torch.Tensor, generator: torch.Generator) -> torch.Tens
     if choice == "inv_pow":
         q = _log_uniform(generator, 0.1, 10.0, str(x.device))
         return torch.pow(torch.abs(x) + 1e-3, -q)
+    if choice == "gumbel_softmax":
+        temperature = _log_uniform(generator, 0.25, 4.0, str(x.device))
+        uniform_noise = torch.rand(
+            x.shape,
+            generator=generator,
+            device=x.device,
+            dtype=x.dtype,
+        )
+        return _gumbel_softmax_activation(
+            x,
+            temperature=temperature,
+            uniform_noise=uniform_noise,
+            dim=1,
+        )
 
     m = randint_scalar(2, 6, generator)
     return torch.pow(x, float(m))
