@@ -10,6 +10,35 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.9.7] - 2026-03-12
+
+### Added
+
+- Added widened internal `gp` variants on the canonical fixed-layout path:
+  `gp.standard`, `gp.periodic`, and `gp.multiscale`.
+- Added `gumbel_softmax` as a sampled parametric activation family for random
+  activation plans and fixed-layout execution metadata.
+- Added curated GP-focused mechanism-diversity smoke presets for direct
+  generation, diversity-audit, and filter-calibration workflows.
+
+### Changed
+
+- Default behavior for runs that sample the existing public `gp` family now
+  broadens across internal GP variants; no new CLI flag or config section was
+  added.
+- Fixed-layout bundle metadata now emits additive
+  `mechanism_families.sampled_variant_counts` and
+  `mechanism_families.variants_present` fields alongside the existing
+  family-level counts.
+- Coverage summaries, diversity-audit reports, and filter-calibration reports
+  now expose additive GP variant observability through
+  `mechanism_family_summary.sampled_variant_counts` and
+  `mechanism_family_summary.dataset_presence_rate_by_variant`.
+- Fixed-layout metadata schema version is now `6` to reflect the widened
+  `mechanism_families` payload on generated bundles.
+- Public docs and roadmap guidance now treat shipped `piecewise` as the control
+  path and widened `gp` as the active RD-011 candidate path.
+
 ## [0.9.6] - 2026-03-11
 
 ### Added

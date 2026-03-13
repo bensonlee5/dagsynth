@@ -30,6 +30,7 @@ from dagzoo.core.fixed_layout.plan_types import (
     EmFunctionPlan,
     FixedActivationPlan,
     FixedLayoutConverterPlan,
+    FixedLayoutExecutionPlan,
     FixedLayoutLatentPlan,
     FixedLayoutNodePlan,
     GaussianMatrixPlan,
@@ -37,6 +38,7 @@ from dagzoo.core.fixed_layout.plan_types import (
     LinearFunctionPlan,
     NeuralNetFunctionPlan,
     NumericConverterPlan,
+    ParametricActivationPlan,
     PiecewiseFunctionPlan,
     ProductFunctionPlan,
     QuadraticFunctionPlan,
@@ -44,6 +46,7 @@ from dagzoo.core.fixed_layout.plan_types import (
     StackedNodeSource,
     TreeFunctionPlan,
     fixed_layout_converter_groups,
+    fixed_layout_signature_payloads,
 )
 from dagzoo.core.layout_types import MechanismFamily
 from dagzoo.core.node_pipeline import apply_node_pipeline
@@ -202,6 +205,7 @@ def test_keyed_plan_sampling_uses_explicit_device(
         "sample_function_plan",
         lambda *_args, **_kwargs: LinearFunctionPlan(matrix=GaussianMatrixPlan()),
     )
+    monkeypatch.setattr(execution_semantics_mod, "_rand_scalar", lambda *_args, **_kwargs: 1.0)
 
     root = KeyedRng(124)
     execution_semantics_mod.sample_function_family(
@@ -239,6 +243,103 @@ def test_keyed_plan_sampling_uses_explicit_device(
 
     assert devices
     assert all(device == "cuda" for device in devices)
+
+
+def test_sample_activation_plan_can_emit_gumbel_softmax(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(execution_semantics_mod, "_rand_scalar", lambda *_args, **_kwargs: 0.0)
+    monkeypatch.setattr(execution_semantics_mod, "_randint_scalar", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(execution_semantics_mod, "_log_uniform", lambda *_args, **_kwargs: 0.75)
+
+    plan = execution_semantics_mod.sample_activation_plan(
+        keyed_rng=KeyedRng(41),
+        device="cpu",
+    )
+
+    assert isinstance(plan, execution_semantics_mod.ParametricActivationPlan)
+    assert plan.kind == "gumbel_softmax"
+    assert plan.temperature == pytest.approx(0.75)
+
+
+@pytest.mark.parametrize(
+    ("variant_index", "expected_variant"),
+    [
+        (0, "standard"),
+        (1, "periodic"),
+        (2, "multiscale"),
+    ],
+)
+def test_sample_function_plan_for_gp_can_emit_variants(
+    variant_index: int,
+    expected_variant: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(execution_semantics_mod, "_sample_bool", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        execution_semantics_mod,
+        "_randint_scalar",
+        lambda *_args, **_kwargs: variant_index,
+    )
+
+    plan = execution_semantics_mod.sample_function_plan_for_family(
+        keyed_rng=KeyedRng(51 + variant_index),
+        family="gp",
+        out_dim=4,
+        mechanism_logit_tilt=0.0,
+        function_family_mix=None,
+        device="cpu",
+    )
+
+    assert isinstance(plan, GpFunctionPlan)
+    assert plan.branch_kind == "ha"
+    assert plan.variant == expected_variant
+
+
+def test_fixed_layout_signature_payloads_include_gp_variant_and_activation_temperature() -> None:
+    execution_plan = FixedLayoutExecutionPlan(
+        node_plans=(
+            FixedLayoutNodePlan(
+                node_index=0,
+                parent_indices=(),
+                converter_specs=(),
+                converter_plans=(),
+                converter_groups=(),
+                latent=FixedLayoutLatentPlan(required_dim=2, extra_dim=0, total_dim=2),
+                source=RandomPointsNodeSource(
+                    base_kind="normal",
+                    function=NeuralNetFunctionPlan(
+                        n_layers=1,
+                        hidden_width=3,
+                        input_activation=ParametricActivationPlan(
+                            kind="gumbel_softmax",
+                            temperature=0.75,
+                        ),
+                        output_activation=None,
+                        layer_matrices=(GaussianMatrixPlan(),),
+                        hidden_activations=(),
+                    ),
+                ),
+            ),
+            FixedLayoutNodePlan(
+                node_index=1,
+                parent_indices=(0,),
+                converter_specs=(),
+                converter_plans=(),
+                converter_groups=(),
+                latent=FixedLayoutLatentPlan(required_dim=2, extra_dim=0, total_dim=2),
+                source=RandomPointsNodeSource(
+                    base_kind="normal",
+                    function=GpFunctionPlan(branch_kind="projected", variant="multiscale"),
+                ),
+            ),
+        )
+    )
+
+    payloads = fixed_layout_signature_payloads(execution_plan)
+
+    assert payloads[0]["function"]["input_activation"]["temperature"] == pytest.approx(0.75)
+    assert payloads[1]["function"]["variant"] == "multiscale"
 
 
 def test_keyed_product_rhs_sampling_is_independent_of_lhs_draw_count(

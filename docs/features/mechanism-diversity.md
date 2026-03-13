@@ -1,17 +1,20 @@
 # Mechanism Diversity
 
-Use mechanism-diversity workflows when you want to stage new mechanism families
-through the existing `mechanism.function_family_mix` surface and verify that
-they produce realized family uptake plus measurable diversity shift.
+Use mechanism-diversity workflows when you want to exercise the existing
+family-mix surface, compare candidate mechanism behavior against the current
+baseline, and verify that the generated bundles actually realize the intended
+families or variants.
 
 ______________________________________________________________________
 
 ## When to use
 
-- You want to compare the current baseline sampler against an opt-in family mix.
-- You need realized mechanism-family counts in bundle metadata and audit reports.
-- You want benchmark, diversity-audit, and filter-calibration evidence before
-  considering any broader rollout.
+- You want to compare the current baseline sampler against the shipped
+  `piecewise` control or the widened `gp` candidate path.
+- You need realized mechanism-family and mechanism-variant counts in bundle
+  metadata and audit reports.
+- You want diversity-audit and filter-calibration evidence before treating a
+  new mechanism path as stable.
 
 ______________________________________________________________________
 
@@ -22,41 +25,73 @@ This workflow intentionally keeps the config surface narrow:
 - No new config sections.
 - No family-specific scalar knobs.
 - No new CLI flags.
-- The only public family toggle added in this epic is
-  `mechanism.function_family_mix.piecewise`, and it must be paired with at
-  least one explicit branch family from `tree`, `discretization`, `gp`,
-  `linear`, or `quadratic`.
+- The public surface remains `mechanism.function_family_mix`; the widened `gp`
+  behavior is an internal variant expansion behind the existing `gp` family
+  label, while `piecewise` remains an explicit mix-controlled family.
+- `mechanism.function_family_mix.piecewise` must still be paired with at least
+  one explicit branch family from `tree`, `discretization`, `gp`, `linear`, or
+  `quadratic`.
 
-The curated smoke presets use the minimal valid staged mix, `piecewise` +
-`linear`, so the rollout remains explicit about which leaf family can appear
-inside piecewise branches.
+The curated smoke presets now cover two roles:
+
+- `piecewise` remains the shipped control path with the explicit `piecewise` +
+  `linear` staged mix.
+- `gp` presets isolate the widened `gp` family so diversity evidence can be
+  attributed to `gp.standard`, `gp.periodic`, and `gp.multiscale`.
 
 ______________________________________________________________________
 
-## Generate with `piecewise`
+## Generate with widened `gp`
 
-Use the curated smoke preset for direct generation:
+Use the curated GP smoke preset for direct generation:
 
 ```bash
 dagzoo generate \
-  --config configs/preset_mechanism_piecewise_generate_smoke.yaml \
+  --config configs/preset_mechanism_gp_generate_smoke.yaml \
   --num-datasets 10 \
   --device cpu \
   --hardware-policy none \
-  --out data/run_piecewise_smoke_local
+  --out data/run_gp_smoke_local
 ```
 
 Inspect shard `metadata.ndjson` for:
 
 - `mechanism_families.sampled_family_counts`
 - `mechanism_families.families_present`
+- `mechanism_families.sampled_variant_counts`
+- `mechanism_families.variants_present`
 - `mechanism_families.total_function_plans`
 
 ______________________________________________________________________
 
 ## Diversity-audit workflow
 
-Compare the matched baseline preset against the opt-in `piecewise` preset:
+Compare the matched baseline preset against the widened `gp` preset:
+
+```bash
+dagzoo diversity-audit \
+  --baseline-config configs/preset_mechanism_baseline_benchmark_smoke.yaml \
+  --variant-config configs/preset_mechanism_gp_benchmark_smoke.yaml \
+  --suite smoke \
+  --num-datasets 10 \
+  --warmup 0 \
+  --device cpu \
+  --out-dir benchmarks/results/diversity_audit_gp
+```
+
+Inspect `summary.json` and `summary.md` for:
+
+- `comparisons[*].diversity_composite_shift_pct`
+- `baseline.mechanism_family_summary`
+- `variants[*].mechanism_family_summary`
+- `variants[*].mechanism_family_summary.sampled_variant_counts`
+- `variants[*].mechanism_family_summary.dataset_presence_rate_by_variant`
+
+The audit status thresholds treat larger diversity shift as divergence, so use
+the raw shift percentages together with throughput and acceptance-yield metrics
+instead of treating `pass`/`warn`/`fail` as a standalone go/no-go decision.
+
+`piecewise` remains the shipped control. Keep the matched control audit handy:
 
 ```bash
 dagzoo diversity-audit \
@@ -66,32 +101,22 @@ dagzoo diversity-audit \
   --num-datasets 10 \
   --warmup 0 \
   --device cpu \
-  --out-dir benchmarks/results/diversity_audit_piecewise
+  --out-dir benchmarks/results/diversity_audit_piecewise_control
 ```
-
-Inspect `summary.json` and `summary.md` for:
-
-- `comparisons[*].diversity_composite_shift_pct`
-- `baseline.mechanism_family_summary`
-- `variants[*].mechanism_family_summary`
-
-The `piecewise` preset is only a viable winner if the report shows both
-realized `piecewise` usage and clearly non-zero diversity shift against the
-baseline.
 
 ______________________________________________________________________
 
 ## Filter-calibration workflow
 
-Use the filter-enabled preset to check accepted-corpus throughput and yield
+Use the GP filter-enabled preset to check accepted-corpus throughput and yield
 against diversity shift:
 
 ```bash
 dagzoo filter-calibration \
-  --config configs/preset_mechanism_piecewise_filter_smoke.yaml \
+  --config configs/preset_mechanism_gp_filter_smoke.yaml \
   --suite smoke \
   --device cpu \
-  --out-dir benchmarks/results/filter_calibration_piecewise
+  --out-dir benchmarks/results/filter_calibration_gp
 ```
 
 Inspect `summary.json` and `summary.md` for:
@@ -100,6 +125,8 @@ Inspect `summary.json` and `summary.md` for:
 - `candidates[*].filter_accepted_datasets_per_minute`
 - `candidates[*].diversity_status`
 - `candidates[*].mechanism_family_summary`
+- `candidates[*].mechanism_family_summary.sampled_variant_counts`
+- `candidates[*].mechanism_family_summary.dataset_presence_rate_by_variant`
 
 ______________________________________________________________________
 
