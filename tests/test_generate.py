@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 from types import SimpleNamespace
 
 import numpy as np
@@ -1039,8 +1040,10 @@ def test_generate_batch_iter_matches_batch_ordering() -> None:
         assert a.metadata["seed"] == b.metadata["seed"]
         assert a.metadata["dataset_seed"] == b.metadata["dataset_seed"]
         assert a.metadata["dataset_index"] == b.metadata["dataset_index"]
+        assert a.metadata["dataset_id"] == b.metadata["dataset_id"]
         assert a.metadata["run_num_datasets"] == b.metadata["run_num_datasets"]
         assert a.metadata["layout_plan_signature"] == b.metadata["layout_plan_signature"]
+        assert a.metadata["split_groups"] == b.metadata["split_groups"]
 
 
 def test_generate_one_matches_first_dataset_of_generate_batch() -> None:
@@ -1059,9 +1062,11 @@ def test_generate_one_matches_first_dataset_of_generate_batch() -> None:
     assert int(single.metadata["dataset_seed"]) == int(batch[0].metadata["dataset_seed"])
     assert int(single.metadata["dataset_index"]) == 0
     assert int(batch[0].metadata["dataset_index"]) == 0
+    assert str(single.metadata["dataset_id"]) == str(batch[0].metadata["dataset_id"])
     assert int(single.metadata["run_num_datasets"]) == 1
     assert int(batch[0].metadata["run_num_datasets"]) == 1
     assert single.metadata["layout_plan_signature"] == batch[0].metadata["layout_plan_signature"]
+    assert single.metadata["split_groups"] == batch[0].metadata["split_groups"]
 
 
 def test_generate_batch_metadata_preserves_run_seed_and_dataset_indices() -> None:
@@ -1073,7 +1078,95 @@ def test_generate_batch_metadata_preserves_run_seed_and_dataset_indices() -> Non
     assert [int(bundle.metadata["dataset_index"]) for bundle in batch] == [0, 1, 2]
     assert [int(bundle.metadata["run_num_datasets"]) for bundle in batch] == [3, 3, 3]
     dataset_seeds = [int(bundle.metadata["dataset_seed"]) for bundle in batch]
+    dataset_ids = [str(bundle.metadata["dataset_id"]) for bundle in batch]
+    request_run_groups = [bundle.metadata["split_groups"]["request_run"] for bundle in batch]
+    layout_plan_groups = [bundle.metadata["split_groups"]["layout_plan"] for bundle in batch]
     assert len(set(dataset_seeds)) == 3
+    assert len(set(dataset_ids)) == 3
+    assert len(set(request_run_groups)) == 1
+    assert len(set(layout_plan_groups)) == 1
+
+
+def test_generate_one_request_run_identity_changes_with_noise_contract() -> None:
+    baseline = _tiny_regression_config()
+    drifted = deepcopy(baseline)
+    baseline.noise.family = NOISE_FAMILY_GAUSSIAN
+    drifted.noise.family = NOISE_FAMILY_LAPLACE
+
+    bundle_base = generate_one(baseline, seed=1234, device="cpu")
+    bundle_drifted = generate_one(drifted, seed=1234, device="cpu")
+
+    assert bundle_base.metadata["noise_distribution"]["family_sampled"] == NOISE_FAMILY_GAUSSIAN
+    assert bundle_drifted.metadata["noise_distribution"]["family_sampled"] == NOISE_FAMILY_LAPLACE
+    assert (
+        bundle_base.metadata["layout_plan_signature"]
+        == bundle_drifted.metadata["layout_plan_signature"]
+    )
+    assert (
+        bundle_base.metadata["split_groups"]["layout_plan"]
+        == bundle_drifted.metadata["split_groups"]["layout_plan"]
+    )
+    assert (
+        bundle_base.metadata["split_groups"]["request_run"]
+        != bundle_drifted.metadata["split_groups"]["request_run"]
+    )
+    assert bundle_base.metadata["dataset_id"] != bundle_drifted.metadata["dataset_id"]
+
+
+def test_generate_one_request_run_identity_changes_with_realized_row_shape() -> None:
+    baseline = _tiny_regression_config()
+    drifted = deepcopy(baseline)
+    baseline.dataset.n_train = 16
+    baseline.dataset.n_test = 8
+    drifted.dataset.n_train = 32
+    drifted.dataset.n_test = 8
+
+    bundle_base = generate_one(baseline, seed=1234, device="cpu")
+    bundle_drifted = generate_one(drifted, seed=1234, device="cpu")
+
+    assert bundle_base.X_train.shape != bundle_drifted.X_train.shape
+    assert (
+        bundle_base.metadata["layout_plan_signature"]
+        == bundle_drifted.metadata["layout_plan_signature"]
+    )
+    assert (
+        bundle_base.metadata["split_groups"]["layout_plan"]
+        == bundle_drifted.metadata["split_groups"]["layout_plan"]
+    )
+    assert (
+        bundle_base.metadata["split_groups"]["request_run"]
+        != bundle_drifted.metadata["split_groups"]["request_run"]
+    )
+    assert bundle_base.metadata["dataset_id"] != bundle_drifted.metadata["dataset_id"]
+
+
+def test_generate_one_request_run_identity_ignores_output_path_changes() -> None:
+    baseline = _tiny_regression_config()
+    relocated = deepcopy(baseline)
+    relocated.output.out_dir = "data/run_relocated"
+
+    bundle_base = generate_one(baseline, seed=1234, device="cpu")
+    bundle_relocated = generate_one(relocated, seed=1234, device="cpu")
+
+    assert (
+        bundle_base.metadata["config"]["output"]["out_dir"]
+        != bundle_relocated.metadata["config"]["output"]["out_dir"]
+    )
+    assert bundle_base.metadata["split_groups"] == bundle_relocated.metadata["split_groups"]
+    assert bundle_base.metadata["dataset_id"] == bundle_relocated.metadata["dataset_id"]
+
+
+def test_generate_batch_request_run_identity_is_run_stable_for_mixture_noise() -> None:
+    cfg = _tiny_regression_config()
+    cfg.noise.family = NOISE_FAMILY_MIXTURE
+    cfg.noise.mixture_weights = {"gaussian": 0.7, "laplace": 0.2, "student_t": 0.1}
+
+    batch = generate_batch(cfg, num_datasets=5, seed=1, device="cpu")
+
+    sampled_families = [bundle.metadata["noise_distribution"]["family_sampled"] for bundle in batch]
+    request_run_groups = [bundle.metadata["split_groups"]["request_run"] for bundle in batch]
+    assert len(set(sampled_families)) > 1
+    assert len(set(request_run_groups)) == 1
 
 
 def test_generate_batch_bundle_replays_from_run_metadata() -> None:
@@ -1105,12 +1198,14 @@ def test_generate_batch_bundle_replays_from_run_metadata() -> None:
         assert int(bundle.metadata["seed"]) == int(replayed.metadata["seed"])
         assert int(bundle.metadata["dataset_seed"]) == int(replayed.metadata["dataset_seed"])
         assert int(bundle.metadata["dataset_index"]) == int(replayed.metadata["dataset_index"])
+        assert str(bundle.metadata["dataset_id"]) == str(replayed.metadata["dataset_id"])
         assert int(bundle.metadata["run_num_datasets"]) == int(
             replayed.metadata["run_num_datasets"]
         )
         assert (
             bundle.metadata["layout_plan_signature"] == replayed.metadata["layout_plan_signature"]
         )
+        assert bundle.metadata["split_groups"] == replayed.metadata["split_groups"]
 
 
 def test_sample_fixed_layout_rejects_variable_rows_spec() -> None:

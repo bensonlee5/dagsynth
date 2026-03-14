@@ -10,6 +10,25 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.9.11] - 2026-03-14
+
+### Changed
+
+- **BREAKING:** Canonical generated bundle metadata now emits stable
+  path-independent `dataset_id` plus `split_groups.request_run` and
+  `split_groups.layout_plan` fields for downstream split assignment and corpus
+  relocation safety. `request_run` and `dataset_id` now include stable
+  non-plan run provenance that changes when emitted data changes outside the
+  fixed-layout execution plan, while `layout_plan` remains the narrower
+  shared-plan grouping key.
+- Shared identity hashing now lives under `src/dagzoo/core/identity.py`, so
+  request handoff identity and canonical dataset metadata use the same stable
+  JSON normalization rules.
+- Output-format docs, packed-shard persistence coverage, deferred-filter
+  preservation coverage, and request-run integration tests now treat
+  `dataset_id` and `split_groups.*` as the canonical downstream grouping
+  surface.
+
 ## [0.9.9] - 2026-03-14
 
 ### Changed
