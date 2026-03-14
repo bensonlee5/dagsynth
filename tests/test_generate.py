@@ -1169,6 +1169,78 @@ def test_generate_batch_request_run_identity_is_run_stable_for_mixture_noise() -
     assert len(set(request_run_groups)) == 1
 
 
+def test_generate_one_request_run_identity_changes_with_student_t_df_for_mixture_noise() -> None:
+    baseline = _tiny_regression_config()
+    drifted = deepcopy(baseline)
+    baseline.noise.family = NOISE_FAMILY_MIXTURE
+    drifted.noise.family = NOISE_FAMILY_MIXTURE
+    baseline.noise.mixture_weights = {"gaussian": 0.2, "laplace": 0.2, "student_t": 0.6}
+    drifted.noise.mixture_weights = {"gaussian": 0.2, "laplace": 0.2, "student_t": 0.6}
+    baseline.noise.student_t_df = 5.0
+    drifted.noise.student_t_df = 9.0
+
+    bundle_base = generate_one(baseline, seed=1234, device="cpu")
+    bundle_drifted = generate_one(drifted, seed=1234, device="cpu")
+
+    assert bundle_base.metadata["noise_distribution"]["family_sampled"] == NOISE_FAMILY_STUDENT_T
+    assert bundle_drifted.metadata["noise_distribution"]["family_sampled"] == NOISE_FAMILY_STUDENT_T
+    assert (
+        bundle_base.metadata["split_groups"]["request_run"]
+        != bundle_drifted.metadata["split_groups"]["request_run"]
+    )
+    assert bundle_base.metadata["dataset_id"] != bundle_drifted.metadata["dataset_id"]
+    assert any(
+        not np.array_equal(base, replayed)
+        for base, replayed in (
+            (np.asarray(bundle_base.X_train), np.asarray(bundle_drifted.X_train)),
+            (np.asarray(bundle_base.X_test), np.asarray(bundle_drifted.X_test)),
+            (np.asarray(bundle_base.y_train), np.asarray(bundle_drifted.y_train)),
+            (np.asarray(bundle_base.y_test), np.asarray(bundle_drifted.y_test)),
+        )
+    )
+
+
+def test_generate_one_request_run_identity_ignores_unreachable_student_t_df_for_mixture_noise() -> (
+    None
+):
+    baseline = _tiny_regression_config()
+    drifted = deepcopy(baseline)
+    baseline.noise.family = NOISE_FAMILY_MIXTURE
+    drifted.noise.family = NOISE_FAMILY_MIXTURE
+    baseline.noise.mixture_weights = {"gaussian": 0.8, "laplace": 0.2, "student_t": 0.0}
+    drifted.noise.mixture_weights = {"gaussian": 0.8, "laplace": 0.2, "student_t": 0.0}
+    baseline.noise.student_t_df = 5.0
+    drifted.noise.student_t_df = 9.0
+
+    bundle_base = generate_one(baseline, seed=1234, device="cpu")
+    bundle_drifted = generate_one(drifted, seed=1234, device="cpu")
+
+    assert bundle_base.metadata["noise_distribution"]["family_sampled"] != NOISE_FAMILY_STUDENT_T
+    assert bundle_drifted.metadata["noise_distribution"]["family_sampled"] != NOISE_FAMILY_STUDENT_T
+    np.testing.assert_allclose(
+        np.asarray(bundle_base.X_train),
+        np.asarray(bundle_drifted.X_train),
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        np.asarray(bundle_base.X_test),
+        np.asarray(bundle_drifted.X_test),
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        np.asarray(bundle_base.y_train),
+        np.asarray(bundle_drifted.y_train),
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        np.asarray(bundle_base.y_test),
+        np.asarray(bundle_drifted.y_test),
+        atol=1e-6,
+    )
+    assert bundle_base.metadata["split_groups"] == bundle_drifted.metadata["split_groups"]
+    assert bundle_base.metadata["dataset_id"] == bundle_drifted.metadata["dataset_id"]
+
+
 def test_generate_batch_request_run_identity_changes_with_effective_batch_size() -> None:
     baseline = _tiny_regression_config()
     drifted = deepcopy(baseline)

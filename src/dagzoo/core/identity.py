@@ -116,10 +116,16 @@ def canonical_request_run_provenance(metadata: Mapping[str, Any]) -> dict[str, A
             path="metadata.noise_distribution.student_t_df",
         )
     elif noise_family == "mixture":
-        noise_payload["mixture_weights"] = _normalized_float_mapping(
+        mixture_weights = _normalized_float_mapping(
             noise_distribution.get("mixture_weights"),
             path="metadata.noise_distribution.mixture_weights",
         )
+        noise_payload["mixture_weights"] = mixture_weights
+        if float(mixture_weights.get("student_t", 0.0)) > 0.0:
+            noise_payload["student_t_df"] = _require_number(
+                noise_distribution.get("student_t_df"),
+                path="metadata.noise_distribution.student_t_df",
+            )
 
     return {
         "dataset": {

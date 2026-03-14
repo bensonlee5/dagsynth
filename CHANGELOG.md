@@ -24,6 +24,10 @@ records the later `dagsynth -> dagzoo` rename on the current release line.
 - Canonical `request_run` and `dataset_id` identity hashing now includes the
   effective fixed-layout run batch size, so changing resolved chunking no
   longer reuses identities when batching changes the emitted datasets.
+- Mixture-noise identity hashing now includes `student_t_df` when the
+  normalized mixture can sample Student-t, preventing `request_run` and
+  `dataset_id` collisions for emitted Student-t mixture datasets while still
+  ignoring unreachable Student-t config changes.
 - Shared identity hashing now lives under `src/dagzoo/core/identity.py`, so
   request handoff identity and canonical dataset metadata use the same stable
   JSON normalization rules.
