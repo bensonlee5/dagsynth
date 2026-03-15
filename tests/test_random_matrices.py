@@ -105,6 +105,12 @@ def test_deterministic() -> None:
     torch.testing.assert_close(a, b)
 
 
+def test_kernel_single_column_rows_are_unit_normalized() -> None:
+    matrix = sample_random_matrix(6, 1, _make_generator(0), "cpu", kind="kernel")
+    norms = torch.linalg.norm(matrix, dim=1)
+    torch.testing.assert_close(norms, torch.ones(6), atol=1e-4, rtol=1e-4)
+
+
 @pytest.mark.parametrize("kind", ["gaussian", "weights", "singular_values", "kernel", "activation"])
 def test_each_kind(kind: str) -> None:
     g = _make_generator(10)
