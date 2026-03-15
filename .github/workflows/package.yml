@@ -3,55 +3,101 @@ name: package
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Git ref to build and publish from
+        required: false
+        default: main
+        type: string
+      expected_version:
+        description: Expected pyproject.toml version for safety checks
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: package-publish
+  cancel-in-progress: false
 
 jobs:
-  check-version:
-    if: github.ref == 'refs/heads/main'
+  resolve-release:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
-      changed: ${{ steps.check.outputs.changed }}
+      should_publish: ${{ steps.plan.outputs.should_publish }}
+      version: ${{ steps.plan.outputs.version }}
+      source_ref: ${{ steps.target.outputs.source_ref }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
 
     steps:
-      - name: Checkout
+      - name: Resolve source ref
+        id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SOURCE_REF="${{ inputs.source_ref }}"
+          else
+            SOURCE_REF="${{ github.ref }}"
+          fi
+          echo "source_ref=${SOURCE_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workflow ref
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+          path: .workflow-src
 
-      - name: Check for version change
-        id: check
+      - name: Checkout source ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.target.outputs.source_ref }}
+
+      - name: Record source sha
+        id: source
+        shell: bash
+        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate publish plan
+        id: plan
+        env:
+          EXPECTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_version || '' }}
+          TAG_NAME: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        shell: bash
         run: |
-          CURR=$(grep -m1 '^version' pyproject.toml | sed 's/.*= *"\(.*\)"/\1/')
-          PREV=$(git show HEAD~1:pyproject.toml | grep -m1 '^version' | sed 's/.*= *"\(.*\)"/\1/')
-          if [ "$CURR" != "$PREV" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Version changed: $PREV -> $CURR"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged: $CURR"
+          args=(
+            --package-name dagzoo
+            --pyproject pyproject.toml
+          )
+          if [[ -n "${EXPECTED_VERSION}" ]]; then
+            args+=(--expected-version "${EXPECTED_VERSION}")
           fi
+          if [[ -n "${TAG_NAME}" ]]; then
+            args+=(--tag-name "${TAG_NAME}")
+          fi
+          python .workflow-src/scripts/release/publish_plan.py "${args[@]}"
 
   build:
-    if: >-
-      always() && (
-        (needs.check-version.result == 'success' && needs.check-version.outputs.changed == 'true')
-        || startsWith(github.ref, 'refs/tags/v')
-      )
-    needs: check-version
+    if: needs.resolve-release.outputs.should_publish == 'true'
+    needs: resolve-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      - name: Checkout
+      - name: Checkout source sha
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve-release.outputs.source_sha }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install uv
         run: python -m pip install --upgrade uv
@@ -62,13 +108,15 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ needs.resolve-release.outputs.version }}
           path: dist/
           retention-days: 30
 
   publish-pypi:
-    if: always() && startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: needs.resolve-release.outputs.should_publish == 'true'
+    needs:
+      - resolve-release
+      - build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -78,15 +126,18 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-${{ needs.resolve-release.outputs.version }}
           path: dist/
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
   release:
-    if: always() && startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      needs.resolve-release.outputs.should_publish == 'true'
+      && startsWith(github.ref, 'refs/tags/v')
     needs:
+      - resolve-release
       - build
       - publish-pypi
     runs-on: ubuntu-latest
@@ -97,7 +148,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-${{ needs.resolve-release.outputs.version }}
           path: dist/
 
       - name: Create GitHub Release
