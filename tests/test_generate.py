@@ -1169,6 +1169,61 @@ def test_generate_batch_request_run_identity_is_run_stable_for_mixture_noise() -
     assert len(set(request_run_groups)) == 1
 
 
+def test_generate_batch_request_run_identity_changes_with_fixed_layout_target_cells() -> None:
+    baseline = _tiny_regression_config()
+    drifted = deepcopy(baseline)
+    baseline.runtime.fixed_layout_target_cells = 1_000_000
+    drifted.runtime.fixed_layout_target_cells = 16
+
+    batch_base = generate_batch(baseline, num_datasets=5, seed=1234, device="cpu")
+    batch_drifted = generate_batch(drifted, num_datasets=5, seed=1234, device="cpu")
+
+    assert (
+        batch_base[0].metadata["layout_plan_signature"]
+        == batch_drifted[0].metadata["layout_plan_signature"]
+    )
+    assert (
+        batch_base[0].metadata["split_groups"]["layout_plan"]
+        == batch_drifted[0].metadata["split_groups"]["layout_plan"]
+    )
+    assert not np.array_equal(
+        np.asarray(batch_base[0].X_train), np.asarray(batch_drifted[0].X_train)
+    )
+    assert not np.array_equal(
+        np.asarray(batch_base[0].y_train), np.asarray(batch_drifted[0].y_train)
+    )
+    assert (
+        batch_base[0].metadata["split_groups"]["request_run"]
+        != batch_drifted[0].metadata["split_groups"]["request_run"]
+    )
+    assert batch_base[0].metadata["dataset_id"] != batch_drifted[0].metadata["dataset_id"]
+
+
+def test_generate_batch_request_run_identity_normalizes_default_fixed_layout_target_cells() -> None:
+    baseline = _tiny_regression_config()
+    explicit_default = deepcopy(baseline)
+    explicit_default.runtime.fixed_layout_target_cells = 4_000_000
+
+    batch_base = generate_batch(baseline, num_datasets=5, seed=1234, device="cpu")
+    batch_explicit = generate_batch(explicit_default, num_datasets=5, seed=1234, device="cpu")
+
+    for bundle_base, bundle_explicit in zip(batch_base, batch_explicit, strict=True):
+        np.testing.assert_allclose(
+            np.asarray(bundle_base.X_train), np.asarray(bundle_explicit.X_train), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            np.asarray(bundle_base.X_test), np.asarray(bundle_explicit.X_test), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            np.asarray(bundle_base.y_train), np.asarray(bundle_explicit.y_train), atol=1e-6
+        )
+        np.testing.assert_allclose(
+            np.asarray(bundle_base.y_test), np.asarray(bundle_explicit.y_test), atol=1e-6
+        )
+        assert bundle_base.metadata["split_groups"] == bundle_explicit.metadata["split_groups"]
+        assert bundle_base.metadata["dataset_id"] == bundle_explicit.metadata["dataset_id"]
+
+
 def test_generate_batch_bundle_replays_from_run_metadata() -> None:
     cfg = _tiny_regression_config()
 

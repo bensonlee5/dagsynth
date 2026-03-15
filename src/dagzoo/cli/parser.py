@@ -15,7 +15,6 @@ from .commands.diagnostics import (
 from .commands.filter import run_filter_command
 from .commands.generate import run_generate_command
 from .commands.hardware import run_hardware_command
-from .commands.request import run_request_command
 from .parsing import (
     DEVICE_CHOICES,
     HARDWARE_POLICY_CHOICES,
@@ -45,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.set_defaults(handler=run_generate_command)
     g.add_argument("--config", required=True, help="Path to YAML config.")
     g.add_argument("--out", default=None, help="Output directory for parquet shards.")
+    g.add_argument(
+        "--handoff-root",
+        default=None,
+        help="Optional handoff root; writes generated artifacts under <handoff_root>/generated.",
+    )
     g.add_argument(
         "--num-datasets",
         type=positive_int,
@@ -135,44 +139,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print field-level override trace for resolved config before generation.",
     )
 
-    r = sub.add_parser(
-        "request",
-        help="Resolve a public request file into canonical generate and deferred filter runs.",
-    )
-    r.set_defaults(handler=run_request_command)
-    r.add_argument("--request", required=True, help="Path to v1 request YAML.")
-    r.add_argument(
-        "--device",
-        default=None,
-        choices=DEVICE_CHOICES,
-        help="Device override (auto/cpu/cuda/mps).",
-    )
-    r.add_argument(
-        "--hardware-policy",
-        default="none",
-        choices=HARDWARE_POLICY_CHOICES,
-        help="Explicit hardware policy to apply to the resolved config (default: none).",
-    )
-    r.add_argument(
-        "--n-jobs",
-        type=filter_n_jobs,
-        default=None,
-        help="Optional override for deferred-filter ExtraTrees worker count (-1 or >= 1).",
-    )
-    r.add_argument(
-        "--print-effective-config",
-        action="store_true",
-        help="Print resolved effective config YAML before request execution.",
-    )
-    r.add_argument(
-        "--print-resolution-trace",
-        action="store_true",
-        help="Print field-level override trace for the resolved request config.",
-    )
-
     f = sub.add_parser(
         "filter",
-        help="Run deferred CPU filtering on existing shard outputs.",
+        help="Deferred filtering is temporarily unsupported.",
     )
     f.set_defaults(handler=run_filter_command)
     f.add_argument(
@@ -189,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument(
         "--curated-out",
         default=None,
-        help="Optional output directory for accepted-only curated shards.",
+        help="Reserved output directory flag; filtering is temporarily unsupported.",
     )
     f.add_argument(
         "--n-jobs",
@@ -363,7 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser(
         "filter-calibration",
-        help="Sweep filter thresholds and compare accepted-corpus throughput vs diversity shift.",
+        help="Filter calibration is temporarily unsupported while deferred filtering is disabled.",
     )
     c.set_defaults(handler=run_filter_calibration_command)
     c.add_argument("--config", required=True, help="Filter-enabled generator config YAML path.")

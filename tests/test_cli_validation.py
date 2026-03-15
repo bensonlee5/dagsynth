@@ -73,7 +73,9 @@ def test_generate_cli_rejects_oversized_seed() -> None:
     assert int(exc.value.code) == 2
 
 
-def test_generate_cli_rejects_inline_filter_enabled(tmp_path) -> None:
+def test_generate_cli_rejects_inline_filter_enabled(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
     cfg = load_repo_config()
     cfg.filter.enabled = True
     config_path = write_config(tmp_path, cfg, "inline_filter.yaml")
@@ -94,6 +96,8 @@ def test_generate_cli_rejects_inline_filter_enabled(tmp_path) -> None:
             ]
         )
     assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "Inline filtering has been removed from generate" in captured.err
 
 
 def test_generate_cli_rejects_removed_parallel_generation_runtime_keys(tmp_path) -> None:
@@ -253,10 +257,21 @@ def test_diversity_audit_cli_rejects_swapped_warn_and_fail_thresholds() -> None:
     assert int(exc.value.code) == 2
 
 
-def test_filter_calibration_cli_rejects_filter_disabled_config(tmp_path) -> None:
+def test_filter_calibration_cli_reports_unsupported_when_runner_raises(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cfg = load_repo_config()
     cfg.filter.enabled = False
     config_path = write_config(tmp_path, cfg, "filter_disabled.yaml")
+    monkeypatch.setattr(
+        "dagzoo.cli.run_filter_calibration",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            NotImplementedError(
+                "Deferred filtering is temporarily disabled; generated outputs are the only supported corpus artifact for now."
+            )
+        ),
+    )
 
     with pytest.raises(SystemExit) as exc:
         main(
@@ -360,42 +375,31 @@ def test_filter_cli_rejects_invalid_n_jobs() -> None:
     assert int(exc.value.code) == 2
 
 
-def test_filter_cli_invokes_deferred_runner(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
-
-    class _Result:
-        manifest_path = Path("manifest.ndjson")
-        summary_path = Path("summary.json")
-        total_datasets = 2
-        accepted_datasets = 1
-        rejected_datasets = 1
-        datasets_per_minute = 42.0
-        curated_out_dir = None
-        curated_accepted_datasets = 0
-
-    def _stub_run_deferred_filter(**kwargs):
-        captured.update(kwargs)
-        return _Result()
-
-    monkeypatch.setattr("dagzoo.cli.run_deferred_filter", _stub_run_deferred_filter)
-    out_dir = tmp_path / "filter_out"
-    code = main(
-        [
-            "filter",
-            "--in",
-            "input_shards",
-            "--out",
-            str(out_dir),
-            "--n-jobs",
-            "4",
-        ]
+def test_filter_cli_reports_unsupported_when_runner_raises(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "dagzoo.cli.run_deferred_filter",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            NotImplementedError(
+                "Deferred filtering is temporarily disabled; generated outputs are the only supported corpus artifact for now."
+            )
+        ),
     )
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "filter",
+                "--in",
+                "input_shards",
+                "--out",
+                str(tmp_path / "filter_out"),
+                "--n-jobs",
+                "4",
+            ]
+        )
 
-    assert code == 0
-    assert captured["in_dir"] == "input_shards"
-    assert str(captured["out_dir"]) == str(out_dir)
-    assert captured["n_jobs_override"] == 4
-    assert "config" not in captured
+    assert int(exc.value.code) == 2
 
 
 def test_filter_cli_rejects_removed_config_flag() -> None:
@@ -414,124 +418,228 @@ def test_filter_cli_rejects_removed_config_flag() -> None:
     assert int(exc.value.code) == 2
 
 
-def test_request_cli_rejects_missing_request_file(tmp_path) -> None:
-    with pytest.raises(SystemExit) as exc:
-        main(
-            [
-                "request",
-                "--request",
-                str(tmp_path / "missing.yaml"),
-            ]
-        )
+def test_benchmark_cli_accepts_filter_enabled_config(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = load_repo_config()
+    cfg.filter.enabled = True
+    config_path = write_config(tmp_path, cfg, "filter_enabled_benchmark.yaml")
+    captured: dict[str, object] = {}
 
-    assert int(exc.value.code) == 2
+    def _stub_run_benchmark_suite(preset_specs, **kwargs):
+        captured["filter_enabled"] = bool(preset_specs[0].config.filter.enabled)
+        captured["suite"] = kwargs["suite"]
+        return {"preset_results": [], "regression": {"status": "pass", "issues": []}}
 
+    monkeypatch.setattr("dagzoo.cli.run_benchmark_suite", _stub_run_benchmark_suite)
+    monkeypatch.setattr("dagzoo.cli.write_suite_json", lambda _summary, path: Path(path))
 
-def test_request_cli_rejects_invalid_request_payload(tmp_path) -> None:
-    request_path = tmp_path / "invalid_request.yaml"
-    request_path.write_text(
-        yaml.safe_dump({"version": "v1", "unexpected": "value"}),
-        encoding="utf-8",
+    code = main(
+        [
+            "benchmark",
+            "--config",
+            str(config_path),
+            "--preset",
+            "custom",
+            "--suite",
+            "smoke",
+            "--json-out",
+            str(tmp_path / "summary.json"),
+            "--no-memory",
+        ]
     )
 
+    assert code == 0
+    assert captured == {"filter_enabled": True, "suite": "smoke"}
+
+
+def test_diversity_audit_cli_accepts_filter_enabled_configs(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = load_repo_config()
+    baseline.filter.enabled = True
+    baseline_path = write_config(tmp_path, baseline, "baseline_filter_enabled.yaml")
+    variant = load_repo_config()
+    variant.filter.enabled = True
+    variant_path = write_config(tmp_path, variant, "variant_filter_enabled.yaml")
+    captured: dict[str, object] = {}
+
+    def _stub_run_effective_diversity_audit(**kwargs):
+        captured["baseline_filter_enabled"] = bool(kwargs["baseline_config"].filter.enabled)
+        captured["variant_filters_enabled"] = [
+            bool(config.filter.enabled) for config in kwargs["variant_configs"]
+        ]
+        return {"summary": {"overall_status": "pass", "num_variants": 1}}
+
+    monkeypatch.setattr(
+        "dagzoo.cli.run_effective_diversity_audit", _stub_run_effective_diversity_audit
+    )
+    monkeypatch.setattr(
+        "dagzoo.cli.write_effective_diversity_artifacts",
+        lambda _report, out_dir: {"summary_json": Path(out_dir) / "summary.json"},
+    )
+
+    code = main(
+        [
+            "diversity-audit",
+            "--baseline-config",
+            str(baseline_path),
+            "--variant-config",
+            str(variant_path),
+            "--out-dir",
+            str(tmp_path / "diversity"),
+        ]
+    )
+
+    assert code == 0
+    assert captured == {
+        "baseline_filter_enabled": True,
+        "variant_filters_enabled": [True],
+    }
+
+
+def test_request_subcommand_is_removed() -> None:
     with pytest.raises(SystemExit) as exc:
         main(
             [
                 "request",
                 "--request",
-                str(request_path),
+                "request.yaml",
             ]
         )
 
     assert int(exc.value.code) == 2
 
 
-def test_request_cli_rejects_invalid_request_yaml(
+def test_generate_cli_rejects_handoff_root_with_out(
     tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    request_path = tmp_path / "invalid_request.yaml"
-    request_path.write_text("version: [v1\n", encoding="utf-8")
-
     with pytest.raises(SystemExit) as exc:
         main(
             [
-                "request",
-                "--request",
-                str(request_path),
+                "generate",
+                "--config",
+                "configs/default.yaml",
+                "--handoff-root",
+                str(tmp_path / "handoff"),
+                "--out",
+                str(tmp_path / "out"),
             ]
         )
 
     assert int(exc.value.code) == 2
     captured = capsys.readouterr()
-    assert "Failed to parse request file" in captured.err
-    assert "Traceback" not in captured.err
+    assert "`--handoff-root` cannot be combined with `--out`." in captured.err
 
 
-def test_request_cli_invokes_request_runner(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
+def test_generate_cli_rejects_handoff_root_with_no_dataset_write(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "generate",
+                "--config",
+                "configs/default.yaml",
+                "--handoff-root",
+                str(tmp_path / "handoff"),
+                "--no-dataset-write",
+            ]
+        )
 
-    class _FilterResult:
-        manifest_path = Path("manifest.ndjson")
-        summary_path = Path("summary.json")
-        total_datasets = 2
-        accepted_datasets = 1
-        rejected_datasets = 1
-        datasets_per_minute = 42.0
-        curated_out_dir = Path("curated")
-        curated_accepted_datasets = 1
+    assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "`--handoff-root` cannot be combined with `--no-dataset-write`." in captured.err
 
-    class _Result:
-        effective_config_path = Path("effective_config.yaml")
-        effective_config_trace_path = Path("effective_config_trace.yaml")
-        handoff_manifest_path = Path("handoff_manifest.json")
-        generated_dir = Path("generated")
-        generated_datasets = 2
-        filter_result = _FilterResult()
 
-    def _stub_run_request_execution(**kwargs):
-        captured.update(kwargs)
-        return _Result()
+def test_generate_cli_rejects_stale_handoff_root(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stale_generated_dir = tmp_path / "handoff" / "generated" / "shard_00000"
+    stale_generated_dir.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr("dagzoo.cli.run_request_execution", _stub_run_request_execution)
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "generate",
+                "--config",
+                "configs/default.yaml",
+                "--handoff-root",
+                str(tmp_path / "handoff"),
+            ]
+        )
 
-    request_path = tmp_path / "request.yaml"
-    request_path.write_text(
-        yaml.safe_dump(
-            {
-                "version": "v1",
-                "task": "classification",
-                "dataset_count": 2,
-                "rows": 1024,
-                "profile": "default",
-                "output_root": "requests/out",
-            }
-        ),
-        encoding="utf-8",
-    )
+    assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "already contains shard data" in captured.err
 
-    code = main(
-        [
-            "request",
-            "--request",
-            str(request_path),
-            "--device",
-            "cpu",
-            "--hardware-policy",
-            "none",
-            "--n-jobs",
-            "4",
-            "--print-effective-config",
-            "--print-resolution-trace",
-        ]
-    )
 
-    assert code == 0
-    assert captured["request_path"] == str(request_path)
-    assert captured["device_override"] == "cpu"
-    assert captured["hardware_policy"] == "none"
-    assert captured["n_jobs_override"] == 4
-    assert captured["print_effective_config_flag"] is True
-    assert captured["print_resolution_trace_flag"] is True
+def test_generate_cli_rejects_stale_handoff_root_manifest(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    handoff_root = tmp_path / "handoff"
+    handoff_root.mkdir(parents=True, exist_ok=True)
+    (handoff_root / "handoff_manifest.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "generate",
+                "--config",
+                "configs/default.yaml",
+                "--handoff-root",
+                str(handoff_root),
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "already contains a prior handoff manifest" in captured.err
+
+
+def test_generate_cli_rejects_stale_handoff_root_filter_artifacts(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    filter_dir = tmp_path / "handoff" / "filter"
+    filter_dir.mkdir(parents=True, exist_ok=True)
+    (filter_dir / "filter_manifest.ndjson").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "generate",
+                "--config",
+                "configs/default.yaml",
+                "--handoff-root",
+                str(tmp_path / "handoff"),
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "already contains prior filter artifacts" in captured.err
+
+
+def test_generate_cli_rejects_stale_handoff_root_curated_shards(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    curated_dir = tmp_path / "handoff" / "curated" / "shard_00000"
+    curated_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "generate",
+                "--config",
+                "configs/default.yaml",
+                "--handoff-root",
+                str(tmp_path / "handoff"),
+            ]
+        )
+
+    assert int(exc.value.code) == 2
+    captured = capsys.readouterr()
+    assert "already contains curated shard data" in captured.err
 
 
 def test_generate_cli_uses_default_config_without_noise_overrides(

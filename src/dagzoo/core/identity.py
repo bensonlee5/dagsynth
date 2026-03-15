@@ -8,6 +8,7 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+from dagzoo.core.fixed_layout.prepare import normalize_fixed_layout_target_cells
 from dagzoo.math import sanitize_json
 
 
@@ -39,6 +40,12 @@ def _require_int(value: object, *, path: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{path} must be an integer.")
     return int(value)
+
+
+def _require_optional_int(value: object, *, path: str) -> int | None:
+    if value is None:
+        return None
+    return _require_int(value, path=path)
 
 
 def _require_number(value: object, *, path: str) -> float:
@@ -145,6 +152,12 @@ def canonical_request_run_provenance(metadata: Mapping[str, Any]) -> dict[str, A
             )
         },
         "runtime": {
+            "fixed_layout_target_cells": normalize_fixed_layout_target_cells(
+                _require_optional_int(
+                    runtime.get("fixed_layout_target_cells"),
+                    path="metadata.config.runtime.fixed_layout_target_cells",
+                )
+            ),
             "resolved_device": _require_string(
                 metadata.get("resolved_device"),
                 path="metadata.resolved_device",

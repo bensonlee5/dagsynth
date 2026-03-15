@@ -17,6 +17,14 @@ from .metadata import _FixedLayoutPlan
 _FIXED_LAYOUT_TARGET_CELLS = 4_000_000
 
 
+def normalize_fixed_layout_target_cells(target_cells: int | None) -> int:
+    """Return the effective fixed-layout target cell budget for a runtime value."""
+
+    if target_cells is None:
+        return int(_FIXED_LAYOUT_TARGET_CELLS)
+    return int(target_cells)
+
+
 def _validate_fixed_layout_rows_mode(config: GeneratorConfig) -> None:
     if dataset_rows_is_variable(config.dataset.rows):
         raise ValueError(
@@ -28,10 +36,7 @@ def _validate_fixed_layout_rows_mode(config: GeneratorConfig) -> None:
 def _effective_fixed_layout_target_cells(config: GeneratorConfig) -> int:
     """Return the configured fixed-layout auto-batch target cell budget."""
 
-    target_cells = config.runtime.fixed_layout_target_cells
-    if target_cells is None:
-        return int(_FIXED_LAYOUT_TARGET_CELLS)
-    return int(target_cells)
+    return normalize_fixed_layout_target_cells(config.runtime.fixed_layout_target_cells)
 
 
 def _resolve_fixed_layout_batch_size(
@@ -83,5 +88,6 @@ __all__ = [
     "_effective_fixed_layout_target_cells",
     "_resolve_fixed_layout_batch_size",
     "_validate_fixed_layout_rows_mode",
+    "normalize_fixed_layout_target_cells",
     "realize_generation_config_for_run",
 ]
