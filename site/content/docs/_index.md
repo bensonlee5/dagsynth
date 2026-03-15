@@ -14,7 +14,6 @@ Then explore features and workflows in the usage guide and feature docs:
 
 - [Usage Guide]({{< relref "/docs/usage-guide.md" >}}): command workflows and practical usage patterns.
 - [Output Format]({{< relref "/docs/output-format.md" >}}): artifact/schema contract.
-- [Request File Contract]({{< relref "/docs/request-file-contract.md" >}}): public request schema for downstream `dagzoo request` consumers.
 - [Feature Guides]({{< relref "/docs/features/_index.md" >}}): diagnostics, missingness, many-class, shift, noise, and benchmark guardrails.
 
 ## Development References
