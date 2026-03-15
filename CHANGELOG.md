@@ -10,6 +10,17 @@ contains imported legacy history, so date order is not strictly monotonic:
 `0.3.0` records the older `cauchy-generator -> dagzoo` rename, while `0.5.0`
 records the later `dagsynth -> dagzoo` rename on the current release line.
 
+## [0.10.1] - 2026-03-15
+
+### Changed
+
+- Benchmark throughput, latency, microbenchmark, and CUDA peak-memory timing
+  now synchronize accelerator work before measuring elapsed time so GPU runs
+  report device-complete timings instead of kernel-launch timings.
+- Added `scripts/benchmark-gpu-validation.sh` as the canonical local H100
+  validation runner for the primary CUDA benchmark plus feature-smoke GPU
+  coverage, with the primary standard baseline saved as a run artifact.
+
 ## [0.10.0] - 2026-03-14
 
 ### Changed

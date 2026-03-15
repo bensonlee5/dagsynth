@@ -21,6 +21,8 @@ from dagzoo.hardware_policy import (
 from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 
+from .runtime_support import _synchronize_accelerator
+
 _CPU_FIXED_LAYOUT_TARGET_CELLS_SWEEP: tuple[int, ...] = (
     4_000_000,
     8_000_000,
@@ -177,6 +179,7 @@ def run_throughput_benchmark(
     """Measure end-to-end generation throughput for a benchmark preset."""
 
     throughput_root = _throughput_root(config)
+    timing_device = device or config.runtime.device
     if warmup_datasets > 0:
         _consume_generation(
             config,
@@ -185,6 +188,7 @@ def run_throughput_benchmark(
             device=device,
         )
 
+    _synchronize_accelerator(timing_device)
     start = time.perf_counter()
     for bundle in iter_throughput_measure_bundles(
         config,
@@ -193,6 +197,7 @@ def run_throughput_benchmark(
     ):
         if on_bundle is not None:
             on_bundle(bundle)
+    _synchronize_accelerator(timing_device)
     elapsed = time.perf_counter() - start
     dps = num_datasets / elapsed if elapsed > 0 else 0.0
     dpm = dps * SECONDS_PER_MINUTE

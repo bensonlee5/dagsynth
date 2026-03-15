@@ -43,6 +43,8 @@ workflows, not the primary interface; prefer `dagzoo generate` and
   - Runs `dagzoo benchmark` with suite/preset selection and optional diagnostics.
 - `scripts/benchmark-smoke.sh [preset] [diagnostics] [diagnostics_out_dir]`
   - Quick smoke benchmark for a single preset with optional diagnostics.
+- `scripts/benchmark-gpu-validation.sh [out_dir]`
+  - Validates Torch CUDA visibility, runs the primary H100 smoke + standard benchmarks, saves the standard-run baseline as an artifact, and executes the feature-smoke GPU benchmark matrix.
 - `scripts/bump-version.sh <major|minor|patch> [--dry-run] [--tag]`
   - Bump the semver version in `pyproject.toml`. Use `--tag` to commit and create a git tag.
 - `scripts/cleanup_local_artifacts.py [--group runtime|docs|all] [--apply]`
@@ -82,6 +84,8 @@ workflows, not the primary interface; prefer `dagzoo generate` and
 ./scripts/benchmark-smoke.sh cpu on benchmarks/results/smoke_diag
 ./scripts/benchmark-suite.sh standard all benchmarks/results/latest
 ./scripts/benchmark-suite.sh smoke cpu benchmarks/results/smoke_cpu_diag on
+./scripts/benchmark-gpu-validation.sh
+./scripts/benchmark-gpu-validation.sh benchmarks/results/gpu_h100_manual
 ./.venv/bin/python scripts/docs/sync_hugo_content.py
 ./.venv/bin/python scripts/docs/sync_hugo_content.py --check
 ./.venv/bin/python scripts/docs/check_links.py

@@ -60,6 +60,7 @@ from dagzoo.bench.runtime_support import (
     _peak_rss_mb,
     _preset_counts,
     _sanitize_preset_key,
+    _synchronize_accelerator,
 )
 from dagzoo.bench.stage_metrics import (
     StageSampleCollector,
@@ -178,6 +179,7 @@ def run_preset_benchmark(
 
     rss_before = _peak_rss_mb() if collect_memory else 0.0
     if collect_memory and hw.backend == "cuda" and torch.cuda.is_available():
+        _synchronize_accelerator(requested_device)
         with contextlib.suppress(Exception):
             torch.cuda.reset_peak_memory_stats()
 
@@ -376,6 +378,7 @@ def run_preset_benchmark(
     if collect_memory:
         result["peak_rss_mb"] = max(0.0, _peak_rss_mb() - rss_before)
         if hw.backend == "cuda" and torch.cuda.is_available():
+            _synchronize_accelerator(requested_device)
             try:
                 result["peak_cuda_allocated_mb"] = torch.cuda.max_memory_allocated() / MIB
                 result["peak_cuda_reserved_mb"] = torch.cuda.max_memory_reserved() / MIB

@@ -136,6 +136,43 @@ def test_run_throughput_benchmark_uses_sequential_generation(
     assert result["num_datasets"] == 4
 
 
+def test_run_throughput_benchmark_synchronizes_accelerator_for_timed_cuda_path(
+    monkeypatch,
+) -> None:
+    sync_calls: list[str | None] = []
+
+    def _stub_generate_batch_iter(
+        _config,
+        *,
+        num_datasets: int,
+        seed: int | None = None,
+        device: str | None = None,
+    ):
+        _ = seed
+        _ = device
+        yield from range(num_datasets)
+
+    monkeypatch.setattr(
+        "dagzoo.bench.throughput.generate_batch_iter",
+        _stub_generate_batch_iter,
+    )
+    monkeypatch.setattr(
+        "dagzoo.bench.throughput._synchronize_accelerator",
+        lambda device: sync_calls.append(device),
+    )
+
+    cfg = GeneratorConfig()
+    cfg.runtime.device = "cuda"
+    run_throughput_benchmark(
+        cfg,
+        num_datasets=4,
+        warmup_datasets=2,
+        device="cuda",
+    )
+
+    assert sync_calls == ["cuda", "cuda"]
+
+
 def test_run_throughput_benchmark_callback_exception_does_not_hang_parallel_path() -> None:
     cfg = _tiny_parallel_config()
 

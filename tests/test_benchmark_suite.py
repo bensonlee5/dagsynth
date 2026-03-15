@@ -6,12 +6,15 @@ import pytest
 from conftest import load_repo_config
 
 import dagzoo.bench.guardrails as guardrails_mod
+import dagzoo.bench.micro as micro_mod
+import dagzoo.bench.runtime_support as runtime_support_mod
 import dagzoo.bench.suite as suite_mod
 from dagzoo.bench.metrics import reproducibility_signatures
 from dagzoo.bench.micro import run_microbenchmarks
 from dagzoo.bench.report import write_suite_markdown
 from dagzoo.bench.suite import PresetRunSpec, resolve_preset_run_specs, run_benchmark_suite
 from dagzoo.config import GeneratorConfig
+from dagzoo.hardware import HardwareInfo
 from dagzoo.rng import KeyedRng
 from dagzoo.types import DatasetBundle
 
@@ -201,6 +204,102 @@ def test_run_benchmark_suite_smoke_single_profile() -> None:
     lineage_guardrails = result["lineage_guardrails"]
     assert lineage_guardrails["enabled"] is True
     assert lineage_guardrails["status"] in {"pass", "warn", "fail"}
+
+
+def test_run_preset_benchmark_synchronizes_before_cuda_memory_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.device = "cuda"
+    spec = PresetRunSpec(key="cpu_test", config=cfg, device="cuda")
+    hardware = HardwareInfo(
+        backend="cuda",
+        requested_device="cuda",
+        device_name="NVIDIA H100 NVL",
+        total_memory_gb=94.0,
+        peak_flops=835e12,
+        tier="cuda_h100",
+    )
+    sync_calls: list[str | None] = []
+    rss_values = iter([100.0, 120.0])
+
+    monkeypatch.setattr(
+        suite_mod,
+        "resolve_benchmark_preset_config",
+        lambda **_kwargs: SimpleNamespace(
+            config=cfg,
+            trace_events=[],
+            requested_device="cuda",
+            hardware=hardware,
+        ),
+    )
+    monkeypatch.setattr(
+        suite_mod,
+        "realize_generation_config_for_run",
+        lambda *_args, **_kwargs: (cfg, int(cfg.seed), "cuda", "cuda"),
+    )
+    monkeypatch.setattr(
+        suite_mod,
+        "run_throughput_benchmark",
+        lambda *_args, **_kwargs: {
+            "preset": cfg.benchmark.preset_name,
+            "num_datasets": 2,
+            "warmup_datasets": 0,
+            "elapsed_seconds": 1.0,
+            "datasets_per_second": 1.0,
+            "datasets_per_minute": 60.0,
+            "slo_pass_100_datasets_per_min": False,
+            "generation_mode": "fixed_batched",
+        },
+    )
+    monkeypatch.setattr(
+        suite_mod,
+        "_collect_latency",
+        lambda *_args, **_kwargs: {
+            "latency_samples": 1.0,
+            "latency_mean_ms": 1.0,
+            "latency_p95_ms": 1.0,
+            "latency_min_ms": 1.0,
+            "latency_max_ms": 1.0,
+        },
+    )
+    monkeypatch.setattr(
+        suite_mod,
+        "_collect_lineage_guardrails",
+        lambda *_args, **_kwargs: {"enabled": False},
+    )
+    monkeypatch.setattr(suite_mod, "_peak_rss_mb", lambda: next(rss_values))
+    monkeypatch.setattr(
+        suite_mod,
+        "_synchronize_accelerator",
+        lambda device: sync_calls.append(device),
+    )
+    monkeypatch.setattr(suite_mod.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(suite_mod.torch.cuda, "reset_peak_memory_stats", lambda: None)
+    monkeypatch.setattr(suite_mod.torch.cuda, "max_memory_allocated", lambda: 2.0 * suite_mod.MIB)
+    monkeypatch.setattr(suite_mod.torch.cuda, "max_memory_reserved", lambda: 3.0 * suite_mod.MIB)
+
+    result = suite_mod.run_preset_benchmark(
+        spec,
+        suite="smoke",
+        num_datasets_override=2,
+        warmup_override=0,
+        collect_memory=True,
+        collect_reproducibility=False,
+        include_micro=False,
+        hardware_policy="none",
+        collect_diagnostics=False,
+        diagnostics_root_dir=None,
+        warn_threshold_pct=10.0,
+        fail_threshold_pct=20.0,
+        diagnostics_occurrence_index=0,
+        diagnostics_occurrence_total=1,
+    )
+
+    assert result["peak_rss_mb"] == pytest.approx(20.0)
+    assert result["peak_cuda_allocated_mb"] == pytest.approx(2.0)
+    assert result["peak_cuda_reserved_mb"] == pytest.approx(3.0)
+    assert sync_calls == ["cuda", "cuda"]
 
 
 def test_run_benchmark_suite_builtin_cpu_uses_canonical_generation_path(
@@ -2013,6 +2112,75 @@ def test_run_microbenchmarks_can_skip_generate_one() -> None:
     assert "micro_random_function_linear_ms" in res
     assert "micro_node_pipeline_ms" in res
     assert res["micro_generate_one_ms"] is None
+
+
+def test_run_microbenchmarks_synchronizes_generate_one_timing_on_cuda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    sync_calls: list[str | None] = []
+
+    monkeypatch.setattr(
+        micro_mod,
+        "_synchronize_accelerator",
+        lambda device: sync_calls.append(device),
+    )
+    monkeypatch.setattr(micro_mod, "generate_one", lambda *_args, **_kwargs: object())
+
+    res = micro_mod.run_microbenchmarks(cfg, device="cuda", repeats=2)
+
+    assert res["micro_generate_one_ms"] is not None
+    assert sync_calls == ["cuda", "cuda"]
+
+
+def test_collect_latency_synchronizes_accelerator_per_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _tiny_cpu_config()
+    cfg.runtime.device = "cuda"
+    sync_calls: list[str | None] = []
+
+    monkeypatch.setattr(
+        runtime_support_mod,
+        "_synchronize_accelerator",
+        lambda device: sync_calls.append(device),
+    )
+    monkeypatch.setattr(runtime_support_mod, "generate_one", lambda *_args, **_kwargs: object())
+
+    result = runtime_support_mod._collect_latency(cfg, device="cuda", num_samples=2)
+
+    assert result["latency_p95_ms"] >= 0.0
+    assert sync_calls == ["cuda", "cuda", "cuda", "cuda"]
+
+
+def test_synchronize_accelerator_handles_cuda_and_mps_but_skips_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(runtime_support_mod.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        runtime_support_mod.torch.cuda,
+        "synchronize",
+        lambda: calls.append("cuda"),
+    )
+    monkeypatch.setattr(
+        runtime_support_mod.torch.backends.mps,
+        "is_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        runtime_support_mod.torch,
+        "mps",
+        SimpleNamespace(synchronize=lambda: calls.append("mps")),
+        raising=False,
+    )
+
+    runtime_support_mod._synchronize_accelerator("cpu")
+    runtime_support_mod._synchronize_accelerator("cuda")
+    runtime_support_mod._synchronize_accelerator("mps")
+
+    assert calls == ["cuda", "mps"]
 
 
 def test_collect_reproducibility_uses_streaming_generation(
