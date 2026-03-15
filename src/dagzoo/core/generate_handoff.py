@@ -178,6 +178,79 @@ def _validate_generate_overrides(overrides: Mapping[str, Any], *, path: str) -> 
     _require_non_empty_string(overrides.get("handoff_root"), path=f"{path}.handoff_root")
 
 
+def _load_generated_identity(
+    *,
+    generated_dir: str | Path,
+    expected_datasets: int,
+) -> tuple[str, str]:
+    """Read canonical corpus ids from emitted metadata instead of filesystem paths."""
+
+    metadata_paths = sorted(Path(generated_dir).glob("shard_*/metadata.ndjson"))
+    if not metadata_paths:
+        _raise("generated_dir", "must contain shard metadata under shard_*/metadata.ndjson")
+
+    generate_run_id: str | None = None
+    dataset_ids: list[str] = []
+    for metadata_path in metadata_paths:
+        with metadata_path.open("r", encoding="utf-8") as handle:
+            for line_number, raw_line in enumerate(handle, start=1):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    _raise(
+                        f"{metadata_path}:{line_number}",
+                        f"contains invalid JSON ({exc.msg})",
+                    )
+                record = _require_mapping(payload, path=f"{metadata_path}:{line_number}")
+                metadata = _require_mapping(
+                    record.get("metadata"),
+                    path=f"{metadata_path}:{line_number}.metadata",
+                )
+                split_groups = _require_mapping(
+                    metadata.get("split_groups"),
+                    path=f"{metadata_path}:{line_number}.metadata.split_groups",
+                )
+                current_generate_run_id = _require_hex_string(
+                    split_groups.get("request_run"),
+                    path=f"{metadata_path}:{line_number}.metadata.split_groups.request_run",
+                    expected_length=_BLAKE2S_HEX_LENGTH,
+                )
+                dataset_id = _require_hex_string(
+                    metadata.get("dataset_id"),
+                    path=f"{metadata_path}:{line_number}.metadata.dataset_id",
+                    expected_length=_BLAKE2S_HEX_LENGTH,
+                )
+                if generate_run_id is None:
+                    generate_run_id = current_generate_run_id
+                elif current_generate_run_id != generate_run_id:
+                    _raise(
+                        str(metadata_path),
+                        "contains multiple request_run identities; expected one canonical run",
+                    )
+                dataset_ids.append(dataset_id)
+
+    if generate_run_id is None:
+        _raise("generated_dir", "must contain at least one metadata record")
+
+    if len(dataset_ids) != int(expected_datasets):
+        _raise(
+            "generated_dir",
+            "metadata record count does not match generated_datasets "
+            f"(records={len(dataset_ids)}, generated_datasets={int(expected_datasets)})",
+        )
+
+    generated_corpus_id = stable_blake2s_hex(
+        {
+            "generate_run_id": generate_run_id,
+            "dataset_ids": dataset_ids,
+        }
+    )
+    return generate_run_id, generated_corpus_id
+
+
 def build_generate_handoff_manifest(
     *,
     config_path: str | Path,
@@ -208,26 +281,9 @@ def build_generate_handoff_manifest(
 
     effective_config_sha256 = _read_sha256(effective_config_path)
     effective_config_trace_sha256 = _read_sha256(effective_config_trace_path)
-    generate_run_id = stable_blake2s_hex(
-        {
-            "generate_invocation": generate_invocation,
-            "effective_config_sha256": effective_config_sha256,
-            "effective_config_trace_sha256": effective_config_trace_sha256,
-            "requested_device": str(requested_device),
-            "resolved_device": str(resolved_device),
-            "hardware": {
-                "backend": str(hardware_backend),
-                "device_name": str(hardware_device_name),
-                "tier": str(hardware_tier),
-                "hardware_policy": str(hardware_policy),
-            },
-        }
-    )
-    generated_corpus_id = stable_blake2s_hex(
-        {
-            "generate_run_id": generate_run_id,
-            "corpus_kind": "generated",
-        }
+    generate_run_id, generated_corpus_id = _load_generated_identity(
+        generated_dir=generated_dir,
+        expected_datasets=int(generated_datasets),
     )
     payload: dict[str, Any] = {
         "schema_name": GENERATE_HANDOFF_SCHEMA_NAME,

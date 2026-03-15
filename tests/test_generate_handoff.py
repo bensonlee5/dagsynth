@@ -15,6 +15,10 @@ from dagzoo.core.generate_handoff import (
     validate_generate_handoff_manifest,
     write_generate_handoff_manifest,
 )
+from dagzoo.core.identity import stable_blake2s_hex
+
+_UNIT_REQUEST_RUN_ID = "1" * 32
+_UNIT_DATASET_IDS = ("2" * 32, "3" * 32)
 
 
 def _generate_overrides(handoff_root: str) -> dict[str, object]:
@@ -38,8 +42,58 @@ def _generate_overrides(handoff_root: str) -> dict[str, object]:
 def _write_generate_run_artifacts(run_root: Path) -> None:
     generated_dir = run_root / "generated"
     generated_dir.mkdir(parents=True, exist_ok=True)
-    (generated_dir / "effective_config.yaml").write_text("seed: 7\n", encoding="utf-8")
-    (generated_dir / "effective_config_trace.yaml").write_text("- source: test\n", encoding="utf-8")
+    (generated_dir / "effective_config.yaml").write_text(
+        f"seed: 7\noutput:\n  out_dir: {generated_dir.resolve()}\n",
+        encoding="utf-8",
+    )
+    (generated_dir / "effective_config_trace.yaml").write_text(
+        "- source: generate.handoff_root\n"
+        "  path: output.out_dir\n"
+        f"  new_value: {generated_dir.resolve()}\n",
+        encoding="utf-8",
+    )
+    shard_dir = generated_dir / "shard_00000"
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    metadata_records = [
+        {
+            "dataset_index": dataset_index,
+            "metadata": {
+                "dataset_id": dataset_id,
+                "split_groups": {"request_run": _UNIT_REQUEST_RUN_ID},
+            },
+        }
+        for dataset_index, dataset_id in enumerate(_UNIT_DATASET_IDS)
+    ]
+    (shard_dir / "metadata.ndjson").write_text(
+        "\n".join(json.dumps(record, sort_keys=True) for record in metadata_records) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_stub_generated_metadata(out_dir: Path, *, num_datasets: int) -> None:
+    shard_dir = out_dir / "shard_00000"
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    records = []
+    for dataset_index in range(num_datasets):
+        dataset_id = stable_blake2s_hex(
+            {
+                "request_run": _UNIT_REQUEST_RUN_ID,
+                "dataset_index": dataset_index,
+            }
+        )
+        records.append(
+            {
+                "dataset_index": dataset_index,
+                "metadata": {
+                    "dataset_id": dataset_id,
+                    "split_groups": {"request_run": _UNIT_REQUEST_RUN_ID},
+                },
+            }
+        )
+    (shard_dir / "metadata.ndjson").write_text(
+        "\n".join(json.dumps(record, sort_keys=True) for record in records) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _load_ndjson(path: Path) -> list[dict[str, object]]:
@@ -75,8 +129,13 @@ def test_build_generate_handoff_manifest_is_versioned_and_valid(tmp_path) -> Non
     assert payload["schema_name"] == GENERATE_HANDOFF_SCHEMA_NAME
     assert payload["schema_version"] == GENERATE_HANDOFF_SCHEMA_VERSION
     assert payload["identity"]["source_family"] == "dagzoo.fixed_layout_scm"
-    assert len(payload["identity"]["generate_run_id"]) == 32
-    assert len(payload["identity"]["generated_corpus_id"]) == 32
+    assert payload["identity"]["generate_run_id"] == _UNIT_REQUEST_RUN_ID
+    assert payload["identity"]["generated_corpus_id"] == stable_blake2s_hex(
+        {
+            "generate_run_id": _UNIT_REQUEST_RUN_ID,
+            "dataset_ids": list(_UNIT_DATASET_IDS),
+        }
+    )
     assert payload["generate_invocation"]["config_path"] == str(
         Path("configs/default.yaml").resolve()
     )
@@ -100,6 +159,51 @@ def test_build_generate_handoff_manifest_is_versioned_and_valid(tmp_path) -> Non
         "summary_json_path": None,
         "summary_md_path": None,
     }
+
+
+def test_build_generate_handoff_manifest_identity_ignores_root_specific_paths(tmp_path) -> None:
+    run_root_a = tmp_path / "run_a"
+    run_root_b = tmp_path / "run_b"
+    _write_generate_run_artifacts(run_root_a)
+    _write_generate_run_artifacts(run_root_b)
+
+    payload_a = build_generate_handoff_manifest(
+        config_path="configs/default.yaml",
+        generate_invocation_overrides=_generate_overrides(str(run_root_a)),
+        run_root=run_root_a,
+        generated_dir=run_root_a / "generated",
+        effective_config_path=run_root_a / "generated" / "effective_config.yaml",
+        effective_config_trace_path=run_root_a / "generated" / "effective_config_trace.yaml",
+        generated_datasets=2,
+        generation_elapsed_seconds=12.0,
+        requested_device="cpu",
+        resolved_device="cpu",
+        hardware_backend="cpu",
+        hardware_device_name="CPU",
+        hardware_tier="cpu",
+        hardware_policy="none",
+    )
+    payload_b = build_generate_handoff_manifest(
+        config_path="configs/copied_default.yaml",
+        generate_invocation_overrides=_generate_overrides(str(run_root_b)),
+        run_root=run_root_b,
+        generated_dir=run_root_b / "generated",
+        effective_config_path=run_root_b / "generated" / "effective_config.yaml",
+        effective_config_trace_path=run_root_b / "generated" / "effective_config_trace.yaml",
+        generated_datasets=2,
+        generation_elapsed_seconds=12.0,
+        requested_device="cpu",
+        resolved_device="cpu",
+        hardware_backend="cpu",
+        hardware_device_name="CPU",
+        hardware_tier="cpu",
+        hardware_policy="none",
+    )
+
+    assert payload_a["generate_invocation"] != payload_b["generate_invocation"]
+    assert payload_a["artifacts"] != payload_b["artifacts"]
+    assert payload_a["checksums"] != payload_b["checksums"]
+    assert payload_a["identity"] == payload_b["identity"]
 
 
 def test_write_generate_handoff_manifest_writes_json_and_rejects_invalid_payload(
@@ -252,6 +356,7 @@ def test_generate_handoff_manifest_uses_wall_clock_generation_timing(
         assert shard_size > 0
         assert compression
         out_dir.mkdir(parents=True, exist_ok=True)
+        _write_stub_generated_metadata(out_dir, num_datasets=2)
         return 2
 
     monkeypatch.setattr("dagzoo.cli.generate_batch_iter", _stub_generate_batch_iter)
@@ -305,6 +410,7 @@ def test_generate_cli_handoff_root_preserves_rows_under_cuda_policy(
         assert shard_size > 0
         assert compression
         out_dir.mkdir(parents=True, exist_ok=True)
+        _write_stub_generated_metadata(out_dir, num_datasets=1)
         return 1
 
     monkeypatch.setattr("dagzoo.cli.generate_batch_iter", _stub_generate_batch_iter)
@@ -394,3 +500,48 @@ def test_generate_handoff_identity_is_stable_after_handoff_root_move(tmp_path) -
             assert resolved == moved_root.resolve()
         else:
             assert resolved.exists()
+
+
+def test_generate_handoff_identity_is_stable_across_equivalent_roots(tmp_path) -> None:
+    handoff_root_a = tmp_path / "handoff_a"
+    handoff_root_b = tmp_path / "handoff_b"
+    cli_args = [
+        "generate",
+        "--config",
+        "configs/default.yaml",
+        "--num-datasets",
+        "1",
+        "--rows",
+        "1024",
+        "--seed",
+        "7",
+        "--device",
+        "cpu",
+        "--hardware-policy",
+        "none",
+    ]
+
+    assert main([*cli_args, "--handoff-root", str(handoff_root_a)]) == 0
+    assert main([*cli_args, "--handoff-root", str(handoff_root_b)]) == 0
+
+    manifest_a = json.loads((handoff_root_a / "handoff_manifest.json").read_text(encoding="utf-8"))
+    manifest_b = json.loads((handoff_root_b / "handoff_manifest.json").read_text(encoding="utf-8"))
+    validate_generate_handoff_manifest(manifest_a)
+    validate_generate_handoff_manifest(manifest_b)
+
+    metadata_a = _load_ndjson(handoff_root_a / "generated" / "shard_00000" / "metadata.ndjson")[0]
+    metadata_b = _load_ndjson(handoff_root_b / "generated" / "shard_00000" / "metadata.ndjson")[0]
+
+    assert (
+        manifest_a["generate_invocation"]["overrides"]["handoff_root"]
+        != (manifest_b["generate_invocation"]["overrides"]["handoff_root"])
+    )
+    assert manifest_a["artifacts"]["generated_dir"] != manifest_b["artifacts"]["generated_dir"]
+    assert manifest_a["checksums"] != manifest_b["checksums"]
+    assert metadata_a["metadata"]["dataset_id"] == metadata_b["metadata"]["dataset_id"]
+    assert metadata_a["metadata"]["split_groups"] == metadata_b["metadata"]["split_groups"]
+    assert manifest_a["identity"] == manifest_b["identity"]
+    assert (
+        manifest_a["identity"]["generate_run_id"]
+        == metadata_a["metadata"]["split_groups"]["request_run"]
+    )
